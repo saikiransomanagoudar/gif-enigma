@@ -1,1 +1,1 @@
-# gif-enigma
+# GIF Enigma
