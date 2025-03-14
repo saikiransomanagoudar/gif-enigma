@@ -1,99 +1,102 @@
-import './createPost.js';
-
-import { Devvit, useState, useWebView } from '@devvit/public-api';
-
-import type { DevvitMessage, WebViewMessage } from './message.js';
+import { Devvit, Context, useWebView } from "@devvit/public-api";
+import { BlocksToWebviewMessage, WebviewToBlockMessage } from "../game/shared.js";
+import { Preview } from "./components/Preview.js"
 
 Devvit.configure({
   redditAPI: true,
+  media: true,
+  kvStore: true,
   redis: true,
+  http: true,
+  realtime: true,
 });
 
-// Add a custom post type to Devvit
+Devvit.addSettings([
+  {
+    name: "tenor-api-key",
+    label: "Tenor API Key",
+    type: "string",
+    isSecret: true,
+    scope: "app",
+  },
+]);
+
+// Custom post component
 Devvit.addCustomPostType({
-  name: 'Web View Example',
-  height: 'tall',
+  name: "GIF Enigma",
+  height: "tall",
   render: (context) => {
-    // Load username with `useAsync` hook
-    const [username] = useState(async () => {
-      return (await context.reddit.getCurrentUsername()) ?? 'anon';
-    });
-
-    // Load latest counter from redis with `useAsync` hook
-    const [counter, setCounter] = useState(async () => {
-      const redisCount = await context.redis.get(`counter_${context.postId}`);
-      return Number(redisCount ?? 0);
-    });
-
-    const webView = useWebView<WebViewMessage, DevvitMessage>({
-      // URL of your web view content
-      url: 'page.html',
-
-      // Handle messages sent from the web view
-      async onMessage(message, webView) {
+    const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
+      url: "index.html",
+      onMessage: async (message, { postMessage }) => {
+        console.log('Received message', message);
+        
         switch (message.type) {
-          case 'webViewReady':
-            webView.postMessage({
-              type: 'initialData',
-              data: {
-                username: username,
-                currentCounter: counter,
+          case "INIT":
+          case "webViewReady":
+            // Send initial data to web view
+            postMessage({
+              type: "INIT_RESPONSE",
+              payload: {
+                postId: context.postId || "unknown",
+              },
+            });
+            
+            // Also send any other data your app needs
+            postMessage({
+              type: "initialData",
+              data: { 
+                username: "testUser", 
+                currentCounter: 42 
               },
             });
             break;
-          case 'setCounter':
-            await context.redis.set(
-              `counter_${context.postId}`,
-              message.data.newCounter.toString()
-            );
-            setCounter(message.data.newCounter);
-
-            webView.postMessage({
-              type: 'updateCounter',
-              data: {
-                currentCounter: message.data.newCounter,
-              },
-            });
+            
+          case "setCounter":
+            console.log("New counter from web view:", message.data.newCounter);
+            // Handle counter updates if needed
             break;
+            
           default:
-            throw new Error(`Unknown message type: ${message satisfies never}`);
+            console.error('Unknown message type', message);
+            break;
         }
       },
-      onUnmount() {
-        context.ui.showToast('Web view closed!');
+      onUnmount: () => {
+        console.log("Web view closed");
       },
     });
 
-    // Render the custom post type
     return (
-      <vstack grow padding="small">
-        <vstack grow alignment="middle center">
-          <text size="xlarge" weight="bold">
-            Example App
-          </text>
-          <spacer />
-          <vstack alignment="start middle">
-            <hstack>
-              <text size="medium">Username:</text>
-              <text size="medium" weight="bold">
-                {' '}
-                {username ?? ''}
-              </text>
-            </hstack>
-            <hstack>
-              <text size="medium">Current counter:</text>
-              <text size="medium" weight="bold">
-                {' '}
-                {counter ?? ''}
-              </text>
-            </hstack>
-          </vstack>
-          <spacer />
-          <button onPress={() => webView.mount()}>Launch App</button>
-        </vstack>
+      <vstack height="100%" width="100%" alignment="center middle">
+        <text style="heading">GIF Enigma Web View</text>
+        <button onPress={mount}>Launch</button>
       </vstack>
     );
   },
 });
+
+Devvit.addMenuItem({
+  label: "Create GIF Enigma Game",
+  location: "subreddit",
+  forUserType: "moderator",
+  onPress: async (_event, context) => {
+    const { reddit, ui } = context;
+    const subreddit = await reddit.getCurrentSubreddit();
+
+    const post = await reddit.submitPost({
+      title: "GIF Enigma Game",
+      subredditName: subreddit.name,
+      preview: <Preview />,
+    });
+
+    ui.showToast({ text: "Created GIF Enigma post!" });
+    ui.navigateTo(post.url);
+  },
+});
+
+export function getAppVersion(context: Context): string {
+  return context.appVersion || "0.0.4.34";
+}
 
 export default Devvit;

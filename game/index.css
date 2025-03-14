@@ -1,0 +1,4 @@
+@import 'tailwindcss';
+.chewy-text {
+    font-family: 'Chewy', cursive;
+  }
