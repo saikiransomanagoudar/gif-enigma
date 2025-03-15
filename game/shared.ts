@@ -7,18 +7,18 @@ export type Page =
   | "leaderboard";
 
 // Messages from web view to Devvit blocks
-export type WebviewToBlockMessage = 
-  | { type: "INIT" } 
+export type WebviewToBlockMessage =
+  | { type: "INIT" }
   | { type: "webViewReady" }
-  | { 
-      type: "setCounter"; 
-      data: { newCounter: number } 
+  | {
+      type: "setCounter";
+      data: { newCounter: number }
     }
   | {
       type: "createGame";
-      payload: { 
+      payload: {
         title: string;
-        category: string; 
+        category: string;
         difficulty: string;
       }
     }
@@ -28,20 +28,27 @@ export type WebviewToBlockMessage =
         gameId: string;
         guess: string;
       }
+    }
+  // Add RPC call type
+  | {
+      type: "RPC_CALL";
+      id: number;
+      functionName: string;
+      params: any;
     };
 
 // Messages from Devvit blocks to web view
-export type BlocksToWebviewMessage = 
+export type BlocksToWebviewMessage =
   | {
       type: "INIT_RESPONSE";
       payload: {
         postId: string;
       }
-    } 
+    }
   | {
-      type: "initialData"; 
-      data: { 
-        username: string; 
+      type: "initialData";
+      data: {
+        username: string;
         currentCounter: number;
       }
     }
@@ -60,6 +67,17 @@ export type BlocksToWebviewMessage =
         score: number;
         message: string;
       }
+    }
+  // Add RPC response types
+  | {
+      type: "RPC_RESPONSE";
+      id: number;
+      result: any;
+    }
+  | {
+      type: "RPC_ERROR";
+      id: number;
+      error: string;
     };
 
 // Devvit message wrapper type
