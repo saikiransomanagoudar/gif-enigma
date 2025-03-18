@@ -7,8 +7,8 @@ export interface Question {
   word: string;
   maskedWord: string;
   questionText: string;
-  gifs: string[];  // Array of 4 GIF URLs from Tenor
-  currentGifIndex: number;  // Which GIF is currently shown (0-3)
+  gifs: string[];
+  currentGifIndex: number;
   [key: string]: any;
 }
 

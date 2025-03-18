@@ -3,25 +3,40 @@ import { colors } from '../lib/styles';
 import { ChewyText } from '../lib/fonts';
 import { NavigationProps } from '../App';
 
-// Updated GIF interface for Tenor
 export interface TenorGifResult {
   id: string;
   title: string;
   media_formats: {
-    gif: {
+    gif?: {
       url: string;
       dims: number[];
       duration: number;
       preview: string;
       size: number;
     };
-    tinygif: {
+    tinygif?: {
       url: string;
       dims: number[];
       duration: number;
       preview: string;
       size: number;
     };
+    mediumgif?: {
+      url: string;
+      dims: number[];
+      duration: number;
+      preview: string;
+      size: number;
+    };
+    [key: string]:
+      | {
+          url: string;
+          dims: number[];
+          duration: number;
+          preview: string;
+          size: number;
+        }
+      | undefined;
   };
   content_description: string;
   created: number;
@@ -29,26 +44,67 @@ export interface TenorGifResult {
   url: string;
 }
 
+const getGifUrl = (gif: TenorGifResult | null): string => {
+  console.log('Getting URL for GIF:', gif?.id);
+
+  if (!gif || !gif.media_formats) {
+    console.log('No GIF or media_formats');
+    return '';
+  }
+
+  // Log available formats
+  const availableFormats = Object.keys(gif.media_formats);
+  console.log('Available formats:', availableFormats);
+
+  // Try these formats in order of preference
+  const preferredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
+
+  for (const format of preferredFormats) {
+    const formatObj = gif.media_formats[format];
+    if (formatObj && formatObj.url) {
+      console.log(`Using ${format} URL:`, formatObj.url);
+      return formatObj.url;
+    }
+  }
+
+  // If none of the preferred formats worked, try any format with a URL
+  for (const format of availableFormats) {
+    const formatObj = gif.media_formats[format];
+    if (formatObj && formatObj.url) {
+      console.log(`Falling back to ${format} URL:`, formatObj.url);
+      return formatObj.url;
+    }
+  }
+
+  console.log('No valid URL found for GIF');
+  return '';
+};
+
 export interface CreatePageProps extends NavigationProps {
   context: any;
 }
 
-export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) => {
+export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate }) => {
   // Core game data
   const [secretInput, setSecretInput] = useState<string>('');
   const [tempSecretInput, setTempSecretInput] = useState<string>('');
   const [inputType, setInputType] = useState<'word' | 'phrase'>('word');
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
-  // GIF search/selection
+  //@ts-ignore
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [tempSearchTerm, setTempSearchTerm] = useState<string>('');
   const [gifs, setGifs] = useState<TenorGifResult[]>([]);
   const [selectedGifs, setSelectedGifs] = useState<(TenorGifResult | null)[]>([]);
   const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
+  const [selectedGifInModal, setSelectedGifInModal] = useState<TenorGifResult | null>(null);
 
   // UI states
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  // @ts-ignore
   const [message, setMessage] = useState<string>('');
+  // @ts-ignore
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [showHint, setShowHint] = useState<boolean>(false);
   const [postToSubreddit, setPostToSubreddit] = useState<boolean>(true);
@@ -56,22 +112,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
   // Modal states
   const [showSecretInput, setShowSecretInput] = useState<boolean>(false);
   const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
+  const [gifUrls, setGifUrls] = useState<string[]>([]);
 
   // Validate secret input
   const validateSecretInput = (input: string): boolean => {
     if (!input || input.trim() === '') return false;
 
-    // Convert to uppercase and remove extra spaces
     const processedInput = input.trim().toUpperCase();
-
-    if (inputType === 'word') {
-      // Check minimum length for a word (5 characters)
-      return processedInput.length >= 5;
-    } else {
-      // Check minimum words for a phrase (2 words)
-      const words = processedInput.split(/\s+/);
-      return words.length >= 2;
-    }
+    return processedInput.length >= 5;
   };
 
   // Handle secret input
@@ -90,12 +138,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
       setShowSecretInput(false);
       setModalError('');
     } else {
-      // Show validation message in modal
-      if (inputType === 'word') {
-        setModalError('Word must be at least 5 letters long.');
-      } else {
-        setModalError('Phrase must contain at least 2 words.');
-      }
+      setModalError('Input must be 5 characters long including spaces.');
     }
   };
 
@@ -105,111 +148,235 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
     setShowSearchInput(true);
     setTempSearchTerm('');
     setGifs([]);
+    // Reset message when opening search modal
+    setMessage('');
+    setMessageType('info');
   };
 
-  const confirmSearchInput = () => {
-    if (tempSearchTerm && tempSearchTerm.trim() !== '') {
-      setSearchTerm(tempSearchTerm.trim());
-      searchGifs(tempSearchTerm.trim());
-    } else {
-      setShowSearchInput(false);
-    }
-  };
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
 
-  // Search for GIFs using Tenor API
+      if (!message || typeof message !== 'object') return;
+
+      console.log('Received message:', message.type);
+
+      // Clear any timeout first
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      // Handle GIF search results
+      if (message.type === 'SEARCH_TENOR_GIFS_RESULT' || message.type === 'SEARCH_GIFS_RESULT') {
+        // Always stop loading first
+        setIsSearching(false);
+        console.log('Search complete, setting isSearching=false');
+
+        try {
+          if (message.success && message.results && Array.isArray(message.results)) {
+            console.log(`Found ${message.results.length} GIFs`);
+
+            // Extract URL strings
+            const urls = message.results
+              .map(
+                (gif: {
+                  media_formats: {
+                    [x: string]: { url: any };
+                    gif: { url: any };
+                    tinygif: { url: any };
+                    mediumgif: { url: any };
+                    nanogif: { url: any };
+                  };
+                }) => {
+                  if (gif.media_formats) {
+                    if (gif.media_formats.gif?.url) return gif.media_formats.gif.url;
+                    if (gif.media_formats.tinygif?.url) return gif.media_formats.tinygif.url;
+                    if (gif.media_formats.mediumgif?.url) return gif.media_formats.mediumgif.url;
+                    if (gif.media_formats.nanogif?.url) return gif.media_formats.nanogif.url;
+
+                    // Try any other format
+                    for (const format in gif.media_formats) {
+                      if (gif.media_formats[format]?.url) {
+                        return gif.media_formats[format].url;
+                      }
+                    }
+                  }
+                  return null;
+                }
+              )
+              .filter((url: null) => url !== null) as string[];
+
+            console.log(`Extracted ${urls.length} URLs`);
+
+            // Update both states
+            setGifUrls(urls);
+            setGifs(message.results);
+
+            // Update message
+            if (urls.length === 0) {
+              setMessage('No GIFs found. Try a different search term.');
+              setMessageType('info');
+            } else {
+              setMessage(`Found ${urls.length} GIFs from Tenor.`);
+              setMessageType('success');
+            }
+          } else {
+            console.log('No results or search failed');
+            setGifUrls([]);
+            setGifs([]);
+            setMessage('No GIFs found. Try a different search term.');
+            setMessageType('info');
+          }
+        } catch (error) {
+          console.error('Error processing search results:', error);
+          setGifUrls([]);
+          setGifs([]);
+          setMessage('Error processing results. Please try again.');
+          setMessageType('error');
+        }
+      }
+
+      // Handle game creation result
+      if (message.type === 'SAVE_GAME_RESULT') {
+        setIsCreating(false);
+
+        if (message.success && message.result && message.result.success) {
+          const result = message.result;
+          const successMessage = result.postedToReddit
+            ? `Game created and posted to r/PlayGIFEnigma! Game ID: ${result.gameId}`
+            : `Game created successfully! Game ID: ${result.gameId}`;
+
+          setMessage(successMessage);
+          setMessageType('success');
+
+          // Reset form
+          setSecretInput('');
+          setSelectedGifs([]);
+          setGifs([]);
+          setGifUrls([]);
+          setSearchTerm('');
+        } else {
+          setMessage(
+            `Failed to create game: ${message.error || message.result?.error || 'Unknown error'}`
+          );
+          setMessageType('error');
+        }
+      }
+
+      // Handle recent games result
+      if (message.type === 'GET_RECENT_GAMES_RESULT') {
+        if (message.success && message.result && message.result.success) {
+          console.log('Received recent games:', message.result.games);
+          // Update your recent games state here if needed
+        } else {
+          console.error('Failed to get recent games:', message.error || message.result?.error);
+        }
+      }
+
+      // Handle single game result
+      if (message.type === 'GET_GAME_RESULT') {
+        if (message.success && message.result && message.result.success) {
+          console.log('Received game data:', message.result.game);
+          // Update your game state here if needed
+        } else {
+          console.error('Failed to get game:', message.error || message.result?.error);
+        }
+      }
+
+      // Handle initialization response
+      if (message.type === 'INIT_RESPONSE') {
+        console.log('App initialized with data:', message.payload);
+        // Handle initialization data
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('message', handleMessage);
+
+    // Cleanup function
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []); // Empty dependency array to run only once on mount
+
+  useEffect(() => {
+    console.log('gifs updated:', gifs);
+  }, [gifs]);
+
+  useEffect(() => {
+    console.log('isSearching updated:', isSearching);
+  }, [isSearching]);
+
   const searchGifs = async (term: string) => {
     if (!term) return;
-    setIsLoading(true);
-    setMessage('Searching for GIFs...');
-    setMessageType('info');
+
+    // Reset all states
+    setGifs([]);
+    setGifUrls([]); // Clear the URLs
+    setIsSearching(true);
+    setSelectedGifInModal(null);
+
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
 
     try {
-      // In a real implementation, you would call Tenor API here
-      // For now, we'll use mock data to simulate the API response
-      const mockTenorResults = generateMockTenorResults(term);
-      setGifs(mockTenorResults);
-      setMessage(`Found ${mockTenorResults.length} GIFs for "${term}"`);
-      setMessageType('success');
-
-      /* 
-      // The following code would be used for the actual Tenor API implementation
-      
-      const apiKey = "YOUR_TENOR_API_KEY"; // Replace with your actual Tenor API key
-      const limit = 8; // Number of GIFs to fetch
-      
-      const response = await fetch(
-        `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(term)}&key=${apiKey}&limit=${limit}`
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Tenor API response not ok: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data && data.results && Array.isArray(data.results)) {
-        setGifs(data.results);
-        setMessage(`Found ${data.results.length} GIFs for "${term}"`);
-        setMessageType("success");
-      } else {
-        setMessage("No GIFs found. Try a different search term.");
-        setMessageType("info");
-      }
-      */
-    } catch (error) {
-      console.error('Error searching GIFs:', error);
-      setMessage(
-        `Failed to search GIFs: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      setMessageType('error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Helper function to generate mock Tenor GIF results for testing
-  const generateMockTenorResults = (query: string): TenorGifResult[] => {
-    // Sample GIF URLs (using mock Tenor responses)
-    const mockResults: TenorGifResult[] = [];
-
-    for (let i = 0; i < 8; i++) {
-      mockResults.push({
-        id: `tenor-${i}-${Date.now()}`,
-        title: `${query} GIF ${i + 1}`,
-        media_formats: {
-          gif: {
-            url: `https://media.tenor.com/mock-gif-${i}.gif`,
-            dims: [480, 320],
-            duration: 0,
-            preview: `https://media.tenor.com/mock-preview-${i}.gif`,
-            size: 1024000,
-          },
-          tinygif: {
-            url: `https://media.tenor.com/mock-tinygif-${i}.gif`,
-            dims: [220, 150],
-            duration: 0,
-            preview: `https://media.tenor.com/mock-tinypreview-${i}.gif`,
-            size: 256000,
+      console.log(`Searching for: ${term}`);
+      window.parent.postMessage(
+        {
+          type: 'SEARCH_TENOR_GIFS',
+          data: {
+            query: term,
+            limit: 8,
           },
         },
-        content_description: `${query} example ${i + 1}`,
-        created: Date.now(),
-        hasaudio: false,
-        url: `https://tenor.com/view/mock-${i}`,
-      });
-    }
+        '*'
+      );
 
-    return mockResults;
+      // Set a timeout
+      timeoutRef.current = setTimeout(() => {
+        console.log('Search timed out after 8 seconds');
+        setIsSearching(false);
+      }, 8000);
+    } catch (error) {
+      console.error('Error initiating search:', error);
+      setIsSearching(false);
+    }
   };
 
-  // Select a GIF for a specific slot
   const selectGifForSlot = (gif: TenorGifResult) => {
     if (selectedGifIndex !== null && selectedGifIndex >= 0 && selectedGifIndex < 4) {
+      // Get URL with better logging
+      const gifUrl = getGifUrl(gif);
+      console.log(`Selecting GIF ${gif.id} with URL: ${gifUrl}`);
+
+      if (!gifUrl) {
+        console.log('No valid URL found for GIF');
+        setMessage('Unable to load this GIF. Please try another one.');
+        setMessageType('error');
+        return;
+      }
+
+      // Create a clean copy to avoid reference issues
+      const cleanGif = JSON.parse(JSON.stringify(gif));
+
+      // Create a new array to ensure React detects the change
       const newSelectedGifs = [...selectedGifs];
-      newSelectedGifs[selectedGifIndex] = gif;
+      newSelectedGifs[selectedGifIndex] = cleanGif;
+
+      // Update state
       setSelectedGifs(newSelectedGifs);
       setShowSearchInput(false);
+      setSelectedGifInModal(null);
       setGifs([]);
+      setMessage('GIF selected successfully!');
+      setMessageType('success');
     }
   };
 
@@ -230,25 +397,29 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
     setPostToSubreddit(!postToSubreddit);
   };
 
-  // Toggle between word and phrase input types with playful animation
-  const toggleInputType = () => {
-    setInputType(inputType === 'word' ? 'phrase' : 'word');
-    // Clear the current input when switching types
-    setSecretInput('');
-  };
+  // const toggleInputType = () => {
+  //   setInputType(inputType === 'word' ? 'phrase' : 'word');
+  //   // Clear the current input when switching types
+  //   setSecretInput('');
+  // };
 
-  // Submit the created game
-  const submitGame = async () => {
+  const submitGame = () => {
     // Count non-null selected GIFs
     const validGifs = selectedGifs.filter((gif) => gif !== null);
 
-    if (!secretInput || validGifs.length !== 4) {
-      setMessage(`Please complete all fields and select exactly 4 GIFs.`);
+    if (!secretInput) {
+      setMessage(`Please enter a secret ${inputType} before creating a game.`);
       setMessageType('error');
       return;
     }
 
-    setIsLoading(true);
+    if (validGifs.length !== 4) {
+      setMessage(`Please select exactly 4 GIFs. You've selected ${validGifs.length} so far.`);
+      setMessageType('error');
+      return;
+    }
+
+    setIsCreating(true); // Only set creating state here
     setMessage('Creating your GIF Enigma game...');
     setMessageType('info');
 
@@ -272,42 +443,33 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
           ? 'Can you guess the word from these GIF clues?'
           : 'Can you guess the phrase from these GIF clues?';
 
-      const gifUrls = validGifs.map((gif) => gif.media_formats.gif.url);
+      const gifUrls = validGifs.map((gif) => getGifUrl(gif));
       if (!gifUrls.every((url) => typeof url === 'string' && url.trim() !== '')) {
         throw new Error('One or more selected GIFs have invalid URLs');
       }
 
-      const result = await context.rpc.call('saveGameRPC', {
-        word: secretInput, // Already uppercase from validation
-        maskedWord,
-        questionText,
-        gifs: gifUrls,
-        postToSubreddit,
-      });
+      // Send a message to the parent window to save the game
+      window.parent.postMessage(
+        {
+          type: 'SAVE_GAME',
+          data: {
+            word: secretInput, // Already uppercase from validation
+            maskedWord,
+            questionText,
+            gifs: gifUrls,
+            postToSubreddit,
+          },
+        },
+        '*'
+      );
 
-      if (result && result.success) {
-        const successMessage = result.postedToReddit
-          ? `Game created and posted to r/PlayGIFEnigma! Game ID: ${result.gameId}`
-          : `Game created successfully! Game ID: ${result.gameId}`;
-
-        setMessage(successMessage);
-        setMessageType('success');
-
-        // Reset form
-        setSecretInput('');
-        setSelectedGifs([]);
-        setGifs([]);
-        setSearchTerm('');
-      } else {
-        throw new Error(result?.error || 'Failed to save game');
-      }
+      // The actual result will be handled by the message listener in the useEffect
     } catch (error) {
+      setIsCreating(false);
       setMessage(
         `Failed to create game: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       setMessageType('error');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -320,7 +482,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
         </ChewyText>
         <button
           onClick={toggleHint}
-          className="rounded-full cursor-pointer px-3 py-1 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+          className="cursor-pointer rounded-full px-3 py-1 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
           style={{ backgroundColor: colors.primary, color: 'white' }}
         >
           <ChewyText size={0.5} color="white">
@@ -339,7 +501,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
                 backgroundColor: colors.cardBackground,
                 border: gif ? 'none' : `3px dashed ${colors.secondary}`,
                 transition: 'all 0.3s ease-in-out',
-              }} 
+              }}
             >
               {gif ? (
                 <div className="relative h-full w-full">
@@ -364,7 +526,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
               ) : (
                 <button
                   onClick={() => handleSetSearchTerm(index)}
-                  className="flex cursor-pointer h-full w-full flex-col items-center justify-center rounded-xl p-4 transition-all duration-200 hover:scale-105"
+                  className="flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-4 transition-all duration-200 hover:scale-105"
                 >
                   <div className="mb-2 text-3xl">➕</div>
                   <ChewyText size={0.6} color={colors.textSecondary}>
@@ -379,7 +541,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
     </div>
   );
 
-  // Compact Modal Component with fun styling
   const Modal = ({
     title,
     isOpen,
@@ -393,6 +554,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
     onConfirm: () => void;
     children: React.ReactNode;
   }) => {
+    React.useEffect(() => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (isOpen && event.key === 'Enter') {
+          onConfirm();
+        }
+      };
+
+      // Add the event listener when the modal is open
+      window.addEventListener('keydown', handleKeyDown);
+
+      // Remove the event listener when the modal is closed or unmounted
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }, [isOpen, onConfirm]);
+
     if (!isOpen) return null;
 
     return (
@@ -445,38 +622,37 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
   // More compact fun toggle switch for Word/Phrase
   const InputTypeToggle = () => (
     <div className="flex items-center justify-center">
-      <div 
-        className="relative flex h-10 items-center rounded-full overflow-hidden"
-        style={{ 
+      <div
+        className="relative flex h-10 items-center overflow-hidden rounded-full"
+        style={{
           backgroundColor: '#2D3748', // Darker background
           border: `2px solid ${colors.primary}`,
-          width: '160px'
+          width: '160px',
         }}
       >
         {/* Sliding background - make it fill exactly half the container */}
         <div
-          className="absolute h-full w-1/2 rounded-full transition-all duration-300 ease-bounce"
+          className="ease-bounce absolute h-full w-1/2 rounded-full transition-all duration-300"
           style={{
             backgroundColor: colors.primary,
             left: inputType === 'word' ? '0' : '50%',
-            zIndex: 1
+            zIndex: 1,
           }}
         />
-        
-        {/* Word button - exactly 50% width */}
+
         <button
           onClick={() => setInputType('word')}
-          className="relative z-10 cursor-pointer flex h-full w-1/2 items-center justify-center transition-all duration-200"
+          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
         >
           <ChewyText size={0.6} color={inputType === 'word' ? 'white' : colors.textSecondary}>
             Word
           </ChewyText>
         </button>
-        
+
         {/* Phrase button - exactly 50% width */}
         <button
           onClick={() => setInputType('phrase')}
-          className="relative z-10 cursor-pointer flex h-full w-1/2 items-center justify-center transition-all duration-200"
+          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
         >
           <ChewyText size={0.6} color={inputType === 'phrase' ? 'white' : colors.textSecondary}>
             Phrase
@@ -521,14 +697,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
         </div>
       </Modal>
 
-      {/* Search Term Modal with GIF Results */}
       <Modal
         title="Search for GIFs"
         isOpen={showSearchInput}
-        onClose={() => setShowSearchInput(false)}
-        onConfirm={confirmSearchInput}
+        onClose={() => {
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+          setShowSearchInput(false);
+          setIsSearching(false);
+        }}
+        onConfirm={() => {
+          if (selectedGifInModal) {
+            selectGifForSlot(selectedGifInModal);
+          } else if (tempSearchTerm && tempSearchTerm.trim() !== '') {
+            searchGifs(tempSearchTerm.trim());
+          }
+        }}
       >
         <div className="flex flex-col gap-4">
+          {/* Search Input */}
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -544,29 +733,65 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
               autoFocus
             />
             <button
-              onClick={() => searchGifs(tempSearchTerm)}
-              disabled={!tempSearchTerm || isLoading}
+              onClick={() => {
+                if (tempSearchTerm.trim() !== '') {
+                  searchGifs(tempSearchTerm.trim());
+                }
+              }}
+              disabled={!tempSearchTerm || isSearching}
               className="rounded-xl bg-blue-500 px-4 py-2 text-white disabled:opacity-50"
             >
-              {isLoading ? '...' : '🔍'}
+              {isSearching ? '...' : '🔍'}
             </button>
           </div>
 
-          {/* GIF Search Results - More compact grid */}
-          {gifs.length > 0 && (
-            <div className="mt-2 max-h-52 overflow-y-auto">
+          {/* Debug status */}
+          <div className="text-center text-xs text-gray-400">
+            {isSearching
+              ? 'Searching...'
+              : gifUrls.length > 0
+                ? `Found ${gifUrls.length} GIFs`
+                : 'Enter a search term'}
+          </div>
+
+          {/* Loading State */}
+          {isSearching && (
+            <div className="flex flex-col items-center justify-center py-4">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+              <div className="mt-2 text-center text-sm text-blue-400">Searching for GIFs...</div>
+            </div>
+          )}
+
+          {/* Simplified GIF Display - uses the direct URLs */}
+          {!isSearching && gifUrls.length > 0 && (
+            <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
               <div className="grid grid-cols-2 gap-2">
-                {gifs.map((gif, idx) => (
+                {gifUrls.map((url, idx) => (
                   <div
-                    key={idx}
-                    onClick={() => selectGifForSlot(gif)}
-                    className="cursor-pointer overflow-hidden rounded-lg transition-all duration-200 hover:scale-105 hover:shadow-lg"
-                    style={{ backgroundColor: '#1A1A1B' }}
+                    key={`gif-${idx}`}
+                    onClick={() => {
+                      // Select the corresponding GIF from the gifs array
+                      if (gifs[idx]) {
+                        setSelectedGifInModal(gifs[idx]);
+                      }
+                    }}
+                    className="cursor-pointer overflow-hidden rounded-lg border border-gray-700 hover:border-gray-500"
                   >
-                    <div className="flex h-16 items-center justify-center bg-gray-900 p-2 text-center">
-                      <ChewyText size={0.45} color={colors.textSecondary}>
-                        {gif.content_description || gif.title || `GIF ${idx + 1}`}
-                      </ChewyText>
+                    {/* Simplified image display */}
+                    <div className="relative h-24 w-full bg-black">
+                      <img
+                        src={url}
+                        alt={`GIF ${idx + 1}`}
+                        className="h-full w-full object-cover"
+                        style={{ objectFit: 'cover' }}
+                      />
+                    </div>
+
+                    {/* Simple caption */}
+                    <div className="bg-gray-800 p-2 text-center">
+                      <div className="truncate text-xs text-gray-300">
+                        {gifs[idx]?.content_description || `GIF ${idx + 1}`}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -574,25 +799,29 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
             </div>
           )}
 
-          {isLoading && (
-            <div className="flex justify-center p-4">
-              <ChewyText size={0.7} color={colors.textSecondary}>
-                Searching for GIFs...
-              </ChewyText>
+          {/* No results state */}
+          {!isSearching && gifUrls.length === 0 && tempSearchTerm && (
+            <div className="py-4 text-center text-sm text-gray-400">
+              No GIFs found. Try a different search term.
             </div>
           )}
 
-          {!isLoading && gifs.length === 0 && tempSearchTerm && (
-            <div className="flex justify-center p-4">
-              <ChewyText size={0.7} color={colors.textSecondary}>
-                No GIFs found. Try another search term.
-              </ChewyText>
+          {/* Selected GIF Preview */}
+          {selectedGifInModal && (
+            <div className="mt-2 rounded-lg border border-blue-500 bg-gray-800 p-2">
+              <div className="mb-1 text-center text-xs text-white">Selected GIF:</div>
+              <div className="flex justify-center rounded bg-black p-1">
+                <img
+                  src={getGifUrl(selectedGifInModal)}
+                  alt="Selected GIF"
+                  className="h-24 object-contain"
+                />
+              </div>
             </div>
           )}
         </div>
       </Modal>
 
-      {/* More compact header with integrated Word/Phrase Toggle */}
       <div className="relative mb-4 flex items-center">
         <button
           onClick={() => onNavigate('landing')}
@@ -672,46 +901,21 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, context }) =
         {/* GIF Selection Grid with Add Buttons */}
         {renderGifGrid()}
 
-        {/* Status Messages - Smaller and integrated */}
-        {message && (
-          <div
-            className="mb-2 rounded-lg border-l-3 p-2"
-            style={{
-              backgroundColor:
-                messageType === 'success'
-                  ? `${colors.success}22`
-                  : messageType === 'error'
-                    ? `${colors.error}22`
-                    : `${colors.primary}22`,
-              borderLeftColor:
-                messageType === 'success'
-                  ? colors.success
-                  : messageType === 'error'
-                    ? colors.error
-                    : colors.primary,
-            }}
-          >
-            <ChewyText size={0.6} color={colors.textPrimary}>
-              {message}
-            </ChewyText>
-          </div>
-        )}
-
-        {/* Submit Button - More compact */}
+        {/* Submit button - FIXED so it only shows "Creating..." when isCreating is true */}
         <button
           onClick={submitGame}
           disabled={
-            isLoading || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
+            isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
           }
           className={`mt-2 cursor-pointer rounded-xl border-none px-4 py-3 transition-all duration-300 ${
-            isLoading || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
+            isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
               ? 'cursor-not-allowed opacity-60'
               : 'hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
           }`}
           style={{ backgroundColor: colors.primary }}
         >
           <ChewyText size={0.8} color="white">
-            {isLoading ? '🔄 Creating...' : '🎮 Create GIF Enigma'}
+            {isCreating ? '🔄 Creating...' : '🎮 Create GIF Enigma'}
           </ChewyText>
         </button>
       </div>

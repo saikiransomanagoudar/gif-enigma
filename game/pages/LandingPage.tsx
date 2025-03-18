@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ChewyText } from '../lib/fonts';
+// import { ChewyText } from '../lib/fonts';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [username, setUsername] = useState<string>('');
@@ -31,7 +31,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         height: '100%',
         width: '100%',
         padding: '20px',
-        backgroundColor: '#E8E5DA',
+        // backgroundColor: '#E8E5DA',
         borderRadius: '8px',
         //margin:'0px',
         marginTop:'-0px'
@@ -72,10 +72,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           <span style={{ fontSize: '30px' }}>📺</span>
           <span style={{ fontSize: '30px' }}>❓</span>
         </div>
-        
-        <ChewyText size={2} color={colors.primary}>
+        <header style={{ fontSize: '30px', fontFamily: 'Comic Sans MS', color : colors.primary}}>  
           GIF ENIGMA
-        </ChewyText>
+        </header>
         <p
           style={{
             fontSize: '20px',
@@ -92,9 +91,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       <div
         style={{
           padding: '1px',
-          backgroundColor:  '#E8E5DA',
-          //borderRadius: '8px',
-          //border: `0px solid ${colors.border}`,
+          // backgroundColor:  '#E8E5DA',
+          // borderRadius: '8px',
+          // border: `0px solid ${colors.border}`,
           textAlign: 'center',
           fontFamily: 'Comic Sans MS',
         }}
@@ -116,7 +115,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           alignItems: 'center'
         }}
       >
-        <button
+        {/* <button
           style={{
             backgroundColor: colors.primary,
             borderRadius: '80px',
@@ -129,8 +128,8 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           // onClick={() => onNavigate('game')}
         >
            PLAY
-        </button>
-        <button
+        </button> */}
+        {/* <button
           style={{
             backgroundColor:  colors.primary,
             borderRadius: '80px',
@@ -144,9 +143,10 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           onClick={() => onNavigate('create')}
         >
           🛠️ CREATE
-        </button>
+        </button> */}
       </div>
-      <span
+      <div
+        className='rounded-lg'
         style={{
           display:'flex',
           flexDirection:'row',
@@ -154,21 +154,25 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           gap: '20px',
           justifyContent: 'center',
         }}>
-        <img src="https://media1.giphy.com/media/9hEtSDh6uT9NGTpNXs/giphy.gif?cid=6c09b952emxh9nn4erngl7gtioeh0g9xn8eoda0rtygihyfh&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g"
+        <img src="/landing-page/lets-play.gif"
+        className='cursor-pointer'
+        // onClick={() => onNavigate('game')}
+        style={{
+          width:'17%',
+          padding:'10px'
+        }}
+        > 
+        </img>
+        <img src="/landing-page/lets-build.gif"
+        className='cursor-pointer'
+        onClick={() => onNavigate('create')}
         style={{
           width:'17%',
           padding:'10px'
         }}
         >    
         </img>
-        <img src="https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXM3MWRpN2tyNHhjN2RqMGJlejF5ajl6bWFsaG02cTllZTU0dXVwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/qt73FYHjuXqAj241m8/giphy.gif"
-        style={{
-          width:'17%',
-          padding:'10px'
-        }}
-        >    
-        </img>
-      </span>
+      </div>
 
       {/* Secondary Action Buttons */}
       <div

@@ -6,7 +6,7 @@ import { LeaderboardPage } from './pages/LeaderboardPage';
 
 type PageType = 'landing' | 'create' | 'howToPlay' | 'leaderboard';
 
-// Define a consistent props interface for all pages
+// consistent props interface for all pages
 export interface NavigationProps {
   onNavigate: (page: PageType) => void;
 }
@@ -14,15 +14,32 @@ export interface NavigationProps {
 // Define the message types for Devvit communication
 type DevvitMessage =
   | { type: "initialData"; data: { username: string; currentCounter: number } }
-  | { type: "updateCounter"; data: { currentCounter: number } };
+  | { type: "updateCounter"; data: { currentCounter: number } }
+  | { 
+      type: "SEARCH_TENOR_GIFS_RESULT"; 
+      success: boolean; 
+      results?: any[]; 
+      error?: string 
+    };
 
 type WebViewMessage =
   | { type: "webViewReady" }
-  | { type: "setCounter"; data: { newCounter: number } };
+  | { type: "setCounter"; data: { newCounter: number } }
+  | { 
+      type: "SEARCH_TENOR_GIFS"; 
+      data: { 
+        query: string; 
+        limit?: number;
+        contentfilter?: string;
+        media_filter?: string;
+      } 
+    };
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('landing');
   const [userData, setUserData] = useState<{ username: string; currentCounter: number } | null>(null);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Setup communication with Devvit
   useEffect(() => {
@@ -33,10 +50,22 @@ function App() {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data as DevvitMessage;
       
-      if (message.type === "initialData") {
-        setUserData(message.data);
-      } else if (message.type === "updateCounter") {
-        setUserData(prev => prev ? { ...prev, currentCounter: message.data.currentCounter } : null);
+      switch(message.type) {
+        case "initialData":
+          setUserData(message.data);
+          break;
+        case "updateCounter":
+          setUserData(prev => prev ? { ...prev, currentCounter: message.data.currentCounter } : null);
+          break;
+        case "SEARCH_TENOR_GIFS_RESULT":
+          if (message.success) {
+            setSearchResults(message.results || []);
+            setSearchError(null);
+          } else {
+            setSearchResults([]);
+            setSearchError(message.error || 'Unknown error occurred');
+          }
+          break;
       }
     };
 
@@ -53,19 +82,35 @@ function App() {
     window.parent.postMessage(message, '*');
   };
 
+  // Function to search Tenor GIFs
+  const searchTenorGifs = (query: string, limit = 8) => {
+    sendMessageToDevvit({
+      type: "SEARCH_TENOR_GIFS",
+      data: {
+        query,
+        limit,
+        contentfilter: 'off',
+        media_filter: 'minimal'
+      }
+    });
+  };
+
   const renderPage = () => {
     // Pass the Devvit communication functions and data to your pages
     const pageProps = {
       onNavigate: setCurrentPage,
       userData,
-      sendMessageToDevvit
+      sendMessageToDevvit,
+      searchTenorGifs,
+      searchResults,
+      searchError
     };
 
     switch(currentPage) {
       case 'landing':
         return <LandingPage {...pageProps} />;
       case 'create':
-        return <CreatePage {...pageProps} />;
+        return <CreatePage context={undefined} {...pageProps} />;
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':

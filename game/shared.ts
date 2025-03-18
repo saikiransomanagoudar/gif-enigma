@@ -1,4 +1,3 @@
-// Define the pages in your GIF-Enigma game
 export type Page =
   | "home"
   | "create"
@@ -6,7 +5,6 @@ export type Page =
   | "howToPlay"
   | "leaderboard";
 
-// Messages from web view to Devvit blocks
 export type WebviewToBlockMessage =
   | { type: "INIT" }
   | { type: "webViewReady" }
@@ -29,15 +27,45 @@ export type WebviewToBlockMessage =
         guess: string;
       }
     }
-  // Add RPC call type
   | {
-      type: "RPC_CALL";
-      id: number;
-      functionName: string;
-      params: any;
+      type: "SEARCH_TENOR_GIFS";
+      data: {
+        query: string;
+        limit?: number;
+        contentfilter?: string;
+        media_filter?: string;
+      }
+    }
+  | {
+      type: "SEARCH_GIFS";
+      data: {
+        query: string;
+        limit?: number;
+      }
+    }
+  | {
+      type: "SAVE_GAME";
+      data: {
+        word: string;
+        maskedWord: string;
+        questionText: string;
+        gifs: string[];
+        postToSubreddit?: boolean;
+      }
+    }
+  | {
+      type: "GET_RECENT_GAMES";
+      data?: {
+        limit?: number;
+      }
+    }
+  | {
+      type: "GET_GAME";
+      data: {
+        gameId: string;
+      }
     };
 
-// Messages from Devvit blocks to web view
 export type BlocksToWebviewMessage =
   | {
       type: "INIT_RESPONSE";
@@ -68,16 +96,38 @@ export type BlocksToWebviewMessage =
         message: string;
       }
     }
-  // Add RPC response types
+
   | {
-      type: "RPC_RESPONSE";
-      id: number;
-      result: any;
+      type: "SEARCH_TENOR_GIFS_RESULT";
+      success: boolean;
+      results?: any[];
+      next?: string;
+      error?: string;
+    }
+
+  | {
+      type: "SEARCH_GIFS_RESULT";
+      success: boolean;
+      results?: any[];
+      error?: string;
     }
   | {
-      type: "RPC_ERROR";
-      id: number;
-      error: string;
+      type: "SAVE_GAME_RESULT";
+      success: boolean;
+      result?: any;
+      error?: string;
+    }
+  | {
+      type: "GET_RECENT_GAMES_RESULT";
+      success: boolean;
+      result?: any;
+      error?: string;
+    }
+  | {
+      type: "GET_GAME_RESULT";
+      success: boolean;
+      result?: any;
+      error?: string;
     };
 
 // Devvit message wrapper type

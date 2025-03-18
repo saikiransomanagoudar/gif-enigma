@@ -1,5 +1,5 @@
 export const colors = {
-    background: "#E8E5DA",    // Dark background
+    // background: "#E8E5DA",
     cardBackground: "#272729", // Slightly lighter background for cards
     primary: "#FF4500",       // Reddit orange
     secondary: "#0079D3",     // Reddit blue

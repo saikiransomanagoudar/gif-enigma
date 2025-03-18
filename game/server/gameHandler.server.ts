@@ -1,72 +1,18 @@
-import { Context } from '@devvit/public-api';
 import { saveGame, getRecentGames, getGame, cacheGifResults, getCachedGifResults } from './gameHandler';
 
-export async function saveGameRPC(params: {
-  word: string;
-  maskedWord: string;
-  questionText: string;
-  gifs: string[];
-  postToSubreddit?: boolean;
-}, context: Context) {
-  try {
-    const result = await saveGame(params, context);
-    return result;
-  } catch (error) {
-    console.error('Error in saveGameRPC:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function getRecentGamesRPC(params: { limit?: number }, context: Context) {
-  try {
-    const result = await getRecentGames(params, context);
-    return result;
-  } catch (error) {
-    console.error('Error in getRecentGamesRPC:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function getGameRPC(params: { gameId: string }, context: Context) {
-  try {
-    const result = await getGame(params, context);
-    return result;
-  } catch (error) {
-    console.error('Error in getGameRPC:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function cacheGifResultsRPC(params: { query: string; results: any[] }, context: Context) {
-  try {
-    const result = await cacheGifResults(params, context);
-    return result;
-  } catch (error) {
-    console.error('Error in cacheGifResultsRPC:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function getCachedGifResultsRPC(params: { query: string }, context: Context) {
-  try {
-    const result = await getCachedGifResults(params, context);
-    return result;
-  } catch (error) {
-    console.error('Error in getCachedGifResultsRPC:', error);
-    return { success: false, error: String(error) };
-  }
-}
+// Direct function exports - no RPC wrappers needed anymore
+export { saveGame, getRecentGames, getGame, cacheGifResults, getCachedGifResults };
 
 /**
  * Proxy function to handle external requests and avoid CORS issues
  * This allows the webview to make requests to external services through your server
  */
-export async function proxyRequestRPC(params: {
+export async function proxyRequest(params: {
   url: string;
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   headers?: Record<string, string>;
   body?: any;
-}, context: unknown) {
+}, _context: unknown) {
   try {
     const { url, method = 'GET', headers = {}, body } = params;
     

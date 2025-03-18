@@ -1,5 +1,49 @@
 import { Context, RichTextBuilder } from '@devvit/public-api';
 
+export async function proxyRequest(
+  params: { 
+    url: string; 
+    method?: "GET" | "POST" | "PUT" | "DELETE"; 
+    headers?: Record<string, string>; 
+    body?: any 
+  },
+  _context: Context
+) {
+  console.log(`Proxying request to ${params.url.replace(/key=([^&]+)/, 'key=API_KEY_HIDDEN')}`);
+  
+  try {
+    const fetchOptions: RequestInit = {
+      method: params.method || "GET",
+      headers: params.headers || {},
+    };
+    
+    // Only add body for non-GET requests
+    if (params.method !== "GET" && params.body) {
+      fetchOptions.body = JSON.stringify(params.body);
+    }
+    
+    console.log(`Making ${fetchOptions.method} request to ${params.url.replace(/key=([^&]+)/, 'key=API_KEY_HIDDEN')}`);
+    
+    const response = await fetch(params.url, fetchOptions);
+    
+    console.log(`Proxy response status: ${response.status}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Proxy request failed: ${response.status} - ${errorText}`);
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+    
+    const responseData = await response.json();
+    console.log(`Proxy request succeeded, received data with keys: ${Object.keys(responseData).join(', ')}`);
+    
+    return responseData;
+  } catch (error) {
+    console.error("Error in proxy request:", error);
+    throw error;
+  }
+}
+
 // Save a created game to Redis and optionally post to the subreddit
 export async function saveGame(
   params: {

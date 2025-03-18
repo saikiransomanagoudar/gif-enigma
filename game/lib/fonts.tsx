@@ -12,12 +12,12 @@ interface ChewyTextProps {
 export const ChewyText: React.FC<ChewyTextProps> = ({
   children,
   size = 1,
-  color = "#FF5722", // primary default color
+  color = "#FF5722",
   align = "center",
   glow = false,
   className = "",
 }) => {
-  const baseSize = 24; // base font size in pixels
+  const baseSize = 24;
   const fontSize = `${baseSize * size}px`;
   
   const styles: React.CSSProperties = {

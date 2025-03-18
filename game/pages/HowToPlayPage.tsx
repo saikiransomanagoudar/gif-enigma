@@ -10,7 +10,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
       style={{
         width: "100%",
         padding: "16px",
-        backgroundColor: colors.background,
+        // backgroundColor: colors.background,
         borderRadius: "8px",
         display: "flex",
         flexDirection: "column",
