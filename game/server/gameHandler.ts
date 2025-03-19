@@ -1,45 +1,49 @@
 import { Context, RichTextBuilder } from '@devvit/public-api';
 
 export async function proxyRequest(
-  params: { 
-    url: string; 
-    method?: "GET" | "POST" | "PUT" | "DELETE"; 
-    headers?: Record<string, string>; 
-    body?: any 
+  params: {
+    url: string;
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    headers?: Record<string, string>;
+    body?: any;
   },
   _context: Context
 ) {
   console.log(`Proxying request to ${params.url.replace(/key=([^&]+)/, 'key=API_KEY_HIDDEN')}`);
-  
+
   try {
     const fetchOptions: RequestInit = {
-      method: params.method || "GET",
+      method: params.method || 'GET',
       headers: params.headers || {},
     };
-    
+
     // Only add body for non-GET requests
-    if (params.method !== "GET" && params.body) {
+    if (params.method !== 'GET' && params.body) {
       fetchOptions.body = JSON.stringify(params.body);
     }
-    
-    console.log(`Making ${fetchOptions.method} request to ${params.url.replace(/key=([^&]+)/, 'key=API_KEY_HIDDEN')}`);
-    
+
+    console.log(
+      `Making ${fetchOptions.method} request to ${params.url.replace(/key=([^&]+)/, 'key=API_KEY_HIDDEN')}`
+    );
+
     const response = await fetch(params.url, fetchOptions);
-    
+
     console.log(`Proxy response status: ${response.status}`);
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Proxy request failed: ${response.status} - ${errorText}`);
       throw new Error(`Request failed with status ${response.status}`);
     }
-    
+
     const responseData = await response.json();
-    console.log(`Proxy request succeeded, received data with keys: ${Object.keys(responseData).join(', ')}`);
-    
+    console.log(
+      `Proxy request succeeded, received data with keys: ${Object.keys(responseData).join(', ')}`
+    );
+
     return responseData;
   } catch (error) {
-    console.error("Error in proxy request:", error);
+    console.error('Error in proxy request:', error);
     throw error;
   }
 }
@@ -51,12 +55,12 @@ export async function saveGame(
     maskedWord: string;
     questionText: string;
     gifs: string[];
-    postToSubreddit?: boolean;
+    // postToSubreddit?: boolean;
   },
   context: Context
 ) {
   try {
-    const { word, maskedWord, questionText, gifs, postToSubreddit = true } = params;
+    const { word, maskedWord, questionText, gifs } = params;
     const { redis, reddit, userId } = context;
 
     // Generate a unique game ID
@@ -75,48 +79,49 @@ export async function saveGame(
     // Add to active games sorted set with timestamp as score
     await redis.zAdd('activeGames', { score: Date.now(), member: gameId });
 
-    // Post to the PlayGIFEnigma subreddit if requested
+    // Post to the PlayGIFEnigma
     let postId = null;
-    if (postToSubreddit) {
-      try {
-        // Create post title
-        const postTitle = `GIF Enigma Challenge: ${maskedWord}`;
+    try {
+      // Create post title
+      const postTitle = `GIF Enigma Challenge: ${maskedWord}`;
 
-        // Create rich text content using RichTextBuilder
-        const richtext = new RichTextBuilder()
-          .heading({ level: 1 }, (h) => h.rawText('Can you solve this GIF Enigma?'))
-          .heading({ level: 2 }, (h) => h.rawText(`Challenge: ${questionText}`))
-          .heading({ level: 2 }, (h) => h.rawText(`Word to guess: ${maskedWord}`))
-          .paragraph((p) => p.text({ text: 'This challenge contains 4 GIFs that hint at the solution.' }))
-          .paragraph((p) => p.text({ text: `Game ID: ${gameId}` }))
-          .paragraph((p) => p.text({ text: 'Play the game by visiting our app or commenting with your guess below!' }));
+      // Create rich text content using RichTextBuilder
+      const richtext = new RichTextBuilder()
+        .heading({ level: 1 }, (h) => h.rawText('Can you solve this GIF Enigma?'))
+        .heading({ level: 2 }, (h) => h.rawText(`Challenge: ${questionText}`))
+        .heading({ level: 2 }, (h) => h.rawText(`Word to guess: ${maskedWord}`))
+        .paragraph((p) =>
+          p.text({ text: 'This challenge contains 4 GIFs that hint at the solution.' })
+        )
+        .paragraph((p) => p.text({ text: `Game ID: ${gameId}` }))
+        .paragraph((p) =>
+          p.text({ text: 'Play the game by visiting our app or commenting with your guess below!' })
+        );
 
-        // Create the post on Reddit using RichTextBuilder
-        const post = await reddit.submitPost({
-          subredditName: 'PlayGIFEnigma',
-          title: postTitle,
-          richtext: richtext,
+      const post = await reddit.submitPost({
+        subredditName: 'PlayGIFEnigma',
+        title: postTitle,
+        richtext: richtext,
+      });
+
+      if (post && post.id) {
+        postId = post.id;
+
+        // Store post ID with game data for reference
+        await redis.hSet(`game:${gameId}`, { redditPostId: postId });
+
+        // Add a comment with the GIFs for visibility
+        const gifsCommentText = gifs
+          .map((gif, index) => `**GIF ${index + 1}:** ${gif}`)
+          .join('\n\n');
+
+        await reddit.submitComment({
+          id: postId,
+          text: `## Game GIFs:\n\n${gifsCommentText}`,
         });
-
-        if (post && post.id) {
-          postId = post.id;
-
-          // Store post ID with game data for reference
-          await redis.hSet(`game:${gameId}`, { redditPostId: postId });
-
-          // Add a comment with the GIFs for visibility
-          const gifsCommentText = gifs
-            .map((gif, index) => `**GIF ${index + 1}:** ${gif}`)
-            .join('\n\n');
-
-          await reddit.submitComment({
-            id: postId,
-            text: `## Game GIFs:\n\n${gifsCommentText}`,
-          });
-        }
-      } catch (postError) {
-        console.error('Error posting to subreddit:', postError);
       }
+    } catch (postError) {
+      console.error('Error posting to subreddit:', postError);
     }
 
     return {

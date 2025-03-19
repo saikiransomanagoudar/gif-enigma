@@ -1,6 +1,6 @@
 import React from "react";
 
-interface ChewyTextProps {
+interface ComicTextProps {
   children: React.ReactNode;
   size?: number;
   color?: string;
@@ -9,7 +9,7 @@ interface ChewyTextProps {
   className?: string;
 }
 
-export const ChewyText: React.FC<ChewyTextProps> = ({
+export const ComicText: React.FC<ComicTextProps> = ({
   children,
   size = 1,
   color = "#FF5722",
@@ -21,7 +21,7 @@ export const ChewyText: React.FC<ChewyTextProps> = ({
   const fontSize = `${baseSize * size}px`;
   
   const styles: React.CSSProperties = {
-    fontFamily: "'Chewy', cursive",
+    fontFamily: "Comic Sans MS, Comic Sans, cursive",
     fontSize,
     color,
     textAlign: align,
@@ -40,4 +40,4 @@ export const ChewyText: React.FC<ChewyTextProps> = ({
   );
 };
 
-export default ChewyText;
+export default ComicText;

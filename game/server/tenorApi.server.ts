@@ -1,6 +1,5 @@
 import { Context } from '@devvit/public-api';
 
-// Define interfaces for Tenor API responses
 interface TenorGifFormat {
   url: string;
   dims: number[];
@@ -24,14 +23,9 @@ export interface TenorGifResult {
   url: string;
 }
 
-// Cache configuration
 const TENOR_CACHE_PREFIX = 'tenor_search:';
 const CACHE_TTL = 60 * 60;
 
-/**
- * Search for GIFs using the Tenor API
- * Using global fetch (enabled via Devvit.configure({ http: true }))
- */
 export async function searchTenorGifs(
   context: Context,
   query: string,
@@ -73,7 +67,6 @@ export async function searchTenorGifs(
 
     if (!apiKey) {
       console.error('❌ [DEBUG] Tenor API key not configured in app settings');
-      return generateMockTenorResults(query);
     }
 
     console.log(
@@ -200,55 +193,8 @@ export async function searchTenorGifs(
   } catch (error) {
     console.error('❌ [DEBUG] Error with API call:', error);
     console.log('🎭 [DEBUG] Falling back to mock results');
-    return generateMockTenorResults(query);
+    throw new Error('Error fetching GIFs from Tenor API');
   }
 }
 
-/**
- * Generate mock Tenor GIF results for development/testing
- */
-function generateMockTenorResults(query: string): TenorGifResult[] {
-  const mockResults: TenorGifResult[] = [];
 
-  for (let i = 0; i < 8; i++) {
-    mockResults.push({
-      id: `tenor-${i}-${Date.now()}`,
-      title: `${query} GIF ${i + 1}`,
-      media_formats: {
-        gif: {
-          url: `https://media.tenor.com/mock-gif-${i}.gif`,
-          dims: [480, 320],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-preview-${i}.gif`,
-          size: 1024000,
-        },
-        tinygif: {
-          url: `https://media.tenor.com/mock-tinygif-${i}.gif`,
-          dims: [220, 150],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-tinypreview-${i}.gif`,
-          size: 256000,
-        },
-        mediumgif: {
-          url: `https://media.tenor.com/mock-mediumgif-${i}.gif`,
-          dims: [320, 240],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-mediumpreview-${i}.gif`,
-          size: 512000,
-        },
-        nanogif: {
-          url: `https://media.tenor.com/mock-nanogif-${i}.gif`,
-          dims: [100, 75],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-nanopreview-${i}.gif`,
-          size: 128000,
-        },
-      },
-      content_description: `${query} example ${i + 1}`,
-      created: Date.now(),
-      hasaudio: false,
-      url: `https://tenor.com/view/mock-${i}`,
-    });
-  }
-  return mockResults;
-}

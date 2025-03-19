@@ -16,8 +16,11 @@ export interface TenorGifResult {
   id: string;
   title: string;
   media_formats: {
-    gif: TenorGifFormat;
-    tinygif: TenorGifFormat;
+    gif?: TenorGifFormat;
+    tinygif?: TenorGifFormat;
+    mediumgif?: TenorGifFormat;
+    nanogif?: TenorGifFormat;
+    [key: string]: TenorGifFormat | undefined;
   };
   content_description: string;
   created: number;
@@ -48,7 +51,10 @@ export async function searchTenorGifs(
   params: TenorSearchParams,
   context: Context
 ): Promise<TenorGifResult[]> {
-  const { query, limit = 8, contentfilter = "off", media_filter = "minimal" } = params;
+  // Set the contentfilter and media_filter to match the server's configuration
+  const { query, limit = 8 } = params;
+  const contentfilter = "high";
+  const media_filter = "gif,tinygif,mediumgif,nanogif";
 
   try {
     // Attempt to retrieve cached results first
@@ -61,10 +67,9 @@ export async function searchTenorGifs(
     const apiKey = await context.settings.get('tenor-api-key');
     if (!apiKey) {
       console.error('Tenor API key not configured. Please set it in the app settings.');
-      return generateMockTenorResults(query);
     }
 
-    // Construct the search URL with query parameters
+    // Construct the search URL with query parameters, matching the server version
     const searchUrl = `${TENOR_API_BASE_URL}/search?q=${encodeURIComponent(query)}&key=${apiKey}&limit=${limit}&contentfilter=${contentfilter}&media_filter=${media_filter}`;
     const response = await fetch(searchUrl);
     if (!response.ok) {
@@ -87,7 +92,7 @@ export async function searchTenorGifs(
     return [];
   } catch (error) {
     console.error('Error searching Tenor GIFs:', error);
-    return generateMockTenorResults(query);
+    throw new Error('Error searching Tenor GIFs');
   }
 }
 
@@ -146,38 +151,4 @@ export async function getCachedTenorResults(
     console.error('Error getting cached Tenor results:', error);
     return { success: false, error: String(error) };
   }
-}
-
-/**
- * Generate mock Tenor GIF results for development/testing.
- */
-export function generateMockTenorResults(query: string): TenorGifResult[] {
-  const mockResults: TenorGifResult[] = [];
-  for (let i = 0; i < 8; i++) {
-    mockResults.push({
-      id: `tenor-${i}-${Date.now()}`,
-      title: `${query} GIF ${i + 1}`,
-      media_formats: {
-        gif: {
-          url: `https://media.tenor.com/mock-gif-${i}.gif`,
-          dims: [480, 320],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-preview-${i}.gif`,
-          size: 1024000,
-        },
-        tinygif: {
-          url: `https://media.tenor.com/mock-tinygif-${i}.gif`,
-          dims: [220, 150],
-          duration: 0,
-          preview: `https://media.tenor.com/mock-tinypreview-${i}.gif`,
-          size: 256000,
-        },
-      },
-      content_description: `${query} example ${i + 1}`,
-      created: Date.now(),
-      hasaudio: false,
-      url: `https://tenor.com/view/mock-${i}`,
-    });
-  }
-  return mockResults;
 }
