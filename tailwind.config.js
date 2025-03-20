@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
     content: ["./game/**/*.{js,jsx,ts,tsx}"],
+    darkMode: 'class',
     theme: {
       extend: {
         keyframes: {

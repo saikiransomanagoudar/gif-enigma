@@ -1,6 +1,7 @@
 import React from "react";
+import useMediaQuery from "./useMediaQuery";
 
-interface ChewyTextProps {
+interface ComicTextProps {
   children: React.ReactNode;
   size?: number;
   color?: string;
@@ -9,7 +10,7 @@ interface ChewyTextProps {
   className?: string;
 }
 
-export const ChewyText: React.FC<ChewyTextProps> = ({
+export const ComicText: React.FC<ComicTextProps> = ({
   children,
   size = 1,
   color = "#FF5722",
@@ -17,8 +18,10 @@ export const ChewyText: React.FC<ChewyTextProps> = ({
   glow = false,
   className = "",
 }) => {
+  const isMobile = useMediaQuery('(max-width: 640px)');
+  const adjustedSize = isMobile ? size * 0.8 : size;
   const baseSize = 24;
-  const fontSize = `${baseSize * size}px`;
+  const fontSize = `${baseSize * adjustedSize}px`;
   
   const styles: React.CSSProperties = {
     fontFamily: "Comic Sans MS, Comic Sans, cursive",
@@ -34,10 +37,10 @@ export const ChewyText: React.FC<ChewyTextProps> = ({
   };
 
   return (
-    <div style={styles} className={`chewy-text ${className}`}>
+    <div style={styles} className={`comic-text ${className}`}>
       {children}
     </div>
   );
 };
 
-export default ChewyText;
+export default ComicText;

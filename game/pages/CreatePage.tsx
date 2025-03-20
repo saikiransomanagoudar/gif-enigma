@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { colors } from '../lib/styles';
-import { ChewyText } from '../lib/fonts'; // <-- Renamed from ComicText
+import { ComicText } from '../lib/fonts'; // <-- Renamed from ComicText
 import { NavigationProps } from '../App';
 import { Modal } from '../components/Modal';
 import { CategoryType } from './CategoryPage';
@@ -113,6 +113,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [isCreating, setIsCreating] = useState<boolean>(false);
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
 
   useEffect(() => {
     if (category) {
@@ -185,7 +186,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setSecretInput('');
         }
       }
-      
+
       if (msg.type === 'GET_GEMINI_SYNONYMS_RESULT') {
         if (msg.success && Array.isArray(msg.result)) {
           setSynonyms(msg.result);
@@ -194,7 +195,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setSynonyms([]);
         }
       }
-      
 
       // GIF search results
       if (msg.type === 'SEARCH_TENOR_GIFS_RESULT' || msg.type === 'SEARCH_GIFS_RESULT') {
@@ -285,7 +285,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setShowSearchInput(false);
       setSelectedGifInModal(null);
       setGifs([]);
-      setMessage('GIF selected successfully!');
       setMessageType('success');
     }
   };
@@ -359,22 +358,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const renderGifGrid = () => (
     <div className="mb-4">
       <div className="mb-2 flex items-center justify-between">
-        <ChewyText size={0.8} color={colors.textPrimary}>
+        <ComicText size={0.8} color={colors.primary}>
           GIF Clues
-        </ChewyText>
+        </ComicText>
       </div>
       <div className="grid grid-cols-2 gap-5">
         {Array.from({ length: 4 }).map((_, index) => {
           const gif = selectedGifs[index];
-          // Use the first synonym from the Gemini API results for default search
           const defaultSynonym = synonyms[index]?.[0] || '';
 
           return (
             <div
               key={index}
-              className="relative flex items-center justify-center overflow-hidden rounded-xl transition-all duration-300 w-40 h-40 sm:w-48 sm:h-24 md:w-56 md:h-56 lg:w-60 lg:h-60 xl:w-64 xl:h-64 2xl:w-64 2xl:h-64 border-2 border-gray-500 bg-gray-800"
+              className={`relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-24 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
               style={{
-                backgroundColor: colors.cardBackground,
                 border: gif ? 'none' : `3px solid ${colors.secondary}`,
               }}
             >
@@ -405,9 +402,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   className="flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 hover:scale-105"
                 >
                   <div className="mb-1 text-2xl">➕</div>
-                  <ChewyText size={0.6} color={colors.textSecondary}>
+                  <ComicText size={0.6} color={colors.textSecondary}>
                     {defaultSynonym ? `Hint: ${defaultSynonym}` : `Add GIF #${index + 1}`}
-                  </ChewyText>
+                  </ComicText>
                 </button>
               )}
             </div>
@@ -439,34 +436,24 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           onClick={() => setInputType('word')}
           className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
         >
-          <ChewyText size={0.6} color={inputType === 'word' ? 'white' : colors.textSecondary}>
+          <ComicText size={0.6} color={inputType === 'word' ? 'white' : colors.textSecondary}>
             Word
-          </ChewyText>
+          </ComicText>
         </button>
         <button
           onClick={() => setInputType('phrase')}
           className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
         >
-          <ChewyText size={0.6} color={inputType === 'phrase' ? 'white' : colors.textSecondary}>
+          <ComicText size={0.6} color={inputType === 'phrase' ? 'white' : colors.textSecondary}>
             Phrase
-          </ChewyText>
+          </ComicText>
         </button>
       </div>
     </div>
   );
 
-  const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
-
-  useEffect(() => {
-    if (category) {
-      setCurrentCategory(category);
-    }
-    fetchRecommendations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCategory, inputType]);
-
   return (
-    <div className="container mx-auto w-full px-2 sm:px-4 md:px-6 lg:px-8">
+    <div className="flex min-h-screen flex-col">
       <Modal
         title="Select GIF of your choice"
         isOpen={showSearchInput}
@@ -491,7 +478,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               <div className="mt-2 text-center text-sm text-blue-400">Searching for GIFs...</div>
             </div>
           )}
-
           {!isSearching && gifs.length > 0 && (
             <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
               <div className="grid grid-cols-2 gap-2">
@@ -506,7 +492,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         selectedGifInModal?.id === gif.id
                           ? 'border-blue-500'
                           : 'border-gray-700 hover:border-gray-500'
-                      } `}
+                      }`}
                     >
                       <div className="relative h-24 w-full bg-black">
                         <img
@@ -529,10 +515,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               </div>
             </div>
           )}
-
           {selectedGifInModal && (
             <div className="mt-2 rounded-lg border border-blue-500 bg-gray-800 p-2">
-              <div className="mb-1 text-center text-xs text-white">Selected GIF:</div>
+              <ComicText size={0.6} color="#fff" className="mb-1 text-center">
+                Selected GIF:
+              </ComicText>
               <div className="flex justify-center rounded bg-black p-1">
                 <img
                   src={getGifUrl(selectedGifInModal)}
@@ -549,28 +536,30 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         </div>
       </Modal>
 
-      <div className="mx-auto w-full p-4">
-        <div className="relative mb-6 flex items-center">
-          <button
-            onClick={() => onNavigate('category')}
-            className="absolute left-0 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-            style={{ backgroundColor: colors.primary }}
-          >
-            <span className="mr-1 text-sm text-white">👈</span>
-            <ChewyText size={0.5} color="white">
-              Back
-            </ChewyText>
-          </button>
-          <div className="flex w-full flex-col items-center justify-center">
-            <ChewyText size={1.2} color={colors.primary}>
-              Create GIF Enigma
-            </ChewyText>
-          </div>
+      {/* Header */}
+      <header className="relative mb-2 p-2">
+        <button
+          onClick={() => onNavigate('category')}
+          className="absolute left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+          style={{ backgroundColor: colors.primary }}
+        >
+          <span className="mr-1 text-sm text-white">👈</span>
+          <ComicText size={0.5} color="white">
+            Back
+          </ComicText>
+        </button>
+        <div className="flex w-full flex-col items-center justify-center">
+          <ComicText size={1.2} color={colors.primary}>
+            Create GIF Enigma
+          </ComicText>
         </div>
+      </header>
 
+      {/* Main Content */}
+      <main className="flex flex-1 flex-col items-center px-4">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center">
           {/* Row 1: Category and Word/Phrase toggle */}
-          <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-2">
+          <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-1">
             <div className="flex items-center gap-1">
               <span className="text-base">
                 {currentCategory === 'Movies'
@@ -581,39 +570,56 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       ? '📚'
                       : '🌐'}
               </span>
-              <ChewyText size={0.6} color={colors.textPrimary}>
-                Category: {currentCategory}
-              </ChewyText>
+              <ComicText size={0.6} color={colors.textPrimary}>
+                Category: <span style={{ fontWeight: 'bold' }}>{currentCategory}</span>
+              </ComicText>
             </div>
-            <div className={disableSecretChange ? 'pointer-events-none opacity-60' : ''}>
-              <InputTypeToggle />
+            <div className="group relative">
+              <div className={disableSecretChange ? 'pointer-events-none opacity-60' : ''}>
+                <InputTypeToggle />
+              </div>
+              {disableSecretChange && (
+                <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                  Clear GIFs to change word/phrase
+                </div>
+              )}
             </div>
           </div>
 
           <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2">
             <div>
               {secretInput ? (
-                <ChewyText size={0.7} color={colors.primary}>
-                  Secret {inputType === 'word' ? 'Word' : 'Phrase'}: {secretInput.toUpperCase()}
-                </ChewyText>
+                <ComicText size={0.7} color={colors.primary}>
+                  Secret {inputType === 'word' ? 'Word' : 'Phrase'}:{' '}
+                  <span style={{ color: 'yellow', fontWeight: 'bold' }}>
+                    {secretInput.toUpperCase()}
+                  </span>
+                </ComicText>
               ) : (
-                <ChewyText size={0.6} color={colors.textSecondary}>
+                <ComicText size={0.6} color={colors.textSecondary}>
                   Loading...
-                </ChewyText>
+                </ComicText>
               )}
             </div>
+          </div>
+          <div className="group relative items-left justify-center">
             <button
               onClick={getNextRecommendation}
               disabled={disableSecretChange}
-              className={`rounded-full px-3 py-1 text-white hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
+              className={`rounded-full px-3 py-1 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
                 disableSecretChange ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
               }`}
               style={{ backgroundColor: colors.secondary }}
             >
-              <ChewyText size={0.6} color="#fff">
+              <ComicText size={0.6} color="#fff">
                 Try a different one
-              </ChewyText>
+              </ComicText>
             </button>
+            {disableSecretChange && (
+              <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                Clear GIFs to pick another word/phrase
+              </div>
+            )}
           </div>
 
           {renderGifGrid()}
@@ -637,18 +643,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 }`,
               }}
             >
-              <ChewyText
-                size={0.7}
-                color={
-                  messageType === 'success'
-                    ? 'rgb(74, 222, 128)'
-                    : messageType === 'error'
-                      ? 'rgb(248, 113, 113)'
-                      : 'rgb(59, 130, 246)'
-                }
-              >
-                {message}
-              </ChewyText>
+              {/* If you want text here, add it. Otherwise, it's an empty box. */}
             </div>
           )}
 
@@ -658,20 +653,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               disabled={
                 isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
               }
-              className={`rounded-xl border-none px-4 py-3 transition-all duration-300 ${
+              className={`rounded-xl border-none px-4 py-2 transition-all duration-300 ${
                 isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
                   ? 'cursor-not-allowed opacity-60'
                   : 'hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
               }`}
               style={{ backgroundColor: colors.primary }}
             >
-              <ChewyText size={0.8} color="white">
+              <ComicText size={0.8} color="white">
                 {isCreating ? '🔄 Creating...' : '🎮 Create GIF Enigma'}
-              </ChewyText>
+              </ComicText>
             </button>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 };

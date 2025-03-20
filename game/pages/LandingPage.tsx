@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-// import { ChewyText } from '../lib/fonts';
+// import { ComicText } from '../lib/fonts';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [username, setUsername] = useState<string>('');

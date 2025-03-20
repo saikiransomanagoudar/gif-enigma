@@ -1,4 +1,12 @@
 @import 'tailwindcss';
-.chewy-text {
-    font-family: 'Chewy', cursive;
-  }
+
+@font-face {
+  font-family: 'Comic Sans MS';
+  src: url('/fonts/ComicSansMS.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.comic-text {
+  font-family: 'Comic Sans MS', cursive;
+}
