@@ -3,6 +3,7 @@ import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js
 import { Preview } from './components/Preview.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
 import { saveGame, getRecentGames, getGame } from '../game/server/gameHandler.server.js';
+import { fetchGeminiRecommendations, fetchGeminiSynonyms } from '../game/server/geminiApi.server.js';
 
 Devvit.addSettings([
   {
@@ -19,6 +20,13 @@ Devvit.addSettings([
     isSecret: true,
     scope: 'app',
   },
+  {
+    name: 'gemini-api-key',
+    label: 'Gemini API Key',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  }
 ]);
 
 Devvit.configure({
@@ -47,7 +55,45 @@ Devvit.addCustomPostType({
               },
             });
             break;
-
+            case 'GET_GEMINI_RECOMMENDATIONS': {
+              try {
+                const { category, inputType, count } = event.data;
+                const result = await fetchGeminiRecommendations(context, category, inputType, count);
+                postMessage({
+                  type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
+                  success: result.success,
+                  result: result.recommendations,
+                  error: result.error
+                });
+              } catch (error) {
+                postMessage({
+                  type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
+                  success: false,
+                  error: String(error)
+                });
+              }
+              break;
+            }
+  
+            case 'GET_GEMINI_SYNONYMS': {
+              try {
+                const { word } = event.data;
+                const result = await fetchGeminiSynonyms(context, word);
+                postMessage({
+                  type: 'GET_GEMINI_SYNONYMS_RESULT',
+                  success: result.success,
+                  result: result.synonyms,
+                  error: result.error
+                });
+              } catch (error) {
+                postMessage({
+                  type: 'GET_GEMINI_SYNONYMS_RESULT',
+                  success: false,
+                  error: String(error)
+                });
+              }
+              break;
+            }
           case 'SEARCH_TENOR_GIFS':
             try {
               console.log('Searching Tenor GIFs for:', event.data.query);

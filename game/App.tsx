@@ -3,8 +3,9 @@ import { LandingPage } from './pages/LandingPage';
 import { CreatePage } from './pages/CreatePage';
 import { HowToPlayPage } from './pages/HowToPlayPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
+import { CategoryPage, CategoryType } from './pages/CategoryPage';
 
-type PageType = 'landing' | 'create' | 'howToPlay' | 'leaderboard';
+type PageType = 'landing' | 'create' | 'category' | 'howToPlay' | 'leaderboard';
 
 // consistent props interface for all pages
 export interface NavigationProps {
@@ -37,6 +38,7 @@ type WebViewMessage =
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('landing');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType>('General');
   const [userData, setUserData] = useState<{ username: string; currentCounter: number } | null>(null);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -95,6 +97,12 @@ function App() {
     });
   };
 
+  // Handle category selection and navigate to create page
+  const handleCategorySelect = (category: CategoryType) => {
+    setSelectedCategory(category);
+    setCurrentPage('create');
+  };
+
   const renderPage = () => {
     // Pass the Devvit communication functions and data to your pages
     const pageProps = {
@@ -109,8 +117,10 @@ function App() {
     switch(currentPage) {
       case 'landing':
         return <LandingPage {...pageProps} />;
+      case 'category':
+        return <CategoryPage onNavigate={setCurrentPage} onCategorySelect={handleCategorySelect} />;
       case 'create':
-        return <CreatePage context={undefined} {...pageProps} />;
+        return <CreatePage context={undefined} {...pageProps} category={selectedCategory} />;
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':

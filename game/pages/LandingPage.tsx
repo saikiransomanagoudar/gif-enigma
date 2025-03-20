@@ -115,35 +115,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           alignItems: 'center'
         }}
       >
-        {/* <button
-          style={{
-            backgroundColor: colors.primary,
-            borderRadius: '80px',
-            padding: '16px',
-            width: '18%',
-            color: 'white',
-            fontSize: '18px',
-            cursor: 'pointer'
-          }}
-          // onClick={() => onNavigate('game')}
-        >
-           PLAY
-        </button> */}
-        {/* <button
-          style={{
-            backgroundColor:  colors.primary,
-            borderRadius: '80px',
-            padding: '16px',
-            width: '18%',
-            border: `0px solid ${colors.border}`,
-            color: 'white',
-            fontSize: '18px',
-            cursor: 'pointer'
-          }}
-          onClick={() => onNavigate('create')}
-        >
-          🛠️ CREATE
-        </button> */}
       </div>
       <div
         className='rounded-lg'
@@ -165,7 +136,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </img>
         <img src="/landing-page/lets-build.gif"
         className='cursor-pointer'
-        onClick={() => onNavigate('create')}
+        onClick={() => onNavigate('category')} // Changed from 'create' to 'category'
         style={{
           width:'17%',
           padding:'10px'

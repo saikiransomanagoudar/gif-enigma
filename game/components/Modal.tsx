@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts';
+import { ChewyText } from '../lib/fonts';
 
 interface ModalProps {
   title: string;
@@ -88,9 +88,9 @@ export const Modal: React.FC<ModalProps> = ({
           }}
         >
           <div className="mb-3 flex items-center justify-between">
-            <ComicText size={0.8} color={colors.textPrimary}>
+            <ChewyText size={0.8} color={colors.textPrimary}>
               {title}
-            </ComicText>
+            </ChewyText>
             <button
               onClick={handleClose}
               className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-gray-700 text-white transition-all duration-200 hover:rotate-90 hover:bg-gray-600"
@@ -105,9 +105,9 @@ export const Modal: React.FC<ModalProps> = ({
               className="cursor-pointer rounded-full px-3 py-1.5 transition-all duration-200 hover:scale-105"
               style={{ backgroundColor: colors.primary }}
             >
-              <ComicText size={0.5} color="white">
+              <ChewyText size={0.5} color="white">
                 Confirm
-              </ComicText>
+              </ChewyText>
             </button>
           </div>
         </div>
