@@ -126,7 +126,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             fontSize: '18px',
             cursor: 'pointer'
           }}
-          // onClick={() => onNavigate('game')}
+          onClick={() => onNavigate('game')}
         >
            PLAY
         </button>
