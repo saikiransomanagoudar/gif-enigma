@@ -1,17 +1,33 @@
 import { Devvit, Context, useWebView } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { Preview } from './components/Preview.js';
+import { searchTenorGifs } from '../game/server/tenorApi.server.js';
+import { saveGame, getRecentGames, getGame } from '../game/server/gameHandler.server.js';
+import { fetchGeminiRecommendations, fetchGeminiSynonyms } from '../game/server/geminiApi.server.js';
 
-import {
-  saveGameRPC,
-  getRecentGamesRPC,
-  getGameRPC,
-  cacheGifResultsRPC,
-  getCachedGifResultsRPC,
-  proxyRequestRPC,
-} from '../game/server/gameHandler.server.js';
-
-import { redditSearchEnhancedRPC } from '../game/server/redditSearch.server.js';
+Devvit.addSettings([
+  {
+    name: 'tenor-api-key',
+    label: 'Tenor API Key',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  },
+  {
+    name: 'oauth-client-id',
+    label: 'OAuth Client ID',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  },
+  {
+    name: 'gemini-api-key',
+    label: 'Gemini API Key',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  }
+]);
 
 Devvit.configure({
   redditAPI: true,
@@ -22,90 +38,186 @@ Devvit.configure({
   realtime: true,
 });
 
-// Custom post component
 Devvit.addCustomPostType({
-  name: 'GIF Enigma',
+  name: 'GIF Enigma Game',
   height: 'tall',
   render: (context) => {
-    const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
-      url: 'index.html',
-      onMessage: async (message, { postMessage }) => {
-        console.log('Received message', message);
-
-        if (message.type === 'RPC_CALL') {
-          // Handle RPC calls
-          try {
-            const handlers = {
-              saveGameRPC: (params: { word: string; maskedWord: string; questionText: string; gifs: string[]; postToSubreddit?: boolean; }) => saveGameRPC(params, context),
-              getRecentGamesRPC: (params: { limit?: number; }) => getRecentGamesRPC(params, context),
-              getGameRPC: (params: { gameId: string; }) => getGameRPC(params, context),
-              cacheGifResultsRPC: (params: { query: string; results: any[]; }) => cacheGifResultsRPC(params, context),
-              getCachedGifResultsRPC: (params: { query: string; }) => getCachedGifResultsRPC(params, context),
-              redditSearchEnhancedRPC: (params: any) => redditSearchEnhancedRPC(params, context),
-              proxyRequestRPC: (params: { url: string; method?: "GET" | "POST" | "PUT" | "DELETE"; headers?: Record<string, string>; body?: any; }) => proxyRequestRPC(params, context),
-            };
-
-            const handler = handlers[message.functionName as keyof typeof handlers];
-            if (!handler) {
-              throw new Error(`Unknown RPC function: ${message.functionName}`);
-            }
-
-            const result = await handler(message.params);
-
-            postMessage({
-              type: 'RPC_RESPONSE',
-              id: message.id,
-              result,
-            });
-          } catch (error) {
-            postMessage({
-              type: 'RPC_ERROR',
-              id: message.id,
-              error: String(error),
-            });
-          }
-          return;
-        }
-        switch (message.type) {
+    const { mount } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
+      onMessage: async (event, { postMessage }) => {
+        console.log('Received message from web app:', event.type);
+        
+        switch (event.type) {
           case 'INIT':
-          case 'webViewReady':
-            // Send initial data to web view
             postMessage({
               type: 'INIT_RESPONSE',
               payload: {
-                postId: context.postId || 'unknown',
-              },
-            });
-
-            // Also send any other data your app needs
-            postMessage({
-              type: 'initialData',
-              data: {
-                username: 'testUser',
-                currentCounter: 42,
+                postId: context.postId || '',
               },
             });
             break;
+            case 'GET_GEMINI_RECOMMENDATIONS': {
+              try {
+                const { category, inputType, count } = event.data;
+                const result = await fetchGeminiRecommendations(context, category, inputType, count);
+                postMessage({
+                  type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
+                  success: result.success,
+                  result: result.recommendations,
+                  error: result.error
+                });
+              } catch (error) {
+                postMessage({
+                  type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
+                  success: false,
+                  error: String(error)
+                });
+              }
+              break;
+            }
+  
+            case 'GET_GEMINI_SYNONYMS': {
+              try {
+                const { word } = event.data;
+                const result = await fetchGeminiSynonyms(context, word);
+                postMessage({
+                  type: 'GET_GEMINI_SYNONYMS_RESULT',
+                  success: result.success,
+                  result: result.synonyms,
+                  error: result.error
+                });
+              } catch (error) {
+                postMessage({
+                  type: 'GET_GEMINI_SYNONYMS_RESULT',
+                  success: false,
+                  error: String(error)
+                });
+              }
+              break;
+            }
+          case 'SEARCH_TENOR_GIFS':
+            try {
+              console.log('Searching Tenor GIFs for:', event.data.query);
+              const gifResults = await searchTenorGifs(
+                context,
+                event.data.query,
+                event.data.limit || 8
+              );
+              
+              postMessage({
+                type: 'SEARCH_TENOR_GIFS_RESULT',
+                success: true,
+                results: gifResults
+              });
+            } catch (error) {
+              console.error('Error searching Tenor GIFs:', error);
+              postMessage({
+                type: 'SEARCH_TENOR_GIFS_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
 
-          case 'setCounter':
-            console.log('New counter from web view:', message.data.newCounter);
-            // Handle counter updates if needed
+          case 'SEARCH_GIFS':
+            try {
+              console.log('Searching GIFs for:', event.data.query);
+              const gifResults = await searchTenorGifs(
+                context,
+                event.data.query,
+                event.data.limit || 8
+              );
+              
+              postMessage({
+                type: 'SEARCH_GIFS_RESULT',
+                success: true,
+                results: gifResults
+              });
+            } catch (error) {
+              console.error('Error searching GIFs:', error);
+              postMessage({
+                type: 'SEARCH_GIFS_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
+
+          case 'SAVE_GAME':
+            try {
+              console.log('Saving game:', event.data);
+              const result = await saveGame(event.data, context);
+              
+              postMessage({
+                type: 'SAVE_GAME_RESULT',
+                success: true,
+                result
+              });
+            } catch (error) {
+              console.error('Error saving game:', error);
+              postMessage({
+                type: 'SAVE_GAME_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
+
+          case 'GET_RECENT_GAMES':
+            try {
+              console.log('Getting recent games');
+              const result = await getRecentGames(event.data || {}, context);
+              
+              postMessage({
+                type: 'GET_RECENT_GAMES_RESULT',
+                success: true,
+                result
+              });
+            } catch (error) {
+              console.error('Error getting recent games:', error);
+              postMessage({
+                type: 'GET_RECENT_GAMES_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
+
+          case 'GET_GAME':
+            try {
+              console.log('Getting game:', event.data.gameId);
+              const result = await getGame(event.data, context);
+              
+              postMessage({
+                type: 'GET_GAME_RESULT',
+                success: true,
+                result
+              });
+            } catch (error) {
+              console.error('Error getting game:', error);
+              postMessage({
+                type: 'GET_GAME_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
             break;
 
           default:
-            console.error('Unknown message type', message);
+            console.error('Unknown message type', event);
             break;
         }
-      },
-      onUnmount: () => {
-        console.log('Web view closed');
       },
     });
 
     return (
       <vstack height="100%" width="100%" alignment="center middle">
-        <text style="heading">GIF Enigma Web View</text>
-        <button onPress={mount}>Launch</button>
+        <button
+          onPress={() => {
+            mount();
+          }}
+        >
+          Play GIF Enigma
+        </button>
       </vstack>
     );
   },
@@ -131,7 +243,7 @@ Devvit.addMenuItem({
 });
 
 export function getAppVersion(context: Context): string {
-  return context.appVersion || '0.0.4.34';
+  return context.appVersion || '0.1.0.0';
 }
 
 export default Devvit;

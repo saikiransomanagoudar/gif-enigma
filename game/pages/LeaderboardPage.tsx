@@ -35,7 +35,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
       style={{
         width: "100%",
         padding: "16px",
-        backgroundColor: colors.background,
+        // backgroundColor: colors.background,
         borderRadius: "8px",
         display: "flex",
         flexDirection: "column",
@@ -107,7 +107,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
                     style={{
                       display: "flex",
                       flexDirection: "row",
-                      backgroundColor: index === 0 ? colors.primary + "22" : colors.background,
+                      // backgroundColor: index === 0 ? colors.primary + "22" : colors.background,
                       borderRadius: "8px",
                       padding: "16px",
                       alignItems: "center",

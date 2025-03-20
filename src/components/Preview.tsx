@@ -6,7 +6,6 @@ export const Preview: Devvit.BlockComponent<{ text?: string }> = ({ text = 'Load
       <vstack width={'100%'} height={'100%'} alignment="center middle">
         <image
           url="loading.gif"
-          description="Loading..."
           height={'140px'}
           width={'140px'}
           imageHeight={'240px'}
