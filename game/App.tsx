@@ -5,7 +5,9 @@ import { HowToPlayPage } from './pages/HowToPlayPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { CategoryPage, CategoryType } from './pages/CategoryPage';
 
-type PageType = 'landing' | 'create' | 'category' | 'howToPlay' | 'leaderboard';
+import GamePage from './pages/GamePage';
+type PageType = 'landing' | 'create' | 'category' | 'howToPlay' | 'leaderboard' | 'game';
+
 
 // consistent props interface for all pages
 export interface NavigationProps {
@@ -125,6 +127,8 @@ function App() {
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
         return <LeaderboardPage onNavigate={setCurrentPage} />;
+      case 'game':
+          return <GamePage onNavigate={setCurrentPage} />;  
       default:
         return <LandingPage {...pageProps} />;
     }
