@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
 import { ComicText } from '../lib/fonts';
 import { NavigationProps } from '../App';
 import { Modal } from '../components/Modal';
 import { CategoryType } from './CategoryPage';
+import * as transitions from '../../src/utils/transitions';
 
 export interface TenorGifResult {
   id: string;
@@ -106,11 +107,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   // UI states
   const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
+
+  // @ts-ignore
   const [message, setMessage] = useState<string>('');
+  // @ts-ignore
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   // const [uploadedGifUrls, setUploadedGifUrls] = useState<{ [gifId: string]: string }>({});
+  const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
+
+  // Add refs for elements to animate
+  const headerRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  const gifGridRef = useRef<HTMLDivElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
@@ -156,6 +169,52 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   useEffect(() => {
+    // Animation setup
+    setIsPageLoaded(true);
+
+    if (titleRef.current) {
+      transitions.animateElement(titleRef.current, {
+        duration: 500,
+        delay: 150,
+        direction: 'up',
+      });
+    }
+
+    // Animate header elements
+    if (headerRef.current) {
+      transitions.fadeIn(headerRef.current, {
+        duration: 400,
+        direction: 'up',
+        distance: 'sm',
+      });
+    }
+
+    // Animate main content with delay
+    if (mainContentRef.current) {
+      transitions.animateElement(mainContentRef.current, {
+        duration: 500,
+        delay: 200,
+        direction: 'up',
+      });
+    }
+
+    // Animate GIF grid with longer delay
+    if (gifGridRef.current) {
+      transitions.animateElement(gifGridRef.current, {
+        duration: 500,
+        delay: 400,
+        direction: 'up',
+      });
+    }
+
+    // Animate submit button last
+    if (submitButtonRef.current) {
+      transitions.animateElement(submitButtonRef.current, {
+        duration: 500,
+        delay: 600,
+        direction: 'up',
+      });
+    }
     const handleMessage = (event: MessageEvent) => {
       let msg = event.data;
       if (msg?.type === 'devvit-message' && msg.data?.message) {
@@ -222,14 +281,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (msg.type === 'SAVE_GAME_RESULT') {
         setIsCreating(false);
         if (msg.success && msg.result && msg.result.success) {
-          const successMessage = "Game created successfully!";
-          setMessage(successMessage);
-          setMessageType('success');
-          // Reset
-          setSecretInput('');
-          setSelectedGifs([null, null, null, null]);
-          setGifs([]);
-          setSearchTerm('');
+          setShowSuccessModal(true);
         } else {
           setMessage(`Failed to create game: ${msg.error || msg.result?.error || 'Unknown error'}`);
           setMessageType('error');
@@ -293,6 +345,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   //     '*'
   //   );
   // };
+
+  // Back button click handler
+  const handleBackClick = () => {
+    // Fade out elements before navigating
+    if (headerRef.current) {
+      transitions.fadeOut(headerRef.current, { duration: 300 });
+    }
+    if (mainContentRef.current) {
+      transitions.fadeOut(mainContentRef.current, { duration: 300, delay: 100 });
+    }
+
+    // Navigate after animations
+    setTimeout(() => {
+      onNavigate('category');
+    }, 400);
+  };
 
   // Select a GIF for a slot
   const selectGifForSlot = (gif: TenorGifResult) => {
@@ -381,7 +449,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const renderGifGrid = () => (
-    <div className="mb-4">
+    <div ref={gifGridRef} className="optacity-0 mb-4">
       <div className="mb-2 flex items-center justify-between">
         <ComicText size={0.8} color={colors.primary}>
           GIF Clues
@@ -478,17 +546,32 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   );
 
   return (
-    <div className="flex min-h-screen flex-col items-center p-5">
+    <div
+      className="flex min-h-screen flex-col items-center p-5 transition-opacity duration-500"
+      style={{ opacity: isPageLoaded ? 1 : 0 }}
+    >
       <Modal
         title="Select GIF of your choice"
         isOpen={showSearchInput}
         onClose={() => {
+          transitions.fadeOut(document.querySelector('.modal-content'), {
+            duration: 300,
+            onComplete: () => {
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
+              setShowSearchInput(false);
+              setIsSearching(false);
+            },
+          });
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
           }
           setShowSearchInput(false);
           setIsSearching(false);
+          setSelectedGifInModal(null);
         }}
         onConfirm={() => {
           if (selectedGifInModal) {
@@ -563,9 +646,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       </Modal>
 
       {/* Header */}
-      <header className="mb-5 flex w-full max-w-4xl items-center justify-between">
+      <header
+        ref={headerRef}
+        className="optacity-0 mb-5 flex w-full max-w-4xl items-center justify-between"
+      >
         <button
-          onClick={() => onNavigate('category')}
+          onClick={handleBackClick}
           className="left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
           style={{ backgroundColor: colors.primary }}
         >
@@ -575,14 +661,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           </ComicText>
         </button>
         <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
-          <ComicText size={1.2} color={colors.primary}>
-            Create GIF Enigma
-          </ComicText>
+          <div
+            ref={titleRef}
+            className="translate-y-4 transform opacity-0 transition-all duration-500"
+          >
+            <ComicText size={1.2} color={colors.primary}>
+              Create GIF Enigma
+            </ComicText>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex flex-1 flex-col items-center px-4">
+      <main ref={mainContentRef} className="optacity-0 flex flex-1 flex-col items-center px-4">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center">
           {/* Row 1: Category and Word/Phrase toggle */}
           <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-1">
@@ -650,43 +741,62 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
           {renderGifGrid()}
 
-          {message && (
-            <div
-              className="mb-3 rounded-lg p-3"
-              style={{
-                backgroundColor:
-                  messageType === 'success'
-                    ? 'rgba(74, 222, 128, 0.2)'
-                    : messageType === 'error'
-                      ? 'rgba(248, 113, 113, 0.2)'
-                      : 'rgba(59, 130, 246, 0.2)',
-                border: `1px solid ${
-                  messageType === 'success'
-                    ? 'rgb(74, 222, 128)'
-                    : messageType === 'error'
-                      ? 'rgb(248, 113, 113)'
-                      : 'rgb(59, 130, 246)'
-                }`,
-              }}
-            >
-              <ComicText size={0.6} color={colors.textPrimary}>
-                {message}
-              </ComicText>
+          {/* Success Modal */}
+          {showSuccessModal && (
+            <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm transition-all duration-300">
+              <div className="animate-bounce-slow rounded-xl bg-gray-800 p-6 shadow-lg">
+                <div className="mb-4 text-4xl">🎉</div>
+                <ComicText size={1} color={colors.primary} className="mb-2 text-center">
+                  Game Created Successfully!
+                </ComicText>
+                <ComicText size={0.7} color="white" className="mb-4 text-center">
+                  Your GIF Enigma is ready to play!
+                </ComicText>
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => {
+                      // First close the modal
+                      setShowSuccessModal(false);
+
+                      // Then fade out page elements
+                      if (headerRef.current) {
+                        transitions.fadeOut(headerRef.current, { duration: 300 });
+                      }
+                      if (mainContentRef.current) {
+                        transitions.fadeOut(mainContentRef.current, { duration: 300 });
+                      }
+
+                      // Navigate after a consistent delay
+                      setTimeout(() => {
+                        onNavigate('landing');
+                      }, 400);
+                    }}
+                    className="rounded-xl cursor-pointer px-4 py-2 transition-all duration-200 hover:scale-105"
+                    style={{ backgroundColor: colors.primary }}
+                  >
+                    <ComicText size={0.7} color="white">
+                      Back to Home
+                    </ComicText>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
           <div className="mt-4 flex justify-center">
             <button
+              ref={submitButtonRef}
               onClick={submitGame}
-              disabled={
-                isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
-              }
-              className={`rounded-xl cursor-pointer border-none px-4 py-2 transition-all duration-300 ${
-                isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
-                  ? 'cursor-not-allowed opacity-60'
-                  : 'hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
+              disabled={selectedGifs.filter((g) => g !== null).length !== 4}
+              className={`cursor-pointer rounded-xl border-none px-4 py-2 transition-all duration-300 ${
+                selectedGifs.filter((g) => g !== null).length !== 4
+                  ? 'cursor-not-allowed bg-gray-500 opacity-40'
+                  : 'bg-[#FF4500] hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
               }`}
-              style={{ backgroundColor: colors.primary }}
+              style={{
+                backgroundColor:
+                  selectedGifs.filter((g) => g !== null).length === 4 ? colors.primary : '#6B7280',
+              }}
             >
               <ComicText size={0.8} color="white">
                 {isCreating ? '🔄 Creating...' : '🎮 Create GIF Enigma'}

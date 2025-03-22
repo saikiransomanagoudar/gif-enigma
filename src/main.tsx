@@ -48,6 +48,7 @@ Devvit.addCustomPostType({
   name: 'GIF Enigma',
   height: 'tall',
   render: (context) => {
+    // @ts-ignore
     const { mount } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
       onMessage: async (event, { postMessage }) => {
         console.log('Received message from web app:', event.type);
