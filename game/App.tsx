@@ -4,8 +4,8 @@ import { CreatePage } from './pages/CreatePage';
 import { HowToPlayPage } from './pages/HowToPlayPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { CategoryPage, CategoryType } from './pages/CategoryPage';
+import { GamePage } from './pages/GamePage';
 
-import GamePage from './pages/GamePage';
 type PageType = 'landing' | 'create' | 'category' | 'howToPlay' | 'leaderboard' | 'game';
 
 
@@ -74,8 +74,7 @@ function App() {
     };
 
     window.addEventListener('message', handleMessage);
-    
-    // Cleanup
+
     return () => {
       window.removeEventListener('message', handleMessage);
     };

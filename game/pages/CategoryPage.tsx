@@ -25,13 +25,13 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       type: 'Movies',
       icon: '🎬',
       bgColor: '#FF5E5B',
-      description: 'Film titles, characters, quotes & more',
+      description: 'Film titles, characters, quotes',
     },
     {
       type: 'Gaming',
       icon: '🎮',
       bgColor: '#8AC926',
-      description: 'Games, characters, gaming terms & memes',
+      description: 'Games, characters, gaming terms',
     },
     {
       type: 'Books',
@@ -55,11 +55,12 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="relative mb-6 p-4">
+    <div className="flex min-h-screen flex-col items-center p-5">
+      {/* <header className="relative mb-6 p-4"> */}
+      <header className="mb-5 flex w-full max-w-4xl items-center justify-between">
         <button
           onClick={() => onNavigate('landing')}
-          className="absolute left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+          className="left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
           style={{ backgroundColor: colors.primary }}
         >
           <span className="mr-1 text-sm text-white">👈</span>
@@ -67,8 +68,8 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center">
-          <ComicText size={1.2} color={colors.primary}>
+        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
+          <ComicText size={1.2} color={colors.primary} align="center">
             Create GIF Enigma
           </ComicText>
           <ComicText
@@ -80,6 +81,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
           </ComicText>
         </div>
       </header>
+      {/* </div> */}
 
       <main className="flex flex-1 items-center justify-center px-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">

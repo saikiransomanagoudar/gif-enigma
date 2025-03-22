@@ -127,7 +127,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }}>
         <img src="/landing-page/lets-play.gif"
         className='cursor-pointer'
-        // onClick={() => onNavigate('game')}
+        onClick={() => onNavigate('game')}
         style={{
           width:'17%',
           padding:'10px'
@@ -136,7 +136,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </img>
         <img src="/landing-page/lets-build.gif"
         className='cursor-pointer'
-        onClick={() => onNavigate('category')} // Changed from 'create' to 'category'
+        onClick={() => onNavigate('category')}
         style={{
           width:'17%',
           padding:'10px'

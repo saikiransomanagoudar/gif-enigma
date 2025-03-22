@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts'; // <-- Renamed from ComicText
+import { ComicText } from '../lib/fonts';
 import { NavigationProps } from '../App';
 import { Modal } from '../components/Modal';
 import { CategoryType } from './CategoryPage';
 
-// We'll still use this interface
 export interface TenorGifResult {
   id: string;
   title: string;
@@ -111,6 +110,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  // const [uploadedGifUrls, setUploadedGifUrls] = useState<{ [gifId: string]: string }>({});
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
@@ -155,7 +155,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     fetchSynonyms(recommendations[nextIndex]);
   };
 
-  // Listen for postMessage events from server or devvit
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       let msg = event.data;
@@ -164,7 +163,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
       if (!msg || typeof msg !== 'object') return;
 
-      // Clear any existing search timeout
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -177,7 +175,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setCurrentRecIndex(0);
           if (filtered.length > 0) {
             setSecretInput(filtered[0]);
-            // fetch synonyms for the first recommendation
             fetchSynonyms(filtered[0]);
           }
         } else {
@@ -196,24 +193,36 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }
       }
 
-      // GIF search results
-      if (msg.type === 'SEARCH_TENOR_GIFS_RESULT' || msg.type === 'SEARCH_GIFS_RESULT') {
+      if (msg.type === 'SEARCH_TENOR_GIFS_RESULT') {
         setIsSearching(false);
-        if (msg.success && msg.results && Array.isArray(msg.results)) {
+        if (msg.success && Array.isArray(msg.results)) {
           setGifs(msg.results);
+          // msg.results.forEach((gif: TenorGifResult) => {
+          //   window.parent.postMessage(
+          //     {
+          //       type: 'UPLOAD_TENOR_GIF',
+          //       data: { tenorGifUrl: getGifUrl(gif), gifId: gif.id },
+          //     },
+          //     '*'
+          //   );
+          // });
         } else {
           setGifs([]);
         }
       }
 
-      // Game creation result
+      // if (msg.type === 'UPLOAD_TENOR_GIF_RESULT') {
+      //   if (msg.success && msg.mediaUrl && msg.gifId) {
+      //     setUploadedGifUrls((prev) => ({ ...prev, [msg.gifId]: msg.mediaUrl }));
+      //   } else {
+      //     console.error(`Failed to upload GIF ${msg.gifId}: ${msg.error}`);
+      //   }
+      // }
+
       if (msg.type === 'SAVE_GAME_RESULT') {
         setIsCreating(false);
         if (msg.success && msg.result && msg.result.success) {
-          const result = msg.result;
-          const successMessage = result.postedToReddit
-            ? `Game created and posted to r/PlayGIFEnigma! Game ID: ${result.gameId}`
-            : `Game created successfully! Game ID: ${result.gameId}`;
+          const successMessage = "Game created successfully!";
           setMessage(successMessage);
           setMessageType('success');
           // Reset
@@ -268,6 +277,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setMessageType('error');
     }
   };
+
+  // const uploadGif = (gif: TenorGifResult) => {
+  //   const gifUrl = getGifUrl(gif);
+  //   if (!gifUrl) {
+  //     setMessage('Unable to load this GIF. Please try another one.');
+  //     setMessageType('error');
+  //     return;
+  //   }
+  //   window.parent.postMessage(
+  //     {
+  //       type: 'UPLOAD_TENOR_GIF',
+  //       data: { tenorGifUrl: gifUrl },
+  //     },
+  //     '*'
+  //   );
+  // };
 
   // Select a GIF for a slot
   const selectGifForSlot = (gif: TenorGifResult) => {
@@ -370,7 +395,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           return (
             <div
               key={index}
-              className={`relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-24 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
+              className={`relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
               style={{
                 border: gif ? 'none' : `3px solid ${colors.secondary}`,
               }}
@@ -379,7 +404,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <div className="relative h-full w-full">
                   <button
                     onClick={() => removeGifFromSlot(index)}
-                    className="absolute top-2 right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-all duration-200 hover:scale-110"
+                    className="absolute top-2 right-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-all duration-200 hover:scale-110"
                   >
                     ✕
                   </button>
@@ -453,7 +478,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   );
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col items-center p-5">
       <Modal
         title="Select GIF of your choice"
         isOpen={showSearchInput}
@@ -482,6 +507,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
               <div className="grid grid-cols-2 gap-2">
                 {gifs.map((gif, idx) => {
+                  // const url = uploadedGifUrls[gif.id] || getGifUrl(gif);
                   const url = getGifUrl(gif);
                   if (!url) return null;
                   return (
@@ -537,10 +563,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       </Modal>
 
       {/* Header */}
-      <header className="relative mb-2 p-2">
+      <header className="mb-5 flex w-full max-w-4xl items-center justify-between">
         <button
           onClick={() => onNavigate('category')}
-          className="absolute left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+          className="left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
           style={{ backgroundColor: colors.primary }}
         >
           <span className="mr-1 text-sm text-white">👈</span>
@@ -548,7 +574,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center">
+        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
           <ComicText size={1.2} color={colors.primary}>
             Create GIF Enigma
           </ComicText>
@@ -602,7 +628,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               )}
             </div>
           </div>
-          <div className="group relative items-left justify-center">
+          <div className="group items-left relative justify-center">
             <button
               onClick={getNextRecommendation}
               disabled={disableSecretChange}
@@ -643,7 +669,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 }`,
               }}
             >
-              {/* If you want text here, add it. Otherwise, it's an empty box. */}
+              <ComicText size={0.6} color={colors.textPrimary}>
+                {message}
+              </ComicText>
             </div>
           )}
 
@@ -653,7 +681,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               disabled={
                 isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
               }
-              className={`rounded-xl border-none px-4 py-2 transition-all duration-300 ${
+              className={`rounded-xl cursor-pointer border-none px-4 py-2 transition-all duration-300 ${
                 isCreating || !secretInput || selectedGifs.filter((g) => g !== null).length !== 4
                   ? 'cursor-not-allowed opacity-60'
                   : 'hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'

@@ -39,9 +39,26 @@ export async function getRecommendations(
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
     const prompt =
-      inputType === 'word'
-        ? `Generate ${count} single words related to ${category} that would be good for a guessing game. Each word must be at least 5 characters long. Return only as a JSON array of strings with no explanation.`
-        : `Generate ${count} phrases (each with a minimum of two words) related to ${category} that would be good for a guessing game. Each phrase must be at least 5 characters long. Return only as a JSON array of strings with no explanation.`;
+    inputType === 'word'
+    ? `Generate ${count} single words related to ${category}. ${
+        category === 'Movies'
+          ? 'Include film titles, characters, and quotes, and inspirational movie quotes.'
+          : category === 'Gaming'
+          ? 'Include games, characters, and gaming terms, and inspirational gaming quotes.'
+          : category === 'Books'
+          ? 'Include titles, authors, characters, and quotes, and inspirational quotes.'
+          : 'Topics include anything and everything, and also inspirational..'
+      } All words must be at least 5 characters long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`
+    : `Generate ${count} phrases (each with a minimum of two words) related to ${category}. ${
+        category === 'Movies'
+          ? 'Include film titles, characters, and quotes, and also inspirational movie quotes.'
+          : category === 'Gaming'
+          ? 'Include games, characters, and gaming terms, and also inspirational gaming quotes.'
+          : category === 'Books'
+          ? 'Include titles, authors, characters, quotes, inspirational quotes.'
+          : 'Topics include anything and everything, and also inspirational.'
+      } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`;
+  
 
     const response = await fetch(apiUrl, {
       method: 'POST',

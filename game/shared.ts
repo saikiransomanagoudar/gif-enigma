@@ -1,5 +1,13 @@
 export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
 
+export interface GetRecentGamesResultMessage {
+  type: 'GET_RECENT_GAMES_RESULT';
+  success: boolean;
+  result?: any;
+  error?: string;
+  games?: any[];
+}
+
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
   | { type: 'webViewReady' }
@@ -22,6 +30,9 @@ export type WebviewToBlockMessage =
         guess: string;
       };
     }
+  | { type: 'GET_CURRENT_USER' }
+  | { type: 'GET_USER_BY_ID'; data: { userId: string } }
+  | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
   | {
       type: 'GET_GEMINI_RECOMMENDATIONS';
       data: { category: string; inputType: 'word' | 'phrase'; count?: number };
@@ -34,13 +45,6 @@ export type WebviewToBlockMessage =
         limit?: number;
         contentfilter?: string;
         media_filter?: string;
-      };
-    }
-  | {
-      type: 'SEARCH_GIFS';
-      data: {
-        query: string;
-        limit?: number;
       };
     }
   | {
@@ -64,7 +68,28 @@ export type WebviewToBlockMessage =
       data: {
         gameId: string;
       };
-    };
+    }
+  // | {
+  //     type: 'UPLOAD_TENOR_GIF';
+  //     data: {
+  //       tenorGifUrl: string;
+  //       gifId: string;
+  //     };
+  //   };
+  | { type: 'CACHE_GIF_RESULTS'; data: { query: string; results: any[] } }
+  | { type: 'GET_CACHED_GIF_RESULTS'; data: { query: string } }
+  | { type: 'GET_PLAYABLE_GAME' };
+
+export interface GameData {
+  id: string;
+  word: string;
+  maskedWord: string;
+  questionText: string;
+  gifs: string[];
+  createdAt?: string;
+  creatorId?: string;
+  redditPostId?: string;
+}
 
 export type BlocksToWebviewMessage =
   | {
@@ -97,6 +122,25 @@ export type BlocksToWebviewMessage =
       };
     }
   | {
+      type: 'GET_CURRENT_USER_RESULT';
+      success: boolean;
+      user?: { id: string; username: string };
+      error?: string;
+    }
+  | {
+      type: 'GET_USER_BY_ID_RESULT';
+      success: boolean;
+      user?: { id: string; username: string };
+      error?: string;
+    }
+  | {
+      type: 'GET_USER_GAMES_RESULT';
+      success: boolean;
+      games?: GameData[];
+      message?: string;
+      error?: string;
+    }
+  | {
       type: 'GET_GEMINI_RECOMMENDATIONS_RESULT';
       success: boolean;
       result?: string[];
@@ -124,21 +168,56 @@ export type BlocksToWebviewMessage =
   | {
       type: 'SAVE_GAME_RESULT';
       success: boolean;
-      result?: any;
+      result?: {
+        success: boolean;
+        gameId?: string;
+        postedToReddit?: boolean;
+        redditPostId?: string;
+        error?: string;
+      };
       error?: string;
     }
   | {
       type: 'GET_RECENT_GAMES_RESULT';
       success: boolean;
-      result?: any;
+      result?: { success: boolean; games?: GameData[]; error?: string };
+      games?: GameData[];
       error?: string;
     }
   | {
       type: 'GET_GAME_RESULT';
       success: boolean;
-      result?: any;
+      result?: { success: boolean; game?: GameData; error?: string };
+      game?: GameData;
       error?: string;
+    }
+  | {
+      type: 'CACHE_GIF_RESULTS_RESULT';
+      success: boolean;
+      error?: string;
+    }
+  | {
+      type: 'GET_CACHED_GIF_RESULTS_RESULT';
+      success: boolean;
+      cached?: boolean;
+      results?: any[];
+      error?: string;
+    }
+  | {
+      type: 'GET_PLAYABLE_GAME_RESULT';
+      success: boolean;
+      game?: GameData;
+      error?: string;
+      needsRandomGame?: boolean;
     };
+// | {
+//     type: 'UPLOAD_TENOR_GIF_RESULT';
+//     success: boolean;
+//     mediaId?: string;
+//     mediaUrl?: string;
+//     gifId?: string;
+//     error?: string;
+//   };
 
 // Devvit message wrapper type
 export type DevvitMessage = {

@@ -42,28 +42,20 @@ export interface TenorSearchParams {
   locale?: string;
 }
 
-/**
- * Search for GIFs using the Tenor API.
- * This function first checks for cached results. If none are available,
- * it makes a request to the Tenor API and then caches the results.
- */
 export async function searchTenorGifs(
   params: TenorSearchParams,
   context: Context
 ): Promise<TenorGifResult[]> {
-  // Set the contentfilter and media_filter to match the server's configuration
   const { query, limit = 8 } = params;
   const contentfilter = "high";
   const media_filter = "gif,tinygif,mediumgif,nanogif";
 
   try {
-    // Attempt to retrieve cached results first
     const cachedResults = await getCachedTenorResults({ query }, context);
     if (cachedResults.success && cachedResults.cached) {
       return cachedResults.results || [];
     }
 
-    // Retrieve the API key from app settings
     const apiKey = await context.settings.get('tenor-api-key');
     if (!apiKey) {
       console.error('Tenor API key not configured. Please set it in the app settings.');

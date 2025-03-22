@@ -102,7 +102,7 @@ export const Modal: React.FC<ModalProps> = ({
           <div className="flex justify-end gap-2">
             <button
               onClick={onConfirm}
-              className="cursor-pointer rounded-full px-3 py-1.5 transition-all duration-200 hover:scale-105"
+              className="cursor-pointer rounded-full px-3 py-1.5 duration-200 hover:scale-105"
               style={{ backgroundColor: colors.primary }}
             >
               <ComicText size={0.5} color="white">
