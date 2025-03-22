@@ -33,7 +33,6 @@ export async function fetchRequest(
     }
     console.log('✅ [DEBUG] URL is valid:', url);
 
-    // Optional: Restrict to certain domains for security
     const allowedDomains = [
       'reddit.com',
       'redd.it',

@@ -841,7 +841,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               disabled={selectedGifs.filter((g) => g !== null).length !== 4}
               className={`cursor-pointer rounded-xl border-none px-4 py-2 transition-all duration-300 ${
                 selectedGifs.filter((g) => g !== null).length !== 4
-                  ? 'cursor-not-allowed bg-gray-500 opacity-40'
+                  ? 'disabled:cursor-not-allowed bg-gray-500 disabled:opacity-60'
                   : 'bg-[#FF4500] hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
               }`}
               style={{
