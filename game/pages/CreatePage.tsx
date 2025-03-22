@@ -160,12 +160,41 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     );
   };
 
-  // Cycle to the next recommendation (up to 10 tries)
+  // Update your getNextRecommendation function to animate both the secret word and the hints
   const getNextRecommendation = () => {
-    const nextIndex = (currentRecIndex + 1) % recommendations.length;
-    setCurrentRecIndex(nextIndex);
-    setSecretInput(recommendations[nextIndex]);
-    fetchSynonyms(recommendations[nextIndex]);
+    const secretElement = document.querySelector('.secret-word-container');
+    const hintElements = document.querySelectorAll('.hint-text');
+
+    // Add fade out transition to secret word and hints
+    if (secretElement) {
+      secretElement.classList.add('opacity-0', 'translate-y-2');
+    }
+
+    hintElements.forEach((element) => {
+      (element as HTMLElement).classList.add('opacity-0', 'translate-y-2');
+    });
+
+    setTimeout(() => {
+      // Update content
+      const nextIndex = (currentRecIndex + 1) % recommendations.length;
+      setCurrentRecIndex(nextIndex);
+      setSecretInput(recommendations[nextIndex]);
+      fetchSynonyms(recommendations[nextIndex]);
+
+      // Fade back in after a short delay to ensure state has updated
+      setTimeout(() => {
+        if (secretElement) {
+          secretElement.classList.remove('opacity-0', 'translate-y-2');
+        }
+
+        // Fade in hints with a slight delay for staggered effect
+        hintElements.forEach((element, index) => {
+          setTimeout(() => {
+            (element as HTMLElement).classList.remove('opacity-0', 'translate-y-2');
+          }, index * 50);
+        });
+      }, 50);
+    }, 300);
   };
 
   useEffect(() => {
@@ -449,7 +478,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const renderGifGrid = () => (
-    <div ref={gifGridRef} className="optacity-0 mb-4">
+    <div className="mb-4" ref={gifGridRef}>
       <div className="mb-2 flex items-center justify-between">
         <ComicText size={0.8} color={colors.primary}>
           GIF Clues
@@ -459,15 +488,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         {Array.from({ length: 4 }).map((_, index) => {
           const gif = selectedGifs[index];
           const defaultSynonym = synonyms[index]?.[0] || '';
+          const boxNumber = index + 1;
 
           return (
             <div
               key={index}
-              className={`relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
+              className={`gif-slot-${index} relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
               style={{
                 border: gif ? 'none' : `3px solid ${colors.secondary}`,
               }}
             >
+              {/* Number indicator */}
+              <div className="bg-opacity-70 absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
+                <ComicText size={0.5} color="white">
+                  #{boxNumber}
+                </ComicText>
+              </div>
+
               {gif ? (
                 <div className="relative h-full w-full">
                   <button
@@ -479,7 +516,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   <img
                     src={getGifUrl(gif)}
                     alt={`GIF ${index + 1}`}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover transition-opacity duration-500"
                   />
                 </div>
               ) : (
@@ -494,10 +531,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   }}
                   className="flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 hover:scale-105"
                 >
-                  <div className="mb-1 text-2xl">➕</div>
-                  <ComicText size={0.6} color={colors.textSecondary}>
-                    {defaultSynonym ? `Hint: ${defaultSynonym}` : `Add GIF #${index + 1}`}
-                  </ComicText>
+                  <div className="mb-1 text-2xl transition-transform duration-300 hover:rotate-12">
+                    ➕
+                  </div>
+                  <div className="transition-all duration-300">
+                    <ComicText size={0.6} color={colors.textSecondary}>
+                      {defaultSynonym ? (
+                        <span className="hint-text transition-all duration-300 ease-in-out">
+                          Hint: <span className="text-yellow-400">{defaultSynonym}</span>
+                        </span>
+                      ) : (
+                        `Add GIF #${index + 1}`
+                      )}
+                    </ComicText>
+                  </div>
                 </button>
               )}
             </div>
@@ -515,10 +562,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           backgroundColor: '#2D3748',
           border: `2px solid ${colors.primary}`,
           width: '160px',
+          position: 'relative',
+          minHeight: '40px',
         }}
       >
         <div
-          className="absolute h-full w-1/2 rounded-full"
+          className="absolute h-full w-1/2 rounded-full transition-all duration-300 ease-in-out"
           style={{
             backgroundColor: colors.primary,
             left: inputType === 'word' ? '0' : '50%',
@@ -704,10 +753,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           </div>
 
           <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2">
-            <div>
+            <div className="secret-word-container transition-all duration-300">
               {secretInput ? (
                 <ComicText size={0.7} color={colors.primary}>
-                  Secret {inputType === 'word' ? 'Word' : 'Phrase'}:{' '}
+                  <span className="inline-block transition-all duration-300" key={inputType}>
+                    Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
+                  </span>{' '}
                   <span style={{ color: 'yellow', fontWeight: 'bold' }}>
                     {secretInput.toUpperCase()}
                   </span>
@@ -771,7 +822,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         onNavigate('landing');
                       }, 400);
                     }}
-                    className="rounded-xl cursor-pointer px-4 py-2 transition-all duration-200 hover:scale-105"
+                    className="cursor-pointer rounded-xl px-4 py-2 transition-all duration-200 hover:scale-105"
                     style={{ backgroundColor: colors.primary }}
                   >
                     <ComicText size={0.7} color="white">
