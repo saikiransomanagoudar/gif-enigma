@@ -1,5 +1,5 @@
 
-export type GameState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
+export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
 // Individual question/game from Redis
@@ -15,6 +15,13 @@ export interface GameRedisData {
   [key: string]: any; // Allow for additional Redis fields
 }
 
+export interface PlayerGameState {
+  gifHintCount: number;
+  revealedLetters: number[];
+  guess: string;
+  lastPlayed: number; // timestamp
+  isCompleted: boolean;
+}
 // Processed game data with proper typing
 export interface GameData {
   id: string;
@@ -45,7 +52,7 @@ export interface GameSessionData {
   currentQuestionIndex: number;
   score: number;
   maxScore: number;
-  state: GameState;
+  state: PlayerGameState;
 }
 
 // User statistics
@@ -122,6 +129,22 @@ export interface PostMessageEvent<T = any> {
   success?: boolean;
   result?: any;
   error?: string;
+}
+
+// scores
+export interface ScoreData {
+  score: number;
+  gifPenalty: number;
+  wordPenalty: number;
+  timeTaken: number;
+  userId: string;
+  gameId: string;
+  timestamp: number;
+}
+
+export interface LeaderboardEntry extends ScoreData {
+  username: string;
+  rank?: number;
 }
 
 // Navigation props for component routing

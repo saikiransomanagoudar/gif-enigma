@@ -48,30 +48,7 @@ export interface TenorGifResult {
 }
 
 const getGifUrl = (gif: TenorGifResult | null): string => {
-  if (!gif || !gif.media_formats) {
-    return '';
-  }
-
-  // Prefer these formats in order
-  const preferredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
-
-  for (const format of preferredFormats) {
-    const formatObj = gif.media_formats[format];
-    if (formatObj && formatObj.url) {
-      return formatObj.url;
-    }
-  }
-
-  // Fallback to any available format
-  const availableFormats = Object.keys(gif.media_formats);
-  for (const format of availableFormats) {
-    const formatObj = gif.media_formats[format];
-    if (formatObj && formatObj.url) {
-      return formatObj.url;
-    }
-  }
-
-  return '';
+  return gif?.url || '';
 };
 
 export interface CreatePageProps extends NavigationProps {
@@ -656,17 +633,29 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         <img
                           src={url}
                           alt={gif.content_description || `GIF ${idx + 1}`}
-                          className="h-full w-full object-contain"
+                          className="w-full object-contain"
                           onError={(e) => {
-                            e.currentTarget.src = '/create-page/fallback.gif';
+                            e.currentTarget.style.display = 'none';
+                            const container = e.currentTarget.closest('.gif-container');
+                            if (container) container.remove();
+                            // e.currentTarget.parentElement?.parentElement?.remove();
+                            const fallback = document.createElement('div');
+                            fallback.className = 'gif-fallback';
+                            fallback.textContent = '🎬 GIF not available';
+                            e.currentTarget.parentNode?.appendChild(fallback);
                           }}
+                          onLoad={(e) => {
+                            // Optional: Add fade-in animation
+                            e.currentTarget.style.opacity = '1';
+                          }}
+                          style={{ opacity: 0, transition: 'opacity 0.3s' }}
                         />
                       </div>
-                      <div className="bg-gray-800 p-2 text-center">
+                      {/* <div className="bg-gray-800 p-2 text-center">
                         <div className="truncate text-xs text-gray-300">
                           {gif.content_description || gif.title || `GIF ${idx + 1}`}
                         </div>
-                      </div>
+                      </div> */}
                     </div>
                   );
                 })}
@@ -841,7 +830,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               disabled={selectedGifs.filter((g) => g !== null).length !== 4}
               className={`cursor-pointer rounded-xl border-none px-4 py-2 transition-all duration-300 ${
                 selectedGifs.filter((g) => g !== null).length !== 4
-                  ? 'disabled:cursor-not-allowed bg-gray-500 disabled:opacity-60'
+                  ? 'bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60'
                   : 'bg-[#FF4500] hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
               }`}
               style={{

@@ -1,12 +1,12 @@
 export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
 
-export interface GetRecentGamesResultMessage {
-  type: 'GET_RECENT_GAMES_RESULT';
-  success: boolean;
-  result?: any;
-  error?: string;
-  games?: any[];
-}
+// export interface GetRecentGamesResultMessage {
+//   type: 'GET_RECENT_GAMES_RESULT';
+//   success: boolean;
+//   result?: any;
+//   error?: string;
+//   games?: any[];
+// }
 
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
@@ -57,12 +57,12 @@ export type WebviewToBlockMessage =
         postToSubreddit?: boolean;
       };
     }
-  | {
-      type: 'GET_RECENT_GAMES';
-      data?: {
-        limit?: number;
-      };
-    }
+  // | {
+  //     type: 'GET_RECENT_GAMES';
+  //     data?: {
+  //       limit?: number;
+  //     };
+  //   }
   | {
       type: 'GET_GAME';
       data: {
@@ -78,7 +78,43 @@ export type WebviewToBlockMessage =
   //   };
   | { type: 'CACHE_GIF_RESULTS'; data: { query: string; results: any[] } }
   | { type: 'GET_CACHED_GIF_RESULTS'; data: { query: string } }
-  | { type: 'GET_PLAYABLE_GAME' };
+  | { type: 'GET_PLAYABLE_GAME' }
+  | { type: 'GET_RANDOM_GAME'; data: { excludeIds?: string[] } }
+  | {
+      type: 'SAVE_GAME_STATE';
+      data: {
+        userId: string;
+        gameId: string;
+        gifHintCount: number;
+        revealedLetters: number[];
+        guess: string;
+      };
+    }
+  | { type: 'GET_GAME_STATE'; data: { userId: string; gameId: string } }
+  | {
+      type: 'CALCULATE_SCORE';
+      data: {
+        word: string;
+        gifHintCount: number;
+        revealedLetterCount: number;
+        timeTaken: number;
+      };
+    }
+  | {
+      type: 'SAVE_SCORE';
+      data: {
+        userId: string;
+        gameId: string;
+        score: number;
+        gifPenalty: number;
+        wordPenalty: number;
+        timeTaken: number;
+        timestamp: number;
+      };
+    }
+  | { type: 'GET_GAME_LEADERBOARD'; data: { gameId: string; limit?: number } }
+  | { type: 'PURGE_LEGACY_GAMES' };
+  
 
 export interface GameData {
   id: string;
@@ -177,13 +213,13 @@ export type BlocksToWebviewMessage =
       };
       error?: string;
     }
-  | {
-      type: 'GET_RECENT_GAMES_RESULT';
-      success: boolean;
-      result?: { success: boolean; games?: GameData[]; error?: string };
-      games?: GameData[];
-      error?: string;
-    }
+  // | {
+  //     type: 'GET_RECENT_GAMES_RESULT';
+  //     success: boolean;
+  //     result?: { success: boolean; games?: GameData[]; error?: string };
+  //     games?: GameData[];
+  //     error?: string;
+  //   }
   | {
       type: 'GET_GAME_RESULT';
       success: boolean;
@@ -209,6 +245,67 @@ export type BlocksToWebviewMessage =
       game?: GameData;
       error?: string;
       needsRandomGame?: boolean;
+    }
+    | {
+      type: 'GET_RANDOM_GAME_RESULT';
+      success: boolean;
+      result?: { success: boolean; game?: GameData; error?: string };
+      error?: string;
+    }
+  | {
+      type: 'SAVE_GAME_STATE_RESULT';
+      success: boolean;
+      error?: string;
+    }
+  | {
+      type: 'GET_GAME_STATE_RESULT';
+      success: boolean;
+      state?: {
+        gifHintCount: number;
+        revealedLetters: number[];
+        guess: string;
+        lastPlayed: string;
+      };
+      error?: string;
+    }
+  | {
+      type: 'CALCULATE_SCORE_RESULT';
+      success: boolean;
+      result?: {
+        score: number;
+        gifPenalty: number;
+        wordPenalty: number;
+        timeTaken: number;
+      };
+      error?: string;
+    }
+  | {
+      type: 'SAVE_SCORE_RESULT';
+      success: boolean;
+      error?: string;
+    }
+  | {
+      type: 'GET_GAME_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: Array<{
+          rank?: number;
+          userId: string;
+          username: string;
+          score: number;
+          gifPenalty: number;
+          wordPenalty: number;
+          timeTaken: number;
+          timestamp: number;
+        }>;
+      };
+      error?: string;
+    }
+    | {
+      type: 'PURGE_LEGACY_GAMES_RESULT';
+      success: boolean;
+      deleted?: number;
+      error?: string;
     };
 // | {
 //     type: 'UPLOAD_TENOR_GIF_RESULT';

@@ -24,7 +24,68 @@ export interface TenorGifResult {
 }
 
 const TENOR_CACHE_PREFIX = 'tenor_search:';
-const CACHE_TTL = 60 * 60;
+const CACHE_TTL = 60 * 60 * 24; // 1 day
+
+const GIF_CACHE_PREFIX = 'tenor_gif:';
+
+async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promise<TenorGifResult> {
+  const cacheKey = `${GIF_CACHE_PREFIX}${tenorGif.id}`;
+  
+  try {
+    // 1. Check Redis cache for ALL formats
+    const cachedFormats = await context.redis.get(cacheKey);
+    if (cachedFormats) {
+      return JSON.parse(cachedFormats);
+    }
+
+    // 2. Upload and cache ALL formats
+    const uploadedFormats: Record<string, TenorGifFormat> = {};
+    
+    // Process formats in quality order
+    const formats = ['gif', 'mediumgif', 'tinygif', 'nanogif'] as const;
+    
+    for (const format of formats) {
+      const originalFormat = tenorGif.media_formats[format];
+      if (!originalFormat?.url) continue;
+
+      try {
+        // Upload to Reddit media
+        const uploadResult = await context.media.upload({
+          url: originalFormat.url,
+          type: 'gif',
+        });
+
+        uploadedFormats[format] = {
+          ...originalFormat,
+          url: uploadResult.mediaUrl,
+        };
+      } catch (error) {
+        console.error(`Failed to upload ${format} for ${tenorGif.id}:`, error);
+        uploadedFormats[format] = originalFormat; // Fallback to original
+      }
+    }
+
+    // 3. Create final cached result
+    const cachedResult = {
+      ...tenorGif,
+      media_formats: {
+        ...tenorGif.media_formats,
+        ...uploadedFormats
+      },
+      url: uploadedFormats.gif?.url || tenorGif.url // Update primary URL
+    };
+
+    // 4. Store ALL formats in Redis
+    await context.redis.set(cacheKey, JSON.stringify(cachedResult));
+    await context.redis.expire(cacheKey, CACHE_TTL);
+
+    return cachedResult;
+
+  } catch (error) {
+    console.error('Error in cacheTenorGif:', error);
+    return tenorGif;
+  }
+}
 
 export async function searchTenorGifs(
   context: Context,
@@ -99,86 +160,87 @@ export async function searchTenorGifs(
     }
 
     const data = await response.json();
-    
-    console.log('🔍 [DEBUG] Raw response data sample:', JSON.stringify(data).substring(0, 200) + '...');
+
+    console.log(
+      '🔍 [DEBUG] Raw response data sample:',
+      JSON.stringify(data).substring(0, 200) + '...'
+    );
 
     if (!data || !data.results) {
-      console.error('❌ [DEBUG] Invalid response structure:', JSON.stringify(data).substring(0, 500));
+      console.error(
+        '❌ [DEBUG] Invalid response structure:',
+        JSON.stringify(data).substring(0, 500)
+      );
       throw new Error('Invalid response structure from Tenor API');
     }
 
     console.log(`✅ [DEBUG] Found ${data.results.length} GIFs from Tenor API`);
 
     if (data.results.length > 0) {
-      console.log('🔍 [DEBUG] First result example:', JSON.stringify(data.results[0]).substring(0, 500));
-      
+      console.log(
+        '🔍 [DEBUG] First result example:',
+        JSON.stringify(data.results[0]).substring(0, 500)
+      );
+
       const hasMediaFormats = !!data.results[0].media_formats;
       console.log('🔍 [DEBUG] Has media_formats:', hasMediaFormats);
-      
+
       if (hasMediaFormats) {
         const formats = Object.keys(data.results[0].media_formats);
         console.log('🔍 [DEBUG] Available formats:', formats);
-        
+
         console.log('🔍 [DEBUG] GIF URL:', data.results[0].media_formats.gif?.url || 'Not found');
-        console.log('🔍 [DEBUG] TinyGIF URL:', data.results[0].media_formats.tinygif?.url || 'Not found');
+        console.log(
+          '🔍 [DEBUG] TinyGIF URL:',
+          data.results[0].media_formats.tinygif?.url || 'Not found'
+        );
       }
     }
 
-    const transformedResults = data.results.map((result: any) => {
-      
-      const mediaFormats = { ...result.media_formats };
-      if (!mediaFormats.gif) {
-        mediaFormats.gif = {
-          url: '',
-          dims: [0, 0],
-          duration: 0,
-          preview: '',
-          size: 0,
+    const transformedResults = await Promise.all(
+      data.results.map(async (result: any) => {
+        const mediaFormats = { ...result.media_formats };
+        
+        // Ensure all formats exist with fallbacks
+        const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
+        requiredFormats.forEach(format => {
+          if (!mediaFormats[format]) {
+            mediaFormats[format] = {
+              url: '',
+              dims: [0, 0],
+              duration: 0,
+              preview: '',
+              size: 0,
+            };
+          }
+        });
+    
+        // Create base transformed result
+        const transformed = {
+          id: result.id,
+          title: result.title || '',
+          media_formats: mediaFormats,
+          content_description: result.content_description || result.title || '',
+          created: result.created || Date.now(),
+          hasaudio: result.hasaudio || false,
+          url: result.url || '',
         };
-      }
-      
-      if (!mediaFormats.tinygif) {
-        mediaFormats.tinygif = {
-          url: '',
-          dims: [0, 0],
-          duration: 0,
-          preview: '',
-          size: 0,
-        };
-      }
-      
-      if (!mediaFormats.mediumgif) {
-        mediaFormats.mediumgif = {
-          url: '',
-          dims: [0, 0],
-          duration: 0,
-          preview: '',
-          size: 0,
-        };
-      }
+    
+        // Cache and upload to Reddit
+        try {
+          const cachedGif = await cacheTenorGif(context, transformed);
+          return cachedGif;
+        } catch (error) {
+          console.error('Error caching GIF:', error);
+          return transformed; // Return original if caching fails
+        }
+      })
+    );
 
-      if (!mediaFormats.nanogif) {
-        mediaFormats.nanogif = {
-          url: '',
-          dims: [0, 0],
-          duration: 0,
-          preview: '',
-          size: 0,
-        };
-      }
-
-      return {
-        id: result.id,
-        title: result.title || '',
-        media_formats: mediaFormats,
-        content_description: result.content_description || result.title || '',
-        created: result.created || Date.now(),
-        hasaudio: result.hasaudio || false,
-        url: result.url || '',
-      };
-    });
-
-    console.log('🔍 [DEBUG] First transformed result:', JSON.stringify(transformedResults[0]).substring(0, 500));
+    console.log(
+      '🔍 [DEBUG] First transformed result:',
+      JSON.stringify(transformedResults[0]).substring(0, 500)
+    );
 
     try {
       const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
@@ -196,5 +258,3 @@ export async function searchTenorGifs(
     throw new Error('Error fetching GIFs from Tenor API');
   }
 }
-
-

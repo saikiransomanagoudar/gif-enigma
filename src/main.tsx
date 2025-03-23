@@ -1,11 +1,8 @@
 import { Devvit, Context, useWebView } from '@devvit/public-api';
-import {
-  BlocksToWebviewMessage,
-  WebviewToBlockMessage,
-} from '../game/shared.js';
+import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { Preview } from './components/Preview.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
-import { saveGame, getRecentGames, getUserGames } from '../game/server/gameHandler.server.js';
+import { saveGame, getRecentGames, getUserGames, purgeLegacyGames } from '../game/server/gameHandler.server.js';
 import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
@@ -108,17 +105,29 @@ Devvit.addCustomPostType({
 
               // Convert result to serializable games for postMessage
               const serializedGames = result.games
-                ? result.games.map((game: { id: any; word: any; maskedWord: any; questionText: any; gifs: any; createdAt: any; creatorId: any; creatorUsername: any; redditPostId: any; }) => ({
-                    id: game.id,
-                    word: game.word,
-                    maskedWord: game.maskedWord,
-                    questionText: game.questionText,
-                    gifs: Array.isArray(game.gifs) ? game.gifs : [],
-                    createdAt: game.createdAt,
-                    creatorId: game.creatorId,
-                    creatorUsername: game.creatorUsername,
-                    redditPostId: game.redditPostId,
-                  }))
+                ? result.games.map(
+                    (game: {
+                      id: any;
+                      word: any;
+                      maskedWord: any;
+                      questionText: any;
+                      gifs: any;
+                      createdAt: any;
+                      creatorId: any;
+                      creatorUsername: any;
+                      redditPostId: any;
+                    }) => ({
+                      id: game.id,
+                      word: game.word,
+                      maskedWord: game.maskedWord,
+                      questionText: game.questionText,
+                      gifs: Array.isArray(game.gifs) ? game.gifs : [],
+                      createdAt: game.createdAt,
+                      creatorId: game.creatorId,
+                      creatorUsername: game.creatorUsername,
+                      redditPostId: game.redditPostId,
+                    })
+                  )
                 : [];
 
               postMessage({
@@ -179,6 +188,154 @@ Devvit.addCustomPostType({
               });
             }
             break;
+
+          case 'GET_RANDOM_GAME':
+            try {
+              console.log('Getting random game, excluding:', event.data.excludeIds);
+              // Import the getRandomGame function from gameHandler.server.js
+              const { getRandomGame } = await import('../game/server/gameHandler.server.js');
+              const result = await getRandomGame(event.data || {}, context);
+
+              // Convert to serializable format if needed
+              postMessage({
+                type: 'GET_RANDOM_GAME_RESULT',
+                success: result.success,
+                result: result,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error getting random game:', error);
+              postMessage({
+                type: 'GET_RANDOM_GAME_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'CALCULATE_SCORE':
+            try {
+              console.log('Calculating score:', event.data);
+              const { calculateScore } = await import('../game/server/scoringService.js');
+              const scoreResult = calculateScore(event.data);
+
+              postMessage({
+                type: 'CALCULATE_SCORE_RESULT',
+                success: true,
+                result: scoreResult,
+              });
+            } catch (error) {
+              console.error('Error calculating score:', error);
+              postMessage({
+                type: 'CALCULATE_SCORE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'SAVE_SCORE':
+            try {
+              console.log('Saving score:', event.data);
+              const { saveScore } = await import('../game/server/scoringService.js');
+              const result = await saveScore(event.data, context);
+
+              postMessage({
+                type: 'SAVE_SCORE_RESULT',
+                success: result.success,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error saving score:', error);
+              postMessage({
+                type: 'SAVE_SCORE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_GAME_LEADERBOARD':
+            try {
+              console.log('Getting game leaderboard for:', event.data.gameId);
+              const { getGameLeaderboard } = await import('../game/server/scoringService.js');
+              const result = await getGameLeaderboard(event.data, context);
+
+              postMessage({
+                type: 'GET_GAME_LEADERBOARD_RESULT',
+                success: result.success,
+                result: { leaderboard: result.leaderboard || [] },
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error getting game leaderboard:', error);
+              postMessage({
+                type: 'GET_GAME_LEADERBOARD_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'SAVE_GAME_STATE':
+            try {
+              console.log('Saving game state:', event.data);
+              const { saveGameState } = await import('../game/server/gameHandler.server.js');
+              const result = await saveGameState(event.data, context);
+
+              postMessage({
+                type: 'SAVE_GAME_STATE_RESULT',
+                success: result.success,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error saving game state:', error);
+              postMessage({
+                type: 'SAVE_GAME_STATE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_GAME_STATE':
+            try {
+              console.log('Getting game state:', event.data);
+              const { getGameState } = await import('../game/server/gameHandler.server.js');
+              const result = await getGameState(event.data, context);
+
+              postMessage({
+                type: 'GET_GAME_STATE_RESULT',
+                success: result.success,
+                state: result.state,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error getting game state:', error);
+              postMessage({
+                type: 'GET_GAME_STATE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+            case 'PURGE_LEGACY_GAMES':
+              try {
+                const result = await purgeLegacyGames(context);
+                postMessage({
+                  type: 'PURGE_LEGACY_GAMES_RESULT',
+                  success: true,
+                  deleted: result.deleted
+                });
+              } catch (error) {
+                postMessage({
+                  type: 'PURGE_LEGACY_GAMES_RESULT',
+                  success: false,
+                  error: String(error)
+                });
+              }
+              break;
           case 'GET_GEMINI_RECOMMENDATIONS': {
             try {
               const { category, inputType, count } = event.data;
@@ -287,56 +444,6 @@ Devvit.addCustomPostType({
             }
             break;
 
-          case 'GET_RECENT_GAMES':
-            try {
-              console.log('Getting recent games');
-              const result = await getRecentGames(event.data || {}, context);
-
-              // Convert result to a simple serializable object
-              const serializedGames = result.games
-                ? result.games.map(
-                    (game: {
-                      id: any;
-                      word: any;
-                      maskedWord: any;
-                      questionText: any;
-                      gifs: any;
-                      createdAt: any;
-                      creatorId: any;
-                      redditPostId: any;
-                    }) => ({
-                      id: game.id,
-                      word: game.word,
-                      maskedWord: game.maskedWord,
-                      questionText: game.questionText,
-                      gifs: Array.isArray(game.gifs) ? game.gifs : [],
-                      createdAt: game.createdAt,
-                      creatorId: game.creatorId,
-                      redditPostId: game.redditPostId,
-                    })
-                  )
-                : [];
-
-              // Create a simple serializable response
-              postMessage({
-                type: 'GET_RECENT_GAMES_RESULT',
-                success: result.success,
-                result: {
-                  games: serializedGames,
-                  success: true
-                },              
-                error: result.error || undefined,
-              });
-            } catch (error) {
-              console.error('Error getting recent games:', error);
-              postMessage({
-                type: 'GET_RECENT_GAMES_RESULT',
-                success: false,
-                error: String(error),
-              });
-            }
-            break;
-
           default:
             console.error('Unknown message type', event);
             break;
@@ -363,6 +470,15 @@ Devvit.addMenuItem({
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_event, context) => {
+    const activeGames = await context.redis.zRange('activeGames', 0, -1);
+    const gameIds = activeGames.map(g => g.member);
+    
+    await context.redis.hSet(
+      "game_registry", 
+      Object.fromEntries(gameIds.map(id => [id, "1"]))
+    );
+    const result = await purgeLegacyGames(context);
+    context.ui.showToast(`Purged ${result.deleted} legacy games`);
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
 
