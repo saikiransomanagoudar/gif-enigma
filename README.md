@@ -1,6 +1,6 @@
 # GIF Enigma 🎬
 
-GIF Enigma is a fun and interactive game where players decipher a word or phrase based on a series of GIF hints. Whether you're playing or creating your own puzzles, this guide covers all the essentials.
+GIF Enigma is a word/phrase-guessing game where players interpret GIFs to uncover a hidden word or phrase. A fun and engaging challenge that tests your ability to think visually and make connections. Can you solve the enigma?
 
 ## How to Play
 
