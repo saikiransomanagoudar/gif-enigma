@@ -1,4 +1,4 @@
-import { Context } from '@devvit/public-api';
+import { Context, Devvit } from '@devvit/public-api';
 import {
   GameData,
   GetRecentGamesResponse,
@@ -10,75 +10,100 @@ import {
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
-    console.log('🔍 [DEBUG] saveGame called with params:', params);
-    const { word, maskedWord, questionText, gifs, postToSubreddit = true } = params;
-
-    // Get user info
-    let username = 'Anonymous';
-    let userId = 'anonymous';
-    try {
-      const currentUser = await context.reddit.getCurrentUser();
-      if (currentUser) {
-        userId = currentUser.id;
-        username = currentUser.username;
-      }
-    } catch (userError) {
-      console.error('❌ [DEBUG] Error getting current user:', userError);
-    }
-
-    // Generate game ID
-    const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-    // Save core game data
+    // save game data
+    const gameId = `game_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    
+    // store game data to redis
     await context.redis.hSet(`game:${gameId}`, {
-      word,
-      maskedWord: maskedWord || word.replace(/[a-zA-Z]/g, '_'),
-      questionText: questionText || `Guess the word: ${maskedWord}`,
-      gifs: JSON.stringify(gifs),
-      createdAt: Date.now().toString(),
-      creatorId: userId,
-      creatorUsername: username,
+      word: params.word,
+      maskedWord: params.maskedWord || '',
+      questionText: params.questionText || '',
+      gifs: JSON.stringify(params.gifs),
+      createdAt: Date.now().toString()
     });
 
-    // ========== CRITICAL REGISTRY UPDATES ==========
-    // 1. Add to activeGames sorted set
-    await context.redis.zAdd('activeGames', {
-      score: Date.now(),
-      member: gameId,
+    // create Reddit post with a simple initial preview
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const post = await context.reddit.submitPost({
+      title: `Can you solve this GIF Enigma?`,
+      subredditName: subreddit.name,
+      preview: Devvit.createElement('vstack', 
+        {
+          alignment: "center middle",
+          height: "100%",
+          width: "100%"
+        },
+        [
+          Devvit.createElement('text', {
+            style: "heading",
+            size: "medium"
+          }, "Can you guess the word?"),
+          
+          Devvit.createElement('text', {
+            size: "xlarge",
+            weight: "bold"
+          }, params.maskedWord || ''),
+          
+          Devvit.createElement('hstack', 
+            { gap: "medium" },
+            params.gifs.slice(0, 2).map((gif, index) =>
+              Devvit.createElement('image', {
+                key: String(index),
+                url: gif,
+                imageWidth: 100,
+                imageHeight: 100,
+                description: `GIF clue ${index + 1}`
+              })
+            )
+          ),
+          
+          Devvit.createElement('text', {
+            color: "#FF4500",
+            weight: "bold"
+          }, "Tap to play!")
+        ]
+      )
+    });  
+
+    // link post to game
+    await context.redis.hSet(`post:${post.id}`, {
+      gameId,
+      created: Date.now().toString()
     });
 
-    // 2. Add to game registry hash
-    await context.redis.hSet("game_registry", { 
-      [gameId]: "1" // Value can be any non-empty string
+    // store game preview data
+    await context.redis.hSet(`gamePreview:${gameId}`, {
+      maskedWord: params.maskedWord || '',
+      gifs: JSON.stringify(params.gifs),
+      postId: post.id
     });
-    console.log('✅ [DEBUG] Added game to registry');
 
-    // 3. Add to user's games if authenticated
-    if (userId !== 'anonymous') {
-      await context.redis.zAdd(`user:${userId}:games`, { 
-        member: gameId, 
-        score: Date.now() 
-      });
-    }
+    await post.setCustomPostPreview(() => 
+      Devvit.createElement('vstack', { alignment: "center middle", height: "100%", width: "100%" }, [
+        Devvit.createElement('text', { style: "heading", size: "medium" }, "Can you guess the word?"),
+        Devvit.createElement('text', { size: "xlarge", weight: "bold" }, params.maskedWord || ''),
+        Devvit.createElement('hstack', { gap: "medium" }, 
+          params.gifs.slice(0, 2).map((gif, index) => 
+            Devvit.createElement('image', {
+              key: String(index),
+              url: gif,
+              imageWidth: 100,
+              imageHeight: 100,
+              description: `GIF clue ${index + 1}`
+            })
+          )
+        ),
+        Devvit.createElement('text', { color: "#FF4500", weight: "bold" }, "Tap to play!")
+      ])
+    );
 
-    // Reddit post creation (existing logic)
-    let postId = null;
-    if (postToSubreddit) {
-      try {
-        // ... existing post creation logic ...
-      } catch (postError) {
-        console.error('❌ [DEBUG] Error posting to subreddit:', postError);
-      }
-    }
-
-    return {
+    return { 
       success: true,
       gameId,
-      postedToReddit: !!postId,
-      redditPostId: postId || undefined,
+      redditPostId: post.id
     };
   } catch (error) {
-    console.error('❌ [DEBUG] Error in saveGame:', error);
+    console.error('Game creation failed:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -311,11 +336,10 @@ export async function getGame(
     }
 
     // 5. Add username if missing
-    if (!gameData.creatorUsername && gameData.creatorId?.startsWith('t2_')) {
+    if (gameData.creatorId?.startsWith('t2_')) {
       try {
         const user = await context.reddit.getUserById(gameData.creatorId);
         if (user) {
-          gameData.creatorUsername = user.username;
           await context.redis.hSet(`game:${gameId}`, {
             creatorUsername: user.username
           });
@@ -430,7 +454,6 @@ export async function getUserGames(
             gifs: [], // Will be filled below
             createdAt: rawGameData.createdAt,
             creatorId: rawGameData.creatorId,
-            creatorUsername: rawGameData.creatorUsername,
             redditPostId: rawGameData.redditPostId,
           };
 
@@ -451,25 +474,10 @@ export async function getUserGames(
       }
     }
 
-    // Try to get username if we have games but no username
-    let username =
-      games.length > 0 && games[0].creatorUsername ? games[0].creatorUsername : 'this user';
-
-    if (!username && formattedUserId.startsWith('t2_')) {
-      try {
-        const user = await context.reddit.getUserById(formattedUserId);
-        if (user) {
-          username = user.username;
-        }
-      } catch (userError) {
-        console.error('❌ [DEBUG] Error fetching user details:', userError);
-      }
-    }
-
     return {
       success: true,
       games,
-      message: `Found ${games.length} games for ${username}`,
+      message: `Found ${games.length} games`,
     };
   } catch (error) {
     console.error('❌ [DEBUG] Error in getUserGames:', error);

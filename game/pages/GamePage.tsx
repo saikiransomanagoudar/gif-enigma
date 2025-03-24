@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationProps } from '../App';
-import { ComicText } from '../lib/fonts';
+import { ComicText } from '../lib/Fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
 import {

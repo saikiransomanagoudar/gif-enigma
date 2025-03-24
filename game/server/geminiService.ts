@@ -21,20 +21,25 @@ export async function getRecommendations(
     count?: number;
   },
   context: Context
-): Promise<{ success: boolean; recommendations?: string[]; error?: string }> {
+): Promise<{ success: boolean; recommendations?: string[]; error?: string; debug?: any }> {
   try {
     const { category, inputType, count = 10 } = params;
+
+    // Add debug log
+    console.log(`[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`);
 
     const apiKey = await context.settings.get('gemini-api-key');
 
     if (!apiKey) {
-      console.error('Gemini API key not found in settings');
+      console.error('[ERROR] Gemini API key not found in settings');
       return {
         success: false,
         error: 'API key not configured',
         recommendations: getDefaultRecommendations(category, inputType),
       };
     }
+
+    console.log('[DEBUG] API key found, proceeding with request');
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
@@ -59,68 +64,119 @@ export async function getRecommendations(
           : 'Topics include anything and everything, and also inspirational.'
       } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`;
   
+    console.log(`[DEBUG] Prompt: ${prompt.substring(0, 100)}...`);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 200,
-          topP: 0.95,
-          responseMimeType: 'application/json',
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
         },
-      }),
-    });
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 200,
+        topP: 0.95,
+        responseMimeType: 'application/json',
+      },
+    };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API error:', errorText);
+    console.log('[DEBUG] Sending request to Gemini API');
+    
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log(`[DEBUG] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ERROR] Gemini API error (${response.status}): ${errorText}`);
+        return {
+          success: false,
+          error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
+          recommendations: getDefaultRecommendations(category, inputType),
+          debug: { status: response.status, error: errorText },
+        };
+      }
+
+      const data = (await response.json()) as GeminiResponse;
+      console.log('[DEBUG] Received response from Gemini API');
+
+      // Add more detailed logging of the response structure
+      const responseStructure = {
+        hasCandidates: !!data.candidates,
+        candidatesLength: data.candidates?.length,
+        hasContent: !!data.candidates?.[0]?.content,
+        hasText: !!data.candidates?.[0]?.content?.parts?.[0]?.text,
+        textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
+        hasError: !!data.error,
+      };
+      
+      console.log('[DEBUG] Response structure:', JSON.stringify(responseStructure));
+
+      // Attempt to parse the text from data.candidates[0].content.parts[0].text
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        try {
+          console.log(`[DEBUG] Attempting to parse response text: ${text.substring(0, 100)}...`);
+          const recommendations = JSON.parse(text);
+          
+          if (Array.isArray(recommendations) && recommendations.length > 0) {
+            console.log(`[DEBUG] Successfully parsed ${recommendations.length} recommendations`);
+            return { 
+              success: true, 
+              recommendations,
+              debug: { responseStructure } 
+            };
+          } else {
+            console.error('[ERROR] Parsed response is not a valid array or is empty');
+          }
+        } catch (parseError) {
+          console.error('[ERROR] Error parsing Gemini response:', parseError);
+          console.log('[DEBUG] Raw text that failed to parse:', text);
+          return {
+            success: false,
+            error: `Parse error: ${String(parseError)}`,
+            recommendations: getDefaultRecommendations(category, inputType),
+            debug: { parseError: String(parseError), rawText: text },
+          };
+        }
+      } else {
+        console.error('[ERROR] No text found in Gemini response');
+      }
+
+      // If we reach here, fallback
       return {
         success: false,
-        error: `API error: ${response.status}`,
+        error: 'Invalid response format',
         recommendations: getDefaultRecommendations(category, inputType),
+        debug: { data },
+      };
+    } catch (fetchError) {
+      console.error('[ERROR] Fetch error:', fetchError);
+      return {
+        success: false,
+        error: `Fetch error: ${String(fetchError)}`,
+        recommendations: getDefaultRecommendations(category, inputType),
+        debug: { fetchError: String(fetchError) },
       };
     }
-
-    const data = (await response.json()) as GeminiResponse;
-
-    // Attempt to parse the text from data.candidates[0].content.parts[0].text
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (text) {
-      try {
-        const recommendations = JSON.parse(text);
-        if (Array.isArray(recommendations) && recommendations.length > 0) {
-          return { success: true, recommendations };
-        }
-      } catch (parseError) {
-        console.error('Error parsing Gemini response:', parseError);
-      }
-    }
-
-    // If we reach here, fallback
-    return {
-      success: false,
-      error: 'Invalid response format',
-      recommendations: getDefaultRecommendations(category, inputType),
-    };
   } catch (error) {
-    console.error('Error fetching recommendations from Gemini:', error);
+    console.error('[ERROR] Error in getRecommendations:', error);
     return {
       success: false,
       error: String(error),
       recommendations: getDefaultRecommendations(params.category, params.inputType),
+      debug: { error: String(error) },
     };
   }
 }
@@ -128,21 +184,25 @@ export async function getRecommendations(
 export async function getSynonyms(
   params: { word: string },
   context: Context
-): Promise<{ success: boolean; synonyms?: string[][]; error?: string }> {
+): Promise<{ success: boolean; synonyms?: string[][]; error?: string; debug?: any }> {
   const { word } = params; // ensure 'word' is in scope for the catch block
 
   try {
+    console.log(`[DEBUG] Getting synonyms for word: ${word}`);
+    
     // Get the API key from Devvit settings
     const apiKey = await context.settings.get('gemini-api-key');
 
     if (!apiKey) {
-      console.error('Gemini API key not found in settings');
+      console.error('[ERROR] Gemini API key not found in settings');
       return {
         success: false,
         error: 'API key not configured',
         synonyms: getDefaultSynonyms(word),
       };
     }
+
+    console.log('[DEBUG] API key found for synonyms request');
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
@@ -153,65 +213,117 @@ export async function getSynonyms(
 4. Fourth set: Very specific and direct terms (3 terms)
 Return only as a JSON array of arrays with no explanation.`;
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 200,
-          topP: 0.95,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+    console.log(`[DEBUG] Synonyms prompt: ${prompt.substring(0, 100)}...`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini API error:', errorText);
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 200,
+        topP: 0.95,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    console.log('[DEBUG] Sending synonyms request to Gemini API');
+    
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log(`[DEBUG] Synonyms response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[ERROR] Gemini API error for synonyms (${response.status}): ${errorText}`);
+        return {
+          success: false,
+          error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
+          synonyms: getDefaultSynonyms(word),
+          debug: { status: response.status, error: errorText },
+        };
+      }
+
+      const data = (await response.json()) as GeminiResponse;
+      console.log('[DEBUG] Received synonyms response from Gemini API');
+
+      // Log response structure
+      const responseStructure = {
+        hasCandidates: !!data.candidates,
+        candidatesLength: data.candidates?.length,
+        hasContent: !!data.candidates?.[0]?.content,
+        hasText: !!data.candidates?.[0]?.content?.parts?.[0]?.text,
+        textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
+        hasError: !!data.error,
+      };
+      
+      console.log('[DEBUG] Synonyms response structure:', JSON.stringify(responseStructure));
+
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        try {
+          console.log(`[DEBUG] Attempting to parse synonyms text: ${text.substring(0, 100)}...`);
+          const synonyms = JSON.parse(text);
+          
+          if (Array.isArray(synonyms) && synonyms.length > 0) {
+            console.log(`[DEBUG] Successfully parsed ${synonyms.length} synonym groups`);
+            return { 
+              success: true, 
+              synonyms,
+              debug: { responseStructure } 
+            };
+          } else {
+            console.error('[ERROR] Parsed synonyms response is not a valid array or is empty');
+          }
+        } catch (parseError) {
+          console.error('[ERROR] Error parsing synonyms JSON:', parseError);
+          console.log('[DEBUG] Raw synonyms text that failed to parse:', text);
+          return {
+            success: false,
+            error: `Parse error: ${String(parseError)}`,
+            synonyms: getDefaultSynonyms(word),
+            debug: { parseError: String(parseError), rawText: text },
+          };
+        }
+      } else {
+        console.error('[ERROR] No text found in Gemini synonyms response');
+      }
+
       return {
         success: false,
-        error: `API error: ${response.status}`,
+        error: 'Invalid response format for synonyms',
         synonyms: getDefaultSynonyms(word),
+        debug: { data },
+      };
+    } catch (fetchError) {
+      console.error('[ERROR] Fetch error for synonyms:', fetchError);
+      return {
+        success: false,
+        error: `Fetch error: ${String(fetchError)}`,
+        synonyms: getDefaultSynonyms(word),
+        debug: { fetchError: String(fetchError) },
       };
     }
-
-    const data = (await response.json()) as GeminiResponse;
-
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (text) {
-      try {
-        const synonyms = JSON.parse(text);
-        if (Array.isArray(synonyms) && synonyms.length > 0) {
-          return { success: true, synonyms };
-        }
-      } catch (parseError) {
-        console.error('Error parsing synonyms JSON:', parseError);
-      }
-    }
-
-    return {
-      success: false,
-      error: 'Invalid response format',
-      synonyms: getDefaultSynonyms(word),
-    };
   } catch (error) {
-    console.error('Error fetching synonyms from Gemini:', error);
+    console.error('[ERROR] Error in getSynonyms:', error);
     return {
       success: false,
       error: String(error),
       synonyms: getDefaultSynonyms(word),
+      debug: { error: String(error) },
     };
   }
 }
@@ -364,44 +476,52 @@ function getDefaultSynonyms(word: string): string[][] {
       ['identity', 'persona', 'character'],
       ['blue', 'alien', 'pandora'],
       ['james cameron', 'science fiction', 'movie'],
+      ['film character', 'blue avatar', 'na\'vi'],
     ],
     'titanic': [
       ['large', 'massive', 'enormous'],
       ['ship', 'vessel', 'ocean liner'],
       ['iceberg', 'disaster', 'sinking'],
+      ['jack dawson', 'rose dewitt', 'james cameron'],
     ],
     'matrix': [
       ['grid', 'array', 'pattern'],
       ['code', 'virtual', 'simulation'],
       ['neo', 'keanu reeves', 'morpheus'],
+      ['red pill', 'bullet time', 'trinity'],
     ],
     'star wars': [
       ['space', 'galaxy', 'universe'],
       ['lightsaber', 'jedi', 'force'],
-      ['darth vader', 'luke skywalker', 'millennium falcon'],
+      ['darth vader', 'luke skywalker', 'yoda'],
+      ['death star', 'millennium falcon', 'stormtrooper'],
     ],
     'harry potter': [
       ['wizard', 'magic', 'wand'],
       ['hogwarts', 'school', 'spells'],
       ['voldemort', 'scar', 'hermione'],
+      ['harry potter', 'ron weasley', 'dumbledore'],
     ],
     'coffee': [
       ['drink', 'beverage', 'cup'],
       ['caffeine', 'beans', 'morning'],
       ['espresso', 'latte', 'cappuccino'],
+      ['coffee mug', 'coffee shop', 'barista'],
     ],
     'beach party': [
       ['sand', 'ocean', 'coast'],
       ['celebration', 'gathering', 'fun'],
       ['surfing', 'sunbathing', 'bonfire'],
+      ['beach ball', 'beach umbrella', 'volleyball'],
     ],
   };
 
   return (
     synonymMap[wordLower] || [
-      ['abstract', 'concept', 'basic idea'],
-      ['related objects', 'context', 'examples'],
-      ['direct hint', 'obvious reference', 'clear connection'],
+      ['abstract', 'concept', 'idea'],
+      ['related', 'similar', 'connected'],
+      ['specific', 'direct', 'explicit'],
+      ['exact', 'precise', 'identical'],
     ]
   );
 }

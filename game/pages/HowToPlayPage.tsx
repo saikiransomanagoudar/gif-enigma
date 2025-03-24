@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationProps } from '../App';
-import { ComicText } from '../lib/fonts';
+import { ComicText } from '../lib/Fonts';
 import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 

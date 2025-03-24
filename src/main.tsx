@@ -1,12 +1,14 @@
-import { Devvit, Context, useWebView } from '@devvit/public-api';
+import { Devvit, Context, useWebView, useState } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
-import { Preview } from './components/Preview.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
-import { saveGame, getRecentGames, getUserGames, purgeLegacyGames } from '../game/server/gameHandler.server.js';
+import { saveGame, getUserGames } from '../game/server/gameHandler.server.js';
+import { ComicText } from './utils/fonts/comicText.js';
 import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
 } from '../game/server/geminiApi.server.js';
+import { CustomPostPreview } from './components/CustomPostPreview.js';
+import { ScoreData } from '../game/server/scoringService.js';
 
 Devvit.addSettings([
   {
@@ -46,39 +48,52 @@ Devvit.addCustomPostType({
   height: 'tall',
   render: (context) => {
     // @ts-ignore
-    const { mount } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
-      onMessage: async (event, { postMessage }) => {
+    const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
+      onMessage: async (
+        event: WebviewToBlockMessage,
+        { postMessage }: { postMessage: (message: BlocksToWebviewMessage) => void }
+      ) => {
         console.log('Received message from web app:', event.type);
 
         switch (event.type) {
           case 'INIT':
             postMessage({
               type: 'INIT_RESPONSE',
-              payload: {
+              data: {
                 postId: context.postId || '',
               },
             });
             break;
 
+          case 'GAME_DATA':
+            const { maskedWord, gifs } = event.data;
+            await context.redis.hSet(`gamePreview:${context.postId}`, {
+              maskedWord,
+              gifs: JSON.stringify(gifs),
+            });
+
+            postMessage({
+              type: 'GAME_DATA_RESULT',
+              success: true,
+              data: { maskedWord, gifs },
+            });
+            break;
+
           case 'GET_CURRENT_USER':
             try {
-              console.log('Getting current user information');
-              const currentUser = await context.reddit.getCurrentUser();
+              const username = await context.reddit.getCurrentUsername();
 
-              if (currentUser) {
+              if (username) {
                 postMessage({
                   type: 'GET_CURRENT_USER_RESULT',
                   success: true,
-                  user: {
-                    id: currentUser.id,
-                    username: currentUser.username,
-                  },
+                  user: { username },
                 });
               } else {
                 postMessage({
                   type: 'GET_CURRENT_USER_RESULT',
                   success: false,
-                  error: 'Could not retrieve current user',
+                  error: 'User not logged in or username not available',
                 });
               }
             } catch (error) {
@@ -102,8 +117,6 @@ Devvit.addCustomPostType({
                 },
                 context
               );
-
-              // Convert result to serializable games for postMessage
               const serializedGames = result.games
                 ? result.games.map(
                     (game: {
@@ -141,48 +154,6 @@ Devvit.addCustomPostType({
               console.error('Error getting user games:', error);
               postMessage({
                 type: 'GET_USER_GAMES_RESULT',
-                success: false,
-                error: String(error),
-              });
-            }
-            break;
-
-          case 'GET_USER_BY_ID':
-            try {
-              const userId = event.data.userId;
-
-              if (!userId || !userId.startsWith('t2_')) {
-                postMessage({
-                  type: 'GET_USER_BY_ID_RESULT',
-                  success: false,
-                  error: 'Invalid user ID format. Reddit user IDs should start with t2_',
-                });
-                break;
-              }
-
-              const user = await context.reddit.getUserById(userId);
-
-              if (user) {
-                postMessage({
-                  type: 'GET_USER_BY_ID_RESULT',
-                  success: true,
-                  user: {
-                    id: user.id,
-                    username: user.username,
-                    // Add other user properties as needed
-                  },
-                });
-              } else {
-                postMessage({
-                  type: 'GET_USER_BY_ID_RESULT',
-                  success: false,
-                  error: 'User not found',
-                });
-              }
-            } catch (error) {
-              console.error('Error getting user by ID:', error);
-              postMessage({
-                type: 'GET_USER_BY_ID_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -320,26 +291,28 @@ Devvit.addCustomPostType({
             }
             break;
 
-            case 'PURGE_LEGACY_GAMES':
-              try {
-                const result = await purgeLegacyGames(context);
-                postMessage({
-                  type: 'PURGE_LEGACY_GAMES_RESULT',
-                  success: true,
-                  deleted: result.deleted
-                });
-              } catch (error) {
-                postMessage({
-                  type: 'PURGE_LEGACY_GAMES_RESULT',
-                  success: false,
-                  error: String(error)
-                });
-              }
-              break;
           case 'GET_GEMINI_RECOMMENDATIONS': {
             try {
+              console.log('MainApp: Processing Gemini recommendations request', event.data);
+
+              if (!event.data) {
+                throw new Error('No data received in request');
+              }
+
               const { category, inputType, count } = event.data;
+              console.log('MainApp: Fetching recommendations for', category, inputType, count);
+
               const result = await fetchGeminiRecommendations(context, category, inputType, count);
+
+              console.log(
+                'MainApp: Recommendations result:',
+                JSON.stringify({
+                  success: result.success,
+                  count: result.recommendations?.length,
+                  error: result.error,
+                })
+              );
+
               postMessage({
                 type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
                 success: result.success,
@@ -347,6 +320,7 @@ Devvit.addCustomPostType({
                 error: result.error,
               });
             } catch (error) {
+              console.error('MainApp: Error in GET_GEMINI_RECOMMENDATIONS handler:', error);
               postMessage({
                 type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
                 success: false,
@@ -358,8 +332,26 @@ Devvit.addCustomPostType({
 
           case 'GET_GEMINI_SYNONYMS': {
             try {
+              console.log('MainApp: Processing Gemini synonyms request', event.data);
+
+              if (!event.data) {
+                throw new Error('No data received in request');
+              }
+
               const { word } = event.data;
+              console.log('MainApp: Fetching synonyms for', word);
+
               const result = await fetchGeminiSynonyms(context, word);
+
+              console.log(
+                'MainApp: Synonyms result:',
+                JSON.stringify({
+                  success: result.success,
+                  count: result.synonyms?.length,
+                  error: result.error,
+                })
+              );
+
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: result.success,
@@ -367,6 +359,7 @@ Devvit.addCustomPostType({
                 error: result.error,
               });
             } catch (error) {
+              console.error('MainApp: Error in GET_GEMINI_SYNONYMS handler:', error);
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: false,
@@ -399,49 +392,40 @@ Devvit.addCustomPostType({
             }
             break;
 
-          // case 'UPLOAD_TENOR_GIF': {
-          //   try {
-          //     const { tenorGifUrl, gifId } = event.data; // gifId passed from the webview
-          //     const response = await context.media.upload({
-          //       url: tenorGifUrl,
-          //       type: 'gif',
-          //     });
-          //     postMessage({
-          //       type: 'UPLOAD_TENOR_GIF_RESULT',
-          //       success: true,
-          //       mediaUrl: response.mediaUrl, // Use the provided mediaUrl
-          //       mediaId: response.mediaId,
-          //       gifId, // Pass gifId to correlate with the uploaded asset
-          //     });
-          //   } catch (error) {
-          //     postMessage({
-          //       type: 'UPLOAD_TENOR_GIF_RESULT',
-          //       success: false,
-          //       error: String(error),
-          //       gifId: event.data.gifId,
-          //     });
-          //   }
-          //   break;
-          // }
-
           case 'SAVE_GAME':
             try {
-              console.log('Saving game:', event.data);
               const result = await saveGame(event.data, context);
-
+              if (result.success && result.redditPostId) {
+                await context.redis.hSet(`post:${result.redditPostId}`, { gameId: result.gameId! });
+                await context.redis.hSet(`gamePreview:${result.gameId}`, {
+                  maskedWord: event.data.maskedWord,
+                  gifs: JSON.stringify(event.data.gifs),
+                });
+              }
               postMessage({
                 type: 'SAVE_GAME_RESULT',
-                success: true,
+                success: result.success,
                 result,
+                error: result.error,
               });
             } catch (error) {
-              console.error('Error saving game:', error);
               postMessage({
                 type: 'SAVE_GAME_RESULT',
                 success: false,
                 error: String(error),
               });
             }
+            break;
+
+          case 'NAVIGATE':
+            console.log('MainApp: Navigation request', event.data);
+            postMessage({
+              type: 'NAVIGATION_RESULT',
+              success: true,
+              page: event.data.page,
+              // Include gameId if it exists in params
+              ...(event.data.params?.gameId ? { gameId: event.data.params.gameId } : {}),
+            });
             break;
 
           default:
@@ -452,15 +436,13 @@ Devvit.addCustomPostType({
     });
 
     return (
-      <vstack height="100%" width="100%" alignment="center middle">
-        <button
-          onPress={() => {
-            mount();
-          }}
-        >
-          Play GIF Enigma
-        </button>
-      </vstack>
+      <zstack height="100%" width="100%" alignment="center middle">
+        <CustomPostPreview 
+          context={context} 
+          onMount={mount} 
+          postMessage={postMessage} 
+        />
+      </zstack>
     );
   },
 });
@@ -469,32 +451,25 @@ Devvit.addMenuItem({
   label: 'Create GIF Enigma Game',
   location: 'subreddit',
   forUserType: 'moderator',
-  onPress: async (_event, context) => {
-    const activeGames = await context.redis.zRange('activeGames', 0, -1);
-    const gameIds = activeGames.map(g => g.member);
-    
-    await context.redis.hSet(
-      "game_registry", 
-      Object.fromEntries(gameIds.map(id => [id, "1"]))
-    );
-    const result = await purgeLegacyGames(context);
-    context.ui.showToast(`Purged ${result.deleted} legacy games`);
+  onPress: async (_, context) => {
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
-
+    // const url1 = await context.assets.getURL('lets-play.gif');
+    // const url2 = await context.assets.getURL('lets-build.gif');
+    // context.ui.showToast(`GIF URLs: ${url1} and ${url2}`);
     const post = await reddit.submitPost({
-      title: 'GIF Enigma Game',
+      title: 'New GIF Enigma Challenge!',
       subredditName: subreddit.name,
-      preview: <Preview />,
+      preview: <CustomPostPreview context={context} onMount={() => {}} postMessage={() => {}} />,
     });
 
-    ui.showToast({ text: 'Created GIF Enigma post!' });
+    ui.showToast('Created new GIF Enigma post!');
     ui.navigateTo(post.url);
   },
 });
 
 export function getAppVersion(context: Context): string {
-  return context.appVersion || '0.1.0.0';
+  return context.appVersion || '1.0.0.0';
 }
 
 export default Devvit;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts';
+import { ComicText } from '../lib/Fonts';
 import * as transitions from '../../src/utils/transitions';
 export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
 

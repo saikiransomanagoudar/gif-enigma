@@ -1,28 +1,28 @@
-
+// types.ts
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
 
-// Individual question/game from Redis
 export interface GameRedisData {
   id: string;
   word: string;
   maskedWord: string;
   questionText: string;
-  gifs: string | string[]; // Can be a JSON string or parsed array
+  gifs: string | string[];
   createdAt?: string;
   creatorId?: string;
   redditPostId?: string;
-  [key: string]: any; // Allow for additional Redis fields
+  preview?: GamePreviewData;
+  [key: string]: any;
 }
 
 export interface PlayerGameState {
   gifHintCount: number;
   revealedLetters: number[];
   guess: string;
-  lastPlayed: number; // timestamp
+  lastPlayed: number;
   isCompleted: boolean;
 }
-// Processed game data with proper typing
+
 export interface GameData {
   id: string;
   word: string;
@@ -31,12 +31,18 @@ export interface GameData {
   gifs: string[];
   createdAt?: string;
   creatorId?: string;
-  creatorUsername?: string;
   redditPostId?: string;
-  [key: string]: any;
+  preview?: GamePreviewData;
 }
 
-// Individual question in a multi-question game
+export interface GamePreviewData {
+  maskedWord: string;
+  gifUrls: string[];
+  lastUpdated: number;
+  postId?: string;
+  creatorUsername?: string;
+}
+
 export interface Question {
   word: string;
   maskedWord: string;
@@ -46,7 +52,6 @@ export interface Question {
   [key: string]: any;
 }
 
-// Full game session data structure (for multi-question games)
 export interface GameSessionData {
   questions: Question[];
   currentQuestionIndex: number;
@@ -55,7 +60,6 @@ export interface GameSessionData {
   state: PlayerGameState;
 }
 
-// User statistics
 export interface UserStats {
   gamesPlayed: number;
   gamesWon: number;
@@ -66,27 +70,26 @@ export interface UserStats {
   [key: string]: any;
 }
 
-// Leaderboard entry
 export interface LeaderboardEntry {
+  userId: string;
   username: string;
-  gamesWon: number;
-  bestScore: number;
-  averageScore: number;
-  bestGuessCount: number;
+  score: number;
+  timestamp: number;
+  rank?: number;
+  gifPenalty?: number;
+  wordPenalty?: number;
+  timeTaken?: number;
 }
 
-// Creator mode form data
 export interface CreatorData {
   word: string;
-  maskedWord?: string; // Optional - can be generated
-  questionText?: string; // Optional
+  maskedWord?: string;
+  questionText?: string;
   gifs: string[];
   postToSubreddit?: boolean;
+  previewStyle?: 'basic' | 'enhanced';
 }
 
-// API Response interfaces
-
-// Response structure for getRecentGames
 export interface GetRecentGamesResponse {
   success: boolean;
   games?: GameData[];
@@ -98,40 +101,29 @@ export interface GetRecentGamesResponse {
   };
 }
 
-// Response structure for getGame
 export interface GetGameResponse {
   success: boolean;
   game?: GameData;
   error?: string;
 }
 
-// Response structure for saveGame
 export interface SaveGameResponse {
   success: boolean;
   gameId?: string;
   postedToReddit?: boolean;
   redditPostId?: string;
   error?: string;
+  previewUrl?: string;
 }
 
-// Response structure for cacheGifResults and getCachedGifResults
 export interface GifCacheResponse {
   success: boolean;
   cached?: boolean;
   results?: any[];
   error?: string;
+  expiration?: number;
 }
 
-// For postMessage communication
-export interface PostMessageEvent<T = any> {
-  type: string;
-  data?: T;
-  success?: boolean;
-  result?: any;
-  error?: string;
-}
-
-// scores
 export interface ScoreData {
   score: number;
   gifPenalty: number;
@@ -142,13 +134,58 @@ export interface ScoreData {
   timestamp: number;
 }
 
-export interface LeaderboardEntry extends ScoreData {
-  username: string;
-  rank?: number;
+export interface NavigationProps {
+  onNavigate: (page: Page, params?: any) => void;
+  params?: any;
+  context?: any;
 }
 
-// Navigation props for component routing
-export interface NavigationProps {
-  onNavigate: (page: string, params?: any) => void;
-  params?: any;
+export interface PostPreviewUpdate {
+  postId: string;
+  gameId: string;
+  preview: GamePreviewData;
+  status?: 'pending' | 'published' | 'archived';
+}
+
+export interface TenorGifResult {
+  id: string;
+  url: string;
+  media_formats: Record<string, { url: string }>;
+  content_description: string;
+}
+
+// Message payload types
+export interface PreviewMessagePayload {
+  type: 'previewUpdate' | 'previewRequest';
+  data: {
+    gameId: string;
+    postId?: string;
+    maskedWord?: string;
+    gifUrls?: string[];
+  };
+}
+
+export interface GameStateMessage {
+  type: 'gameStateUpdate';
+  data: PlayerGameState & { gameId: string };
+}
+
+export interface ErrorResponse {
+  success: false;
+  error: string;
+  code?: number;
+  timestamp?: number;
+}
+
+export type APIResponse<T = any> = 
+  | { success: true; data: T }
+  | ErrorResponse;
+
+// Type guards
+export function isGameData(obj: any): obj is GameData {
+  return obj && typeof obj === 'object' && 'word' in obj && 'gifs' in obj;
+}
+
+export function isPreviewData(obj: any): obj is GamePreviewData {
+  return obj && typeof obj === 'object' && 'maskedWord' in obj && 'gifUrls' in obj;
 }

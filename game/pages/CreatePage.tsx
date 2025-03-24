@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts';
+import { ComicText } from '../lib/Fonts';
 import { NavigationProps } from '../App';
 import { Modal } from '../components/Modal';
 import { CategoryType } from './CategoryPage';

@@ -1,4 +1,5 @@
-export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
+import { GameData } from './lib/types';
+export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'category';
 
 // export interface GetRecentGamesResultMessage {
 //   type: 'GET_RECENT_GAMES_RESULT';
@@ -17,7 +18,7 @@ export type WebviewToBlockMessage =
     }
   | {
       type: 'createGame';
-      payload: {
+      data: {
         title: string;
         category: string;
         difficulty: string;
@@ -25,7 +26,7 @@ export type WebviewToBlockMessage =
     }
   | {
       type: 'submitGuess';
-      payload: {
+      data: {
         gameId: string;
         guess: string;
       };
@@ -113,24 +114,46 @@ export type WebviewToBlockMessage =
       };
     }
   | { type: 'GET_GAME_LEADERBOARD'; data: { gameId: string; limit?: number } }
-  | { type: 'PURGE_LEGACY_GAMES' };
-  
-
-export interface GameData {
-  id: string;
-  word: string;
-  maskedWord: string;
-  questionText: string;
-  gifs: string[];
-  createdAt?: string;
-  creatorId?: string;
-  redditPostId?: string;
-}
+  // | { type: 'PURGE_LEGACY_GAMES' }
+  | {
+      type: 'GET_GAME_PREVIEW_DATA';
+      data: {
+        gameId: string;
+      };
+    }
+  | {
+      type: 'GAME_DATA';
+      data: {
+        maskedWord: string;
+        gifs: string[];
+      };
+    }
+  | {
+      type: 'UPDATE_POST_PREVIEW';
+      data: {
+        postId: string;
+        maskedWord: string;
+        gifs: string[];
+      };
+    }
+  | {
+      type: 'NAVIGATE';
+      data: {
+        page: Page;
+        params?: {
+          gameId?: string;
+          [key: string]: any;
+        };
+      };
+    }
+  | {
+      type: 'GET_GAME_PREVIEW';
+    };
 
 export type BlocksToWebviewMessage =
   | {
       type: 'INIT_RESPONSE';
-      payload: {
+      data: {
         postId: string;
       };
     }
@@ -143,7 +166,7 @@ export type BlocksToWebviewMessage =
     }
   | {
       type: 'gameCreated';
-      payload: {
+      data: {
         gameId: string;
         title: string;
         gifUrl: string;
@@ -151,7 +174,7 @@ export type BlocksToWebviewMessage =
     }
   | {
       type: 'guessResult';
-      payload: {
+      data: {
         correct: boolean;
         score: number;
         message: string;
@@ -160,13 +183,7 @@ export type BlocksToWebviewMessage =
   | {
       type: 'GET_CURRENT_USER_RESULT';
       success: boolean;
-      user?: { id: string; username: string };
-      error?: string;
-    }
-  | {
-      type: 'GET_USER_BY_ID_RESULT';
-      success: boolean;
-      user?: { id: string; username: string };
+      user?: { username: string };
       error?: string;
     }
   | {
@@ -213,13 +230,6 @@ export type BlocksToWebviewMessage =
       };
       error?: string;
     }
-  // | {
-  //     type: 'GET_RECENT_GAMES_RESULT';
-  //     success: boolean;
-  //     result?: { success: boolean; games?: GameData[]; error?: string };
-  //     games?: GameData[];
-  //     error?: string;
-  //   }
   | {
       type: 'GET_GAME_RESULT';
       success: boolean;
@@ -246,7 +256,7 @@ export type BlocksToWebviewMessage =
       error?: string;
       needsRandomGame?: boolean;
     }
-    | {
+  | {
       type: 'GET_RANDOM_GAME_RESULT';
       success: boolean;
       result?: { success: boolean; game?: GameData; error?: string };
@@ -301,22 +311,54 @@ export type BlocksToWebviewMessage =
       };
       error?: string;
     }
-    | {
-      type: 'PURGE_LEGACY_GAMES_RESULT';
+  // | {
+  //     type: 'PURGE_LEGACY_GAMES_RESULT';
+  //     success: boolean;
+  //     deleted?: number;
+  //     error?: string;
+  //   }
+  | {
+      type: 'GAME_PREVIEW_DATA_RESULT';
       success: boolean;
-      deleted?: number;
+      data?: {
+        maskedWord: string;
+        gifs: string[];
+      };
+      error?: string;
+    }
+  | {
+      type: 'GAME_DATA_RESULT';
+      success: boolean;
+      data?: {
+        maskedWord: string;
+        gifs: string[];
+      };
+      error?: string;
+    }
+  | {
+      type: 'POST_PREVIEW_UPDATED';
+      success: boolean;
+      postId?: string;
+      error?: string;
+    }
+  | {
+      type: 'NAVIGATION_RESULT';
+      success: boolean;
+      page?: Page;  
+      gameId?: string;
+      error?: string;
+    }
+  | {
+      type: 'GET_GAME_PREVIEW_RESULT';
+      success: boolean;
+      preview?: {
+        gameId: string;
+        maskedWord?: string;
+        gifs?: string[];
+      };
       error?: string;
     };
-// | {
-//     type: 'UPLOAD_TENOR_GIF_RESULT';
-//     success: boolean;
-//     mediaId?: string;
-//     mediaUrl?: string;
-//     gifId?: string;
-//     error?: string;
-//   };
 
-// Devvit message wrapper type
 export type DevvitMessage = {
   type: 'devvit-message';
   data: { message: BlocksToWebviewMessage };

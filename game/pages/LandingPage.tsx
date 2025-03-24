@@ -1,83 +1,40 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts';
-
+import { ComicText } from '../lib/Fonts';
 import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
-  const [username, setUsername] = useState<string>('');
   const [redditUsername, setRedditUsername] = useState<string>('');
-  const [hasFetched, setHasFetched] = useState<boolean>(false);
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isboardOpen, setboardOpen] = useState(false);
 
   useEffect(() => {
-    // Detect dark mode using matchMedia
+    // Detect dark mode
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-    // Set initial state
     setIsDarkMode(darkModeQuery.matches);
-
-    // Listen for theme changes
-    const handleThemeChange = (e: MediaQueryListEvent) => {
-      setIsDarkMode(e.matches);
-    };
-
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
     darkModeQuery.addEventListener('change', handleThemeChange);
-
-    return () => {
-      darkModeQuery.removeEventListener('change', handleThemeChange);
-    };
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
   useEffect(() => {
-    const fetchUsername = async () => {
-      try {
-        const response = await fetch('https://oauth.reddit.com/api/v1/me', {
-          method: 'GET',
-          headers: {
-            'Authorization': `bearer YOUR_ACCESS_TOKEN`,
-            'User-Agent': 'YOUR_USER_AGENT',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch user data');
+    // Request Reddit username
+    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'GET_CURRENT_USER_RESULT') {
+        if (event.data.success) {
+          setRedditUsername(event.data.user?.username || '');
+        } else {
+          console.error('Error fetching user:', event.data.error);
         }
-
-        const data = await response.json();
-        setUsername(data.name);
-      } catch (error) {
-        console.error('Error fetching user:', error);
       }
     };
-
-    fetchUsername();
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
-
-  useEffect(() => {
-    if (!hasFetched) {
-      setHasFetched(true);
-      fetch('/api/currentUser')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data) {
-            if (data.username) {
-              setUsername(data.username); // Set general username
-            }
-            if (data.redditUsername) {
-              setRedditUsername(data.redditUsername); // Set Reddit username if available
-            }
-          }
-        })
-        .catch((error) => {
-          console.error('Error fetching user:', error);
-        });
-    }
-  }, [hasFetched]);
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
   const textColor = isDarkMode
@@ -113,7 +70,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
                 className={`hidden sm:block ${isboardOpen ? 'text-lg' : ''}`}
                 color={ifhover === 'btn1' ? 'white' : 'black'}
               >
-                &nbsp;LEADERBOARD
+                &nbsp;Leaderboard
               </ComicText>
             </span>
           </motion.button>
@@ -134,11 +91,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               className="mt-[-15px]"
             >
               <ComicText size={3} color={colors.primary}>
-                GIF ENIGMA
+                GIF Enigma
               </ComicText>
             </motion.h2>
 
-            {/* Subtitle */}
+            {/* Subtitle
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -151,7 +108,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               >
                 Can you guess the hidden word from a GIF?
               </ComicText>
-            </motion.h2>
+            </motion.h2> */}
             {/* Welcome Message */}
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
@@ -161,10 +118,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               <ComicText
                 size={0.8}
                 color={textColor}
-                className={`mt-[10px] mb-[10px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
+                className={`mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
-                Hi {redditUsername ? `u/${redditUsername}` : username ? `u/${username}` : 'there'},
-                are you ready to unravel the message from GIFs?
+                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the secret word/phrase from GIFs?
               </ComicText>
             </motion.h2>
           </div>
@@ -230,7 +186,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
                   size={0.8}
                   className={`text-lg max-sm:text-[1px] ${ifhover === 'btn2' ? '!text-white' : '!text-black'}`}
                 >
-                  &nbsp;HOW THIS GAME WORKS? 🤔
+                  &nbsp;How this game works? 🤔
                 </ComicText>
               </span>
             </button>

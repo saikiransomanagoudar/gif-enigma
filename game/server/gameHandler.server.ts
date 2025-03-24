@@ -1,4 +1,3 @@
-import { Context } from '@devvit/public-api';
 import {
   saveGame,
   getRecentGames,
@@ -102,45 +101,45 @@ export async function getRandomGame(
   }
 }
 
-export async function purgeLegacyGames(context: Context) {
-  const BATCH_SIZE = 100;
-  let cursor = 0;
-  let deletedCount = 0;
-  let processed = 0;
+// export async function purgeLegacyGames(context: Context) {
+//   const BATCH_SIZE = 100;
+//   let cursor = 0;
+//   let deletedCount = 0;
+//   let processed = 0;
 
-  do {
-    const scanResponse = await context.redis.hScan("game_registry", cursor, `COUNT ${BATCH_SIZE} MATCH game_*`);
-    cursor = scanResponse.cursor;
-    const gameIds = scanResponse.fieldValues.map(fv => fv.field);
+//   do {
+//     const scanResponse = await context.redis.hScan("game_registry", cursor, `COUNT ${BATCH_SIZE} MATCH game_*`);
+//     cursor = scanResponse.cursor;
+//     const gameIds = scanResponse.fieldValues.map(fv => fv.field);
     
-    for (const gameId of gameIds) {
-      processed++;
-      const gameKey = `game:${gameId}`;
+//     for (const gameId of gameIds) {
+//       processed++;
+//       const gameKey = `game:${gameId}`;
       
-      // Get game data
-      const gameDataStr = await context.redis.get(gameKey);
+//       // Get game data
+//       const gameDataStr = await context.redis.get(gameKey);
       
-      if (gameDataStr) {
-        try {
-          const gameData = JSON.parse(gameDataStr);
-          if (gameData?.gifs?.some((url: string) => url.includes('media.tenor.com'))) {
-            // Start a transaction for deletion
-            const txn = await context.redis.watch(gameKey, "game_registry");
-            await txn.multi();
-            await txn.del(gameKey);
-            await txn.hDel("game_registry", [gameId]);
-            await txn.exec();
-            deletedCount++;
-          }
-        } catch (e) {
-          console.log(`Error parsing game data for ${gameKey}: ${e}`);
-        }
-      }
-    }
-  } while (cursor !== 0);
+//       if (gameDataStr) {
+//         try {
+//           const gameData = JSON.parse(gameDataStr);
+//           if (gameData?.gifs?.some((url: string) => url.includes('media.tenor.com'))) {
+//             // Start a transaction for deletion
+//             const txn = await context.redis.watch(gameKey, "game_registry");
+//             await txn.multi();
+//             await txn.del(gameKey);
+//             await txn.hDel("game_registry", [gameId]);
+//             await txn.exec();
+//             deletedCount++;
+//           }
+//         } catch (e) {
+//           console.log(`Error parsing game data for ${gameKey}: ${e}`);
+//         }
+//       }
+//     }
+//   } while (cursor !== 0);
 
-  return { deleted: deletedCount, processed };
-}
+//   return { deleted: deletedCount, processed };
+// }
 
 export async function saveGameState(
   params: {

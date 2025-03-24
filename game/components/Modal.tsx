@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/fonts';
+import { ComicText } from '../lib/Fonts';
 
 interface ModalProps {
   title: string;
