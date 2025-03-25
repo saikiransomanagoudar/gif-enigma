@@ -249,7 +249,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               type: 'SAVE_SCORE',
               data: {
                 ...score,
-                username: username || 'anonymous',
+                username: score.username || 'anonymous',
                 gameId: gameData?.id,
                 timestamp: Date.now(),
               },
@@ -455,13 +455,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleCorrectGuess = () => {
-    if (gameData && username) {
-      console.log('🏆 [DEBUG] Marking game completed for:', username);
+    if (gameData) {
+      const currentUsername = username || 'anonymous';
+      console.log('🏆 [DEBUG] Marking game completed for:', currentUsername);
       window.parent.postMessage({
         type: 'MARK_GAME_COMPLETED',
         data: {
           gameId: gameData?.id,
-          username: username,
+          username: currentUsername,
         }
       }, '*');
       try {
@@ -475,6 +476,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               gifHintCount,
               revealedLetterCount: revealedLetters.size,
               timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+              username: currentUsername,
             },
           },
           '*'

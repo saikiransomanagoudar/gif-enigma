@@ -228,7 +228,10 @@ Devvit.addCustomPostType({
             try {
               console.log('Calculating score:', event.data);
               const { calculateScore } = await import('../game/server/scoringService.js');
-              const scoreResult = calculateScore(event.data);
+              const scoreResult = {
+                ...calculateScore(event.data),
+                username: event.data.username
+              };
 
               postMessage({
                 type: 'CALCULATE_SCORE_RESULT',
