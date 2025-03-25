@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/Fonts';
+import { ComicText } from '../lib/fonts';
 import * as transitions from '../../src/utils/transitions';
+import { NavigationProps, Page } from '../lib/types';
 export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
 
 export interface CategoryNavigationProps extends NavigationProps {
+  onNavigate: (page: Page) => void;
   onCategorySelect?: (category: CategoryType) => void;
 }
 

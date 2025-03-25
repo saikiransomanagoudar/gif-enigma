@@ -1,5 +1,4 @@
-import { GameData } from './lib/types';
-export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'category';
+import { GameData, Page } from './lib/types';
 
 // export interface GetRecentGamesResultMessage {
 //   type: 'GET_RECENT_GAMES_RESULT';
@@ -30,6 +29,11 @@ export type WebviewToBlockMessage =
         gameId: string;
         guess: string;
       };
+    }
+  | {
+      type: 'NAVIGATION';
+      page: Page;
+      gameId?: string;
     }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
@@ -155,6 +159,7 @@ export type BlocksToWebviewMessage =
       type: 'INIT_RESPONSE';
       data: {
         postId: string;
+        desiredPage?: Page;
       };
     }
   | {
@@ -342,9 +347,14 @@ export type BlocksToWebviewMessage =
       error?: string;
     }
   | {
+      type: 'NAVIGATION';
+      page: Page;
+      gameId?: string;
+    }
+  | {
       type: 'NAVIGATION_RESULT';
       success: boolean;
-      page?: Page;  
+      page?: Page;
       gameId?: string;
       error?: string;
     }

@@ -1,6 +1,6 @@
 // types.ts
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
-export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
+export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
 
 export interface GameRedisData {
   id: string;
@@ -83,8 +83,8 @@ export interface LeaderboardEntry {
 
 export interface CreatorData {
   word: string;
-  maskedWord?: string;
-  questionText?: string;
+  maskedWord?: string | null;
+  questionText?: string | null;
   gifs: string[];
   postToSubreddit?: boolean;
   previewStyle?: 'basic' | 'enhanced';

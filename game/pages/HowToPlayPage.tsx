@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationProps } from '../App';
-import { ComicText } from '../lib/Fonts';
+import { ComicText } from '../lib/fonts';
 import PageTransition from '../../src/utils/PageTransition';
+import { NavigationProps, Page } from '../lib/types';
 import { motion } from 'framer-motion';
 
-export interface HowToPlayPageProps extends NavigationProps {}
+export interface HowToPlayPageProps extends NavigationProps {
+  onNavigate: (page: Page) => void;
+}
 
 export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);

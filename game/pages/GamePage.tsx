@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationProps } from '../App';
-import { ComicText } from '../lib/Fonts';
+import { NavigationProps, Page } from '../lib/types';
+import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
 import {
@@ -11,7 +11,12 @@ import {
   PlayerGameState,
 } from '../lib/types';
 
-export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
+interface GamePageProps extends NavigationProps {
+  onNavigate: (page: Page) => void;
+  gameId?: string;
+}
+
+export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
   // game data
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [gameFlowState, setGameFlowState] = useState<GameFlowState>('loading');
@@ -24,6 +29,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+  // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
 
   // game score
@@ -33,10 +39,15 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   // @ts-ignore
   const [userId, setUserId] = useState<string | null>(null);
-  // const [username, setUsername] = useState<string>('Anonymous');
+  // @ts-ignore
   const [playedGameIds, setPlayedGameIds] = useState<string[]>([]);
   // @ts-ignore
   const [isScoreSaving, setIsScoreSaving] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  // @ts-ignore
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
+  // @ts-ignore
+  const [gameId, setGameId] = useState<string | null>(null);
 
   // transition refs
   const headerRef = useRef<HTMLDivElement>(null);
@@ -45,6 +56,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
+  const [username, setUsername] = useState('there');
 
   useEffect(() => {
     setIsPageLoaded(true);
@@ -122,21 +134,15 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
     console.log("useEffect triggered: Sending 'webViewReady' message");
     window.parent.postMessage({ type: 'webViewReady' }, '*');
 
-    console.log("useEffect triggered: Sending 'GET_RANDOM_GAME' message");
-    window.parent.postMessage(
-      {
-        type: 'GET_RANDOM_GAME',
-        data: { excludeIds: playedGameIds },
-      },
-      '*'
-    );
+    console.log('useEffect triggered: Waiting for initialization');
+    window.parent.postMessage({ type: 'INIT' }, '*');
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'GET_CURRENT_USER_RESULT') {
         if (event.data.success && event.data.user) {
           setUserId(event.data.user.id);
         } else {
-          setUserId('anonymous'); // Explicitly set anonymous
+          setUserId('anonymous');
         }
       }
       console.log('Message event received:', event);
@@ -151,51 +157,54 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
         console.log('Message is not wrapped; using raw message:', actualMessage);
       }
 
-      if (actualMessage && actualMessage.type === 'GET_RANDOM_GAME_RESULT') {
-        console.log('GET_RANDOM_GAME_RESULT received:', actualMessage);
-        setIsLoading(false);
-        setError(null);
+      if (actualMessage.type === 'GET_CURRENT_USER_RESULT') {
+        if (actualMessage.success && actualMessage.user) {
+          setUserId(actualMessage.user.id);
+        } else {
+          setUserId('anonymous');
+        }
+      }
 
-        if (actualMessage.success && actualMessage.result?.game) {
-          const gameData = actualMessage.result.game;
+      if (actualMessage.type === 'INIT_RESPONSE') {
+        console.log('INIT_RESPONSE received:', actualMessage);
+        if (actualMessage.data && actualMessage.data.gameId) {
+          console.log('Game ID found in INIT_RESPONSE:', actualMessage.data.gameId);
+          setGameId(actualMessage.data.gameId);
+
+          // Request the specific game
+          window.parent.postMessage(
+            {
+              type: 'GET_GAME',
+              data: { gameId: actualMessage.data.gameId },
+            },
+            '*'
+          );
+        } else {
+          // No specific game ID, so redirect back to landing
+          console.log('No game ID found, redirecting to landing page');
+          onNavigate('landing');
+        }
+      }
+
+      if (actualMessage.type === 'GET_GAME_RESULT') {
+        console.log('GET_GAME_RESULT received:', actualMessage);
+        setIsLoading(false);
+
+        if (actualMessage.success && actualMessage.game) {
+          const gameData = actualMessage.game;
           setGameData(gameData);
-          setGameFlowState('playing'); // Explicitly set state to playing
-          setRevealedLetters(new Set()); // Reset revealed letters
+          setGameFlowState('playing');
+          setRevealedLetters(new Set());
           setGuess(''); // Clear previous guess
           setGifHintCount(1); // Reset GIF hints
           setIsCorrect(null);
-          setTimeout(() => {
-            setIsPageLoaded(false);
-            setIsPageLoaded(true);
-          }, 50);
-        } else if (actualMessage.error === 'No games available') {
-          // Create a fallback game on the client side
-          console.log('No games available from server, creating client-side fallback');
-
-          const fallbackGame = {
-            id: 'local_fallback_' + Date.now(),
-            word: 'WIZARD',
-            maskedWord: 'W_Z_RD',
-            questionText: 'Guess the magical person:',
-            gifs: [
-              'https://media.giphy.com/media/3o84sq21TxDH6PyYms/giphy.gif',
-              'https://media.giphy.com/media/3o7TKUAOqDm2SXaROM/giphy.gif',
-              'https://media.giphy.com/media/QuxqWk7m9ffxyfoa0a/giphy.gif',
-              'https://media.giphy.com/media/l0HlRnAWXxn0MhKLK/giphy.gif',
-            ],
-            createdAt: Date.now().toString(),
-            creatorId: 'system',
-          };
-
-          setGameData(fallbackGame);
-          setGameFlowState('playing');
-          setError(null);
         } else {
-          // Handle other errors
-          console.error('Error getting game:', actualMessage.error);
-          setError(actualMessage.error || 'No games available');
+          setError(actualMessage.error || 'Game could not be loaded');
+          // Optionally redirect if game loading fails
+          setTimeout(() => onNavigate('landing'), 2000);
         }
       }
+
       if (actualMessage && actualMessage.type === 'GET_GAME_STATE_RESULT') {
         console.log('GET_GAME_STATE_RESULT received:', actualMessage);
 
@@ -231,7 +240,6 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }
       }
 
-      // Add these handlers for score calculation and leaderboard
       if (actualMessage && actualMessage.type === 'CALCULATE_SCORE_RESULT') {
         console.log('CALCULATE_SCORE_RESULT received:', actualMessage);
 
@@ -308,9 +316,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    // Only save if we have a game, user ID, and the game is not completed
     if (gameData && userId && gameFlowState === 'playing') {
-      // Convert Set to Array for storage
       const revealedLettersArray = Array.from(revealedLetters);
 
       window.parent.postMessage(
@@ -333,7 +339,17 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
     }
   }, [gameData, userId, gifHintCount, revealedLetters, guess, gameFlowState]);
 
-  // Effect to handle animations and alerts based on answer correctness
+  useEffect (() => {
+    try {
+      const currentUsername = await context.reddit.getCurrentUsername();
+      if (currentUsername) {
+        setUsername(currentUsername);
+      }
+    } catch (userError) {
+      console.error('Error getting username:', userError);
+    }
+  }, []);
+
   useEffect(() => {
     if (isCorrect === true) {
       console.log('Correct answer detected! Showing celebration');
@@ -553,7 +569,34 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
     setRevealedLetters(newRevealed);
   };
 
-  // Update your handleGuess function:
+  const calculateFinalScore = () => {
+    // Base score is 100
+    let score = 100;
+
+    // GIF hint penalties
+    if (gifHintCount === 2) score -= 10;
+    else if (gifHintCount === 3) score -= 20;
+    else if (gifHintCount === 4) score -= 40;
+
+    // Word hint penalties - based on word length
+    const wordLength = gameData ? gameData.word.replace(/\s+/g, '').toUpperCase().length : 0;
+    let wordPenalty = 0;
+
+    if (wordLength >= 5 && wordLength <= 7) {
+      wordPenalty = revealedLetters.size * 50;
+    } else if (wordLength >= 8 && wordLength <= 10) {
+      wordPenalty = revealedLetters.size * 25;
+    } else if (wordLength >= 11 && wordLength <= 15) {
+      wordPenalty = revealedLetters.size * 15;
+    } else if (wordLength >= 16) {
+      wordPenalty = revealedLetters.size * 10;
+    }
+
+    score = Math.max(0, score - wordPenalty);
+
+    return score;
+  };
+
   const handleGuess = () => {
     console.log('handleGuess called');
 
@@ -567,9 +610,22 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
     if (cleanedGuess === cleanedAnswer) {
       console.log('CORRECT ANSWER!');
-
+      setShowSuccessPopup(true);
+      setTimeout(() => setShowSuccessPopup(false), 3000);
       // Update game state to completed
       setGameFlowState('won');
+
+      const score = calculateFinalScore();
+
+      setFinalScore({
+        score: score,
+        gifPenalty: gifHintCount >= 2 ? (gifHintCount === 2 ? 10 : (gifHintCount === 3 ? 20 : 40)) : 0,
+        wordPenalty: revealedLetters.size > 0 ? score < 100 ? 100 - score : 0 : 0,
+        timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+        userId: userId || 'anonymous',
+        gameId: gameData?.id || '',
+        timestamp: Date.now(),
+      });
 
       // Reveal all letters
       const allIndices = new Set<number>();
@@ -620,6 +676,10 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
       console.log('INCORRECT ANSWER!');
       // Set animate shaking
       setIsShaking(true);
+
+      // Show error popup
+      setShowErrorPopup(true);
+      setTimeout(() => setShowErrorPopup(false), 2000);
 
       // Reset shaking state after animation time
       setTimeout(() => {
@@ -877,45 +937,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
   };
 
   const handleNewGame = () => {
-    // 1. Force complete component reset using key
-    setGameKey(Date.now());
-
-    // 2. Clear all game-related states
-    setGameData(null); // Essential for UI reset
-    setIsLoading(true); // Show loading state
-    setError(null);
-    setGifHintCount(1); // Reset to first GIF
-    setRevealedLetters(new Set()); // Clear revealed letters
-    setGuess(''); // Empty guess input
-    setFinalScore(null); // Clear previous score
-    setShowLeaderboard(false); // Hide leaderboard
-    setIsCorrect(null); // Reset validation state
-    setGameFlowState('loading'); // Force loading flow
-
-    // 3. Visual reset for animations
-    setIsPageLoaded(false);
-    setTimeout(() => setIsPageLoaded(true), 50); // Allows fade-in
-
-    // 4. Update played games list
-    const newExclusions = gameData?.id ? [...playedGameIds, gameData.id] : playedGameIds;
-    setPlayedGameIds(newExclusions);
-    localStorage.setItem('playedGameIds', JSON.stringify(newExclusions));
-
-    // 5. Delay game fetch to ensure state reset completes
-    setTimeout(() => {
-      window.parent.postMessage(
-        {
-          type: 'GET_RANDOM_GAME',
-          data: {
-            excludeIds: newExclusions,
-            preferUserCreated: true,
-            // Add cache busting for edge cases
-            cacheBust: Date.now(),
-          },
-        },
-        '*'
-      );
-    }, 100); // 100ms delay ensures clean state
+    onNavigate('landing');
   };
 
   if (gameFlowState === 'won') {
@@ -933,7 +955,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
             </ComicText>
           </div>
         </div>
-
+  
         <div className="flex gap-4">
           <button
             onClick={() => {
@@ -951,7 +973,7 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
               View Results
             </ComicText>
           </button>
-
+  
           <button
             onClick={handleNewGame}
             className="cursor-pointer rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
@@ -1023,6 +1045,36 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
           opacity: 1;
           transform: translateY(0);
           transition: all 0.5s ease-out;
+        }
+        .success-popup, .incorrect-popup {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%) scale(0.8);
+          background-color: rgba(0, 0, 0, 0.85);
+          border-radius: 16px;
+          padding: 20px;
+          z-index: 1000;
+          opacity: 0;
+          transition: all 0.3s ease-in-out;
+          box-shadow: 0 0 30px rgba(0, 100, 255, 0.6);
+          text-align: center;
+          color: white;
+          max-width: 90%;
+          width: 300px;
+        }
+        
+        .success-popup {
+          border: 2px solid #4CAF50;
+        }
+        
+        .incorrect-popup {
+          border: 2px solid #F44336;
+        }
+        
+        .success-popup.show, .incorrect-popup.show {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
         }
         `}
       </style>
@@ -1131,10 +1183,39 @@ export const GamePage: React.FC<NavigationProps> = ({ onNavigate }) => {
           style={{ backgroundColor: colors.primary }}
         >
           <ComicText size={0.6} color="white">
-            GUESS
+            GUESS IT!
           </ComicText>
         </button>
       </div>
+      {showSuccessPopup && (
+        <div className="success-popup show">
+          <div className="popup-content">
+            <ComicText size={1.2} color="#4CAF50">
+              🎉 Congratulations! 🎉
+            </ComicText>
+            <ComicText size={0.8} color="white">
+              You solved the GIF Enigma!
+            </ComicText>
+            <ComicText size={0.8} color="white">
+              The answer was: <strong>{gameData?.word}</strong>
+            </ComicText>
+          </div>
+        </div>
+      )}
+
+      {/* Error Popup */}
+      {showErrorPopup && (
+        <div className="incorrect-popup show">
+          <div className="popup-content">
+            <ComicText size={1.2} color="#F44336">
+              ❌ Incorrect! ❌
+            </ComicText>
+            <ComicText size={0.8} color="white">
+              Try again!
+            </ComicText>
+          </div>
+        </div>
+      )}
       {showLeaderboard && (
         <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black p-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-auto rounded-xl bg-white p-4 shadow-2xl">

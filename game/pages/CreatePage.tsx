@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/Fonts';
-import { NavigationProps } from '../App';
+import { ComicText } from '../lib/fonts';
 import { Modal } from '../components/Modal';
 import { CategoryType } from './CategoryPage';
+import { NavigationProps, Page } from '../lib/types';
 import * as transitions from '../../src/utils/transitions';
 
 export interface TenorGifResult {
@@ -54,6 +54,7 @@ const getGifUrl = (gif: TenorGifResult | null): string => {
 export interface CreatePageProps extends NavigationProps {
   context: any;
   category?: CategoryType;
+  onNavigate: (page: Page) => void;
 }
 
 export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = 'General' }) => {

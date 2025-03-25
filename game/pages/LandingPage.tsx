@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/Fonts';
+import { ComicText } from '../lib/fonts';
+import { NavigationProps } from '../lib/types';
 import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 
@@ -39,7 +39,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
   const textColor = isDarkMode
     ? 'text-transparent bg-gradient-to-t from-[#E5E5E5] to-[#00BBFF] bg-clip-text'
-    : 'text-black'; // Dark mode text
+    : 'text-black';
 
   return (
     <PageTransition>

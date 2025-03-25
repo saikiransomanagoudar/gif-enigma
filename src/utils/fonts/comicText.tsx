@@ -9,134 +9,91 @@ type Glyph = {
 };
 
 interface ComicTextProps {
-  children: string | React.ReactNode;
+  children: string;
   size?: number;
   color?: string;
-  alignment?: 'left' | 'center' | 'right';
 }
 
 export function ComicText(props: ComicTextProps): JSX.Element { 
-  const { children, size = 2, color = 'black', alignment = 'left' } = props; 
+  const { children, size = 2, color = 'black' } = props; 
+  const text = children[0]; 
+  const line = text.split(''); 
+  const gap = 1; 
+
+  const glyphData = line.map((ch) => { 
+    if (ch === ' ') { 
+      return { path: '', width: 6, height: 0 }; 
+    } 
+    const glyph = Glyphs[ch as SupportedGlyphs]; 
+    return glyph || { path: '', width: 0, height: 0 }; 
+  }); 
+
+  const ascenderHeight = Math.max(...glyphData.map((g) => {
+    const isDescender = ['g', 'j', 'p', 'q', 'y'].includes(text.charAt(glyphData.indexOf(g)));
+    return isDescender ? g.height * 0.6 : g.height;
+  }));
+
+  const descenderHeight = Math.max(0, ...glyphData.map((g) => {
+    const char = text.charAt(glyphData.indexOf(g));
+    const isDescender = ['g', 'j', 'p', 'q', 'y'].includes(char);
+    return isDescender ? g.height * 0.4 : 0;
+  }));
   
-  // Split text into lines
-  const textContent = String(children);
-  const lines = textContent.split('\n');
-  
-  // Calculate size for each line
-  const lineData = lines.map(lineText => {
-    const text = lines[0]; 
-    const line = text.split(''); 
-    const gap = 1; 
-  
-    const glyphData = line.map((ch) => { 
-      if (ch === ' ') { 
-        return { path: '', width: 6, height: 0 }; 
-      } 
-      const glyph = Glyphs[ch as SupportedGlyphs]; 
-      return glyph || { path: '', width: 0, height: 0 }; 
-    }); 
-  
-    const ascenderHeight = Math.max(...glyphData.map((g) => {
-      const isDescender = ['g', 'j', 'p', 'q', 'y'].includes(lineText.charAt(glyphData.indexOf(g)));
-      return isDescender ? g.height * 0.6 : g.height;
-    }));
-  
-    const descenderHeight = Math.max(0, ...glyphData.map((g) => {
-      const char = lineText.charAt(glyphData.indexOf(g));
-      const isDescender = ['g', 'j', 'p', 'q', 'y'].includes(char);
-      return isDescender ? g.height * 0.4 : 0;
-    }));
-    
-    const lineHeight = ascenderHeight + descenderHeight;
-    
-    let xOffset = 0; 
-    const paths: string[] = []; 
-   
-    glyphData.forEach((g, index) => { 
-      if (!g.path) { 
-        xOffset += g.width + gap; 
-        return; 
-      }
-      
-      const char = lineText.charAt(index);
-      const isDescender = ['g', 'j', 'p', 'q', 'y', 'm'].includes(char);
-  
-      let yOffset;
-      if (isDescender) {
-        yOffset = 25;
-      } else {
-        yOffset = (ascenderHeight - g.height);
-      }
-      
-      paths.push(` 
-        <path 
-          d="${g.path}" 
-          transform="translate(${xOffset} ${yOffset})" 
-          fill-rule="evenodd" 
-          clip-rule="evenodd" 
-        /> 
-      `); 
+  const lineHeight = ascenderHeight + descenderHeight;
+ 
+  let xOffset = 0; 
+  const paths: string[] = []; 
+ 
+  glyphData.forEach((g, index) => { 
+    if (!g.path) { 
       xOffset += g.width + gap; 
-    }); 
-    
-    const width = xOffset - gap; 
-    
-    return {
-      paths,
-      width,
-      height: lineHeight
-    };
-  });
-  
-  // Calculate total width and height
-  const maxWidth = Math.max(...lineData.map(line => line.width));
-  const totalHeight = lineData.reduce((sum, line, index) => {
-    return sum + line.height + (index < lineData.length - 1 ? 10 : 0); // 10px gap between lines
-  }, 0);
-  
-  // Generate SVG paths with alignment
-  let allPaths: string[] = [];
-  let yPos = 0;
-  
-  lineData.forEach(line => {
-    // Calculate x-offset based on alignment
-    let xAlignmentOffset = 0;
-    if (alignment === 'center') {
-      xAlignmentOffset = (maxWidth - line.width) / 2;
-    } else if (alignment === 'right') {
-      xAlignmentOffset = maxWidth - line.width;
+      return; 
     }
     
-    // Add translated paths for this line
-    const translatedPaths = line.paths.map(path => 
-      path.replace(/translate\((\d+) (\d+)\)/, 
-      (match, x, y) => `translate(${Number(x) + xAlignmentOffset} ${Number(y) + yPos})`)
-    );
+    const char = text.charAt(index);
+    const isDescender = ['g', 'j', 'p', 'q', 'y', 'm'].includes(char);
+
+    let yOffset;
+    if (isDescender) {
+      yOffset = 25;
+    } else {
+      yOffset = (ascenderHeight - g.height);
+    }
     
-    allPaths = [...allPaths, ...translatedPaths];
-    yPos += line.height + 10; // 10px gap between lines
-  });
-  
-  const scaledHeight: Devvit.Blocks.SizeString = `${totalHeight * size}px`; 
-  const scaledWidth: Devvit.Blocks.SizeString = `${maxWidth * size}px`; 
+    paths.push(` 
+      <path 
+        d="${g.path}" 
+        transform="translate(${xOffset} ${yOffset})" 
+        fill-rule="evenodd" 
+        clip-rule="evenodd" 
+      /> 
+    `); 
+    xOffset += g.width + gap; 
+  }); 
+   
+  const width = xOffset - gap; 
+  const height = lineHeight; 
+ 
+  const scaledHeight: Devvit.Blocks.SizeString = `${height * size}px`; 
+  const scaledWidth: Devvit.Blocks.SizeString = `${width * size}px`; 
  
   return ( 
     <image 
-      imageHeight={totalHeight} 
-      imageWidth={maxWidth} 
+      imageHeight={height} 
+      imageWidth={width} 
       height={scaledHeight} 
       width={scaledWidth} 
-      description={children} 
+      description={text} 
       resizeMode="fill" 
       url={`data:image/svg+xml;charset=UTF-8, 
         <svg 
-            width="${maxWidth}" 
-            height="${totalHeight}" 
-            viewBox="0 0 ${maxWidth} ${totalHeight}" 
+            width="${width}" 
+            height="${height}" 
+            viewBox="0 0 ${width} ${height}" 
             fill="${color}" 
             xmlns="http://www.w3.org/2000/svg" 
         > 
-        ${allPaths.join('')} 
+        ${paths.join('')} 
         </svg> 
       `} 
     /> 
