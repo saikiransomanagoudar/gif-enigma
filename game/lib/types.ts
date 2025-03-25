@@ -30,7 +30,7 @@ export interface GameData {
   questionText: string;
   gifs: string[];
   createdAt?: string;
-  creatorId?: string;
+  username?: string;
   redditPostId?: string;
   preview?: GamePreviewData;
 }
@@ -40,7 +40,7 @@ export interface GamePreviewData {
   gifUrls: string[];
   lastUpdated: number;
   postId?: string;
-  creatorUsername?: string;
+  username?: string;
 }
 
 export interface Question {
@@ -71,14 +71,13 @@ export interface UserStats {
 }
 
 export interface LeaderboardEntry {
-  userId: string;
   username: string;
   score: number;
-  timestamp: number;
   rank?: number;
   gifPenalty?: number;
   wordPenalty?: number;
   timeTaken?: number;
+  timestamp: number;
 }
 
 export interface CreatorData {
@@ -125,12 +124,12 @@ export interface GifCacheResponse {
 }
 
 export interface ScoreData {
+  username: string;
+  gameId: string;
   score: number;
   gifPenalty: number;
   wordPenalty: number;
   timeTaken: number;
-  userId: string;
-  gameId: string;
   timestamp: number;
 }
 

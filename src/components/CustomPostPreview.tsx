@@ -1,6 +1,6 @@
 import { Devvit, Context, useState, useAsync } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
-import { Page } from '../../game/lib/types.js';
+// import { Page } from '../../game/lib/types.js';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../../game/shared.js';
 
 interface CustomPostPreviewProps {
@@ -119,7 +119,7 @@ export const CustomPostPreview = ({
   //  Helper function to send navigation messages
   const safePostMessage = (message: any) => {
     console.log(
-      '[DEBUG-NAV] GamePostPreview: Sending navigation message:',
+      '[DEBUG-NAV] CustomPostPreview: Sending navigation message:',
       JSON.stringify(message)
     );
     // @ts-ignore - Ignore TypeScript errors
@@ -127,109 +127,26 @@ export const CustomPostPreview = ({
   };
 
   const handlePlayGame = () => {
-    if (previewData.gameId) {
-      console.log(
-        '[DEBUG-NAV] GamePostPreview: onPress handlePlayGame, gameId:',
-        previewData.gameId
-      );
-      context.ui.showToast('Loading game...');
-      onMount();
-
-      if (isWebViewReady) {
-        console.log('[DEBUG-NAV] GamePostPreview: WebView ready, sending navigation');
-        safePostMessage({
-          type: 'NAVIGATE',
-          data: {
-            page: 'landing',
-            params: { gameId: previewData.gameId },
-          },
-        });
-      } else {
-        console.log('[DEBUG-NAV] GamePostPreview: WebView not ready yet');
-        // The WebView isn't ready yet
-        // You could set a flag here if needed
-      }
-    } else {
-      console.log('[DEBUG-NAV] GamePostPreview: Game not found');
-      context.ui.showToast('Game not found');
-    }
-  };
-
-  const handleHowToPlay = () => {
-    console.log('[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed');
+    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
     onMount();
 
     if (isWebViewReady) {
+      console.log('[DEBUG-NAV] CustomPostPreview: WebView ready, sending navigation');
       safePostMessage({
         type: 'NAVIGATE',
         data: {
-          page: 'howToPlay',
-          params: {},
+          page: 'game',
+          params: {}
         },
       });
+    } else {
+      console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet');
     }
   };
-
-  // const handleCreateGame = () => {
-  //   console.log('[DEBUG-NAV] CustomPostPreview: handleCreateGame pressed');
-  //   onMount();
-
-  //   setTimeout(() => {
-  //     console.log('[DEBUG-NAV] CustomPostPreview: Sending NAVIGATE message for category');
-  //     safePostMessage({
-  //       type: 'NAVIGATE',
-  //       data: {
-  //         page: 'category',
-  //         params: {}
-  //       }
-  //     });
-  //   }, 500);
-  // };
-
-  // const handleLeaderboard = () => {
-  //   console.log('[DEBUG-NAV] CustomPostPreview: handleLeaderboard pressed');
-  //   onMount();
-
-  //   setTimeout(() => {
-  //     console.log('[DEBUG-NAV] CustomPostPreview: Sending NAVIGATE message for leaderboard');
-  //     safePostMessage({
-  //       type: 'NAVIGATE',
-  //       data: {
-  //         page: 'leaderboard',
-  //         params: {}
-  //       }
-  //     });
-  //   }, 500);
-  // };
-
-  // if (isLoading) {
-  //   return (
-  //     <vstack height="100%" width="100%" alignment="center middle">
-  //       <text style="heading" size="medium">
-  //         Loading GIF Enigma...
-  //       </text>
-  //     </vstack>
-  //   );
-  // }
 
   return (
     <vstack height="100%" width="100%" backgroundColor="#0d1629">
       <spacer size="large" />
-      {/* Leaderboard button */}
-      {/* <hstack width="100%" padding="small" alignment="middle">
-        <spacer grow />
-        <hstack
-          padding="xsmall"
-          border="thin"
-          // onPress={handleLeaderboard}
-          backgroundColor="#f4f4f4"
-          cornerRadius="full"
-        >
-          <ComicText size={0.2} color="#000000">
-            Leaderboard
-          </ComicText>
-        </hstack>
-      </hstack> */}
 
       {/* title */}
       <vstack alignment="center middle" padding="medium">
@@ -242,7 +159,7 @@ export const CustomPostPreview = ({
       <vstack alignment="middle" padding="xsmall">
         <spacer size="large" />
         <ComicText size={0.25} color="#7fcfff">
-          {`                                  Hi    u/${username},    ready    to    unravel`}
+          {`                                  Hi    ${username},    ready    to    unravel`}
         </ComicText>
         <ComicText size={0.25} color="#7fcfff">
           {`                                  the    secret    word/phrase    from    GIFs?`}
@@ -278,30 +195,13 @@ export const CustomPostPreview = ({
           >
             <hstack alignment="middle center">
               <ComicText size={0.2} color="white">
-                S tart Playing
+                S       tart      Playing
               </ComicText>
               <text> 👉</text>
             </hstack>
           </vstack>
         </vstack>
       </hstack>
-
-      {/* How this game works button */}
-      {/* <vstack padding="medium" alignment="center">
-        <hstack
-          padding="xsmall"
-          border="thin"
-          onPress={handleHowToPlay}
-          backgroundColor="#f4f4f4"
-          cornerRadius="full"
-          alignment="middle center"
-          gap="small"
-        >
-          <ComicText size={0.2} color="#000000">
-            How this game works?
-          </ComicText>
-        </hstack>
-      </vstack> */}
     </vstack>
   );
 };

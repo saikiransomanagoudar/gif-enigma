@@ -3,15 +3,12 @@ import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
 import { saveGame, getUserGames, getGame } from '../game/server/gameHandler.server.js';
 import { Page } from '../game/lib/types.js';
-import { useRef } from 'react';
-import { ComicText } from './utils/fonts/comicText.js';
 import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
 } from '../game/server/geminiApi.server.js';
 import { CustomPostPreview } from './components/CustomPostPreview.js';
 import { GamePostPreview } from './components/GamePostPreview.js';
-import { ScoreData } from '../game/server/scoringService.js';
 
 Devvit.addSettings([
   {
@@ -250,7 +247,7 @@ Devvit.addCustomPostType({
 
           case 'SAVE_SCORE':
             try {
-              console.log('Saving score:', event.data);
+              console.log('💾 [DEBUG] Saving score with data:', event.data);
               const { saveScore } = await import('../game/server/scoringService.js');
               const result = await saveScore(event.data, context);
 
@@ -488,6 +485,24 @@ Devvit.addCustomPostType({
             }
             break;
 
+          case 'MARK_GAME_COMPLETED':
+            try {
+              await context.redis.zAdd(
+                `user:${event.data.username}:completedGames`,
+                { member: event.data.gameId, score: Date.now() }
+              );
+              postMessage({
+                type: 'MARK_GAME_COMPLETED_RESULT',
+                success: true
+              });
+            } catch (error) {
+              postMessage({
+                type: 'MARK_GAME_COMPLETED_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
           case 'NAVIGATION':
             console.log('[DEBUG] main.tsx: NAVIGATION message received:', event);
             persistentPage = event.page;
@@ -548,10 +563,6 @@ Devvit.addCustomPostType({
             } catch (error) {
               console.error('[DEBUG-NAV] main.tsx: Error processing NAVIGATE message:', error);
             }
-            break;
-
-          default:
-            console.error('[DEBUG] main.tsx: Unknown message type:', event);
             break;
         }
       },

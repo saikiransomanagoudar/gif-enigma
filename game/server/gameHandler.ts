@@ -10,12 +10,11 @@ import {
 
 // Save a created game to Redis and create a Reddit post for it
 // The postToSubreddit parameter defaults to true and controls if a Reddit post is created
-export async function saveGame(
-  params: CreatorData,
-  context: Context
-): Promise<SaveGameResponse> {
+export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
     const { word, maskedWord, questionText, gifs, postToSubreddit = true } = params;
+    const user = await context.reddit.getCurrentUser();
+    const username = user?.username || 'anonymous';
 
     // Generate a unique game ID
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -31,7 +30,7 @@ export async function saveGame(
       questionText: questionText || '', // Ensure non-null string
       gifs: JSON.stringify(gifs),
       createdAt: Date.now().toString(),
-      creatorId: context.userId || 'anonymous',
+      username,
     });
 
     // Add to active games sorted set with timestamp as score
@@ -47,11 +46,11 @@ export async function saveGame(
         // Get current subreddit
         const subreddit = await context.reddit.getCurrentSubreddit();
         const subredditName = subreddit?.name || 'PlayGIFEnigma';
-        
+
         // Create post title
         // const wordDisplay = maskedWord ? maskedWord.replace(/_/g, ' _') : '';
-        const postTitle = `Can you crack this GIF Enigma and uncover the secret word/phrase?`;
-        
+        const postTitle = `Can you guess the word/phrase from GIFs?`;
+
         // Store game preview data for faster access (do this BEFORE creating post)
         await context.redis.hSet(`gamePreview:${gameId}`, {
           maskedWord: maskedWord || '',
@@ -61,190 +60,282 @@ export async function saveGame(
         const post = await context.reddit.submitPost({
           subredditName: subredditName,
           title: postTitle,
-          preview: Devvit.createElement('vstack', { 
-            alignment: "center middle",
-            height: "100%", 
-            width: "100%",
-            backgroundColor: "#0d1629"
-          }, [
-            Devvit.createElement('image', {
-              url: "eyebrows.gif",
-              imageWidth: 180,
-              imageHeight: 180,
-              resizeMode: "fit",
-              description: "Loading game..."
-            }),
-            // Title
-            Devvit.createElement('vstack', { 
-              alignment: "center middle", 
-              padding: "medium" 
-            }, [
-              Devvit.createElement('text', { 
-                color: "#FF4500",
-                size: "xlarge",
-                weight: "bold"
-              }, "GIF Enigma")
-            ]),
-            
-            // Masked word display
-            Devvit.createElement('vstack', {
-              padding: "medium",
-              alignment: "center middle"
-            }, [
-              Devvit.createElement('text', {
-                color: "#FFFFFF",
-                size: "large",
-                weight: "bold"
-              }, "Word to guess:"),
-              
-              Devvit.createElement('text', {
-                color: "#7fcfff",
-                size: "xlarge",
-                weight: "bold"
-              }, maskedWord || '')
-            ]),
-            
-            // First GIF preview
-            Devvit.createElement('vstack', {
-              backgroundColor: "#1a2740",
-              cornerRadius: "large",
-              padding: "medium",
-              alignment: "center middle",
-              width: "80%"
-            }, [              
-              gifs && gifs.length > 0 ? 
-                Devvit.createElement('image', {
-                  url: gifs[0],
-                  imageWidth: 180,
-                  imageHeight: 180,
-                  resizeMode: "fit",
-                  description: "First GIF clue"
-                }) : null,
-              
-              Devvit.createElement('text', {
-                color: "#FFFFFF",
-                size: "xsmall"
-              }, "3 more clues await in the full game!")
-            ]),
-            
-            // Play button
-            Devvit.createElement('vstack', {
-              padding: "medium",
-              alignment: "center middle"
-            }, [
-              Devvit.createElement('hstack', {
-                backgroundColor: "#FF4500",
-                cornerRadius: "full",
-                padding: "medium",
-                alignment: "center middle"
-              }, [
-                Devvit.createElement('text', {
-                  color: "#FFFFFF",
-                  weight: "bold"
-                }, "Solve It!")
-              ])
-            ])
-          ])
+          preview: Devvit.createElement(
+            'vstack',
+            {
+              alignment: 'center middle',
+              height: '100%',
+              width: '100%',
+              backgroundColor: '#0d1629',
+            },
+            [
+              Devvit.createElement('image', {
+                url: 'eyebrows.gif',
+                imageWidth: 180,
+                imageHeight: 180,
+                resizeMode: 'fit',
+                description: 'Loading game...',
+              }),
+              // Title
+              Devvit.createElement(
+                'vstack',
+                {
+                  alignment: 'center middle',
+                  padding: 'medium',
+                },
+                [
+                  Devvit.createElement(
+                    'text',
+                    {
+                      color: '#FF4500',
+                      size: 'xlarge',
+                      weight: 'bold',
+                    },
+                    'GIF Enigma'
+                  ),
+                ]
+              ),
+
+              // Masked word display
+              Devvit.createElement(
+                'vstack',
+                {
+                  padding: 'medium',
+                  alignment: 'center middle',
+                },
+                [
+                  Devvit.createElement(
+                    'text',
+                    {
+                      color: '#FFFFFF',
+                      size: 'large',
+                      weight: 'bold',
+                    },
+                    'Word to guess:'
+                  ),
+
+                  Devvit.createElement(
+                    'text',
+                    {
+                      color: '#7fcfff',
+                      size: 'xlarge',
+                      weight: 'bold',
+                    },
+                    maskedWord || ''
+                  ),
+                ]
+              ),
+
+              // First GIF preview
+              Devvit.createElement(
+                'vstack',
+                {
+                  backgroundColor: '#1a2740',
+                  cornerRadius: 'large',
+                  padding: 'medium',
+                  alignment: 'center middle',
+                  width: '80%',
+                },
+                [
+                  gifs && gifs.length > 0
+                    ? Devvit.createElement('image', {
+                        url: gifs[0],
+                        imageWidth: 180,
+                        imageHeight: 180,
+                        resizeMode: 'fit',
+                        description: 'First GIF clue',
+                      })
+                    : null,
+
+                  Devvit.createElement(
+                    'text',
+                    {
+                      color: '#FFFFFF',
+                      size: 'xsmall',
+                    },
+                    '3 more clues await in the full game!'
+                  ),
+                ]
+              ),
+
+              // Play button
+              Devvit.createElement(
+                'vstack',
+                {
+                  padding: 'medium',
+                  alignment: 'center middle',
+                },
+                [
+                  Devvit.createElement(
+                    'hstack',
+                    {
+                      backgroundColor: '#FF4500',
+                      cornerRadius: 'full',
+                      padding: 'medium',
+                      alignment: 'center middle',
+                    },
+                    [
+                      Devvit.createElement(
+                        'text',
+                        {
+                          color: '#FFFFFF',
+                          weight: 'bold',
+                        },
+                        'Solve It!'
+                      ),
+                    ]
+                  ),
+                ]
+              ),
+            ]
+          ),
         });
-        
+
         if (post && post.id) {
           postId = post.id;
-          
+
           // Store post ID with game data for reference
           await context.redis.hSet(`game:${gameId}`, { redditPostId: postId });
-          
+
           // Store the relationship between post and game
           await context.redis.hSet(`post:${postId}`, {
-            gameId, 
-            created: Date.now().toString()
+            gameId,
+            created: Date.now().toString(),
           });
-          
+
           // Update gamePreview with postId
           await context.redis.hSet(`gamePreview:${gameId}`, { postId });
-          
+
           // Set the custom post preview (this is a separate method call)
           // This ensures the interactive preview is used when user views the post
-          await post.setCustomPostPreview(() => 
-            Devvit.createElement('vstack', { 
-              alignment: "center middle",
-              height: "100%", 
-              width: "100%",
-              backgroundColor: "#0d1629"
-            }, [
-              // Title
-              Devvit.createElement('text', { 
-                style: "heading",
-                size: "large",
-                color: "#FF4500"
-              }, "GIF Enigma"),
-              
-              // Masked word with letter boxes
-              Devvit.createElement('vstack', {
-                padding: "medium",
-                alignment: "center middle"
-              }, [
-                Devvit.createElement('text', {
-                  color: "#FFFFFF",
-                  weight: "bold"
-                }, "Word to guess:"),
-                
-                Devvit.createElement('text', {
-                  color: "#7fcfff",
-                  size: "xlarge",
-                  weight: "bold"
-                }, maskedWord || '')
-              ]),
-              
-              // First GIF display
-              gifs && gifs.length > 0 ? 
-                Devvit.createElement('vstack', { 
-                  backgroundColor: "#1a2740",
-                  padding: "medium",
-                  cornerRadius: "large",
-                  width: "80%",
-                  alignment: "center middle"
-                }, [
-                  Devvit.createElement('text', {
-                    color: "#7fcfff",
-                    size: "small",
-                    weight: "bold"
-                  }, "FIRST CLUE"),
-                  
-                  Devvit.createElement('image', {
-                    url: gifs[0],
-                    imageWidth: 180,
-                    imageHeight: 180,
-                    resizeMode: "fit",
-                    description: "First GIF clue"
-                  }),
-                  
-                  Devvit.createElement('text', {
-                    color: "#FFFFFF",
-                    size: "xsmall"
-                  }, "Tap to see all 4 clues!")
-                ]) : null,
-                
-              // Call to action
-              Devvit.createElement('vstack', {
-                padding: "medium",
-                alignment: "center middle"
-              }, [
-                Devvit.createElement('hstack', {
-                  backgroundColor: "#FF4500",
-                  cornerRadius: "full",
-                  padding: "medium",
-                  alignment: "center middle"
-                }, [
-                  Devvit.createElement('text', {
-                    color: "#FFFFFF",
-                    weight: "bold"
-                  }, "Play Now!")
-                ])
-              ])
-            ])
+          await post.setCustomPostPreview(() =>
+            Devvit.createElement(
+              'vstack',
+              {
+                alignment: 'center middle',
+                height: '100%',
+                width: '100%',
+                backgroundColor: '#0d1629',
+              },
+              [
+                // Title
+                Devvit.createElement(
+                  'text',
+                  {
+                    style: 'heading',
+                    size: 'large',
+                    color: '#FF4500',
+                  },
+                  'GIF Enigma'
+                ),
+
+                // Masked word with letter boxes
+                Devvit.createElement(
+                  'vstack',
+                  {
+                    padding: 'medium',
+                    alignment: 'center middle',
+                  },
+                  [
+                    Devvit.createElement(
+                      'text',
+                      {
+                        color: '#FFFFFF',
+                        weight: 'bold',
+                      },
+                      'Word to guess:'
+                    ),
+
+                    Devvit.createElement(
+                      'text',
+                      {
+                        color: '#7fcfff',
+                        size: 'xlarge',
+                        weight: 'bold',
+                      },
+                      maskedWord || ''
+                    ),
+                  ]
+                ),
+
+                // First GIF display
+                gifs && gifs.length > 0
+                  ? Devvit.createElement(
+                      'vstack',
+                      {
+                        backgroundColor: '#1a2740',
+                        padding: 'medium',
+                        cornerRadius: 'large',
+                        width: '80%',
+                        alignment: 'center middle',
+                      },
+                      [
+                        Devvit.createElement(
+                          'text',
+                          {
+                            color: '#7fcfff',
+                            size: 'small',
+                            weight: 'bold',
+                          },
+                          'FIRST CLUE'
+                        ),
+
+                        Devvit.createElement('image', {
+                          url: gifs[0],
+                          imageWidth: 180,
+                          imageHeight: 180,
+                          resizeMode: 'fit',
+                          description: 'First GIF clue',
+                        }),
+
+                        Devvit.createElement(
+                          'text',
+                          {
+                            color: '#FFFFFF',
+                            size: 'xsmall',
+                          },
+                          'Tap to see all 4 clues!'
+                        ),
+                      ]
+                    )
+                  : null,
+
+                // Call to action
+                Devvit.createElement(
+                  'vstack',
+                  {
+                    padding: 'medium',
+                    alignment: 'center middle',
+                  },
+                  [
+                    Devvit.createElement(
+                      'hstack',
+                      {
+                        backgroundColor: '#FF4500',
+                        cornerRadius: 'full',
+                        padding: 'medium',
+                        alignment: 'center middle',
+                      },
+                      [
+                        Devvit.createElement(
+                          'text',
+                          {
+                            color: '#FFFFFF',
+                            weight: 'bold',
+                          },
+                          'Play Now!'
+                        ),
+                      ]
+                    ),
+                  ]
+                ),
+              ]
+            )
           );
-          
-          console.log(`Successfully posted game ${gameId} to r/${subredditName} with post ID: ${postId}`);
+
+          console.log(
+            `Successfully posted game ${gameId} to r/${subredditName} with post ID: ${postId}`
+          );
         }
       } catch (postError) {
         console.error('Error posting to subreddit:', postError);
@@ -252,11 +343,11 @@ export async function saveGame(
       }
     }
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       gameId,
       postedToReddit: !!postId,
-      redditPostId: postId || undefined
+      redditPostId: postId || undefined,
     };
   } catch (error) {
     console.error('Error saving game:', error);
@@ -382,7 +473,7 @@ export async function getRecentGames(
             questionText: rawGameData.questionText,
             gifs: [],
             createdAt: rawGameData.createdAt,
-            creatorId: rawGameData.creatorId,
+            username: rawGameData.username,
             redditPostId: rawGameData.redditPostId,
           };
 
@@ -447,8 +538,8 @@ export async function getGame(
 
     // 1. Check both registry and activeGames
     const [existsInRegistry, score] = await Promise.all([
-      context.redis.exists("game_registry", gameId),
-      context.redis.zScore("activeGames", gameId)
+      context.redis.exists('game_registry', gameId),
+      context.redis.zScore('activeGames', gameId),
     ]);
 
     if (!existsInRegistry && !score) {
@@ -471,18 +562,21 @@ export async function getGame(
       questionText: rawGameData.questionText,
       gifs: [],
       createdAt: rawGameData.createdAt,
-      creatorId: rawGameData.creatorId,
+      username: rawGameData.username,
       redditPostId: rawGameData.redditPostId,
     };
 
     // 4. Process GIFs
     try {
       gameData.gifs = JSON.parse(rawGameData.gifs || '[]');
-      
+
       // Validate URLs
-      gameData.gifs = gameData.gifs.filter(url => 
-        url.startsWith('https://i.redd.it/') || 
-        url.startsWith('https://reddit.com/media')
+      gameData.gifs = gameData.gifs.filter(
+        (url) =>
+          url.startsWith('https://i.redd.it/') ||
+          url.startsWith('https://reddit.com/media') ||
+          url.includes('redd.it') ||
+          url.includes('reddit.com')
       );
     } catch (error) {
       console.error('❌ [DEBUG] GIF parsing failed for:', gameId);
@@ -490,12 +584,12 @@ export async function getGame(
     }
 
     // 5. Add username if missing
-    if (gameData.creatorId?.startsWith('t2_')) {
+    if (gameData.username?.startsWith('t2_')) {
       try {
-        const user = await context.reddit.getUserById(gameData.creatorId);
+        const user = await context.reddit.getUserByUsername(gameData.username);
         if (user) {
           await context.redis.hSet(`game:${gameId}`, {
-            creatorUsername: user.username
+            username: user.username,
           });
         }
       } catch (userError) {
@@ -527,7 +621,7 @@ export async function cacheGifResults(
 
     // Cache the results for 24 hours
     const expirationDate = new Date();
-    expirationDate.setSeconds(expirationDate.getSeconds() + 86400); // 24 hours in seconds
+    expirationDate.setSeconds(expirationDate.getSeconds() + 86400);
 
     await context.redis.set(`gifSearch:${query.toLowerCase()}`, JSON.stringify(results), {
       expiration: expirationDate,
@@ -543,52 +637,35 @@ export async function cacheGifResults(
 
 // Get games created by a specific user
 export async function getUserGames(
-  params: { userId: string; limit?: number },
+  params: { username: string; limit?: number },
   context: Context
 ): Promise<GetRecentGamesResponse> {
   try {
-    console.log('🔍 [DEBUG] getUserGames called for userId:', params.userId);
-    const { userId, limit = 10 } = params;
+    console.log('🔍 [DEBUG] getUserGames called for username:', params.username);
+    const { username, limit = 10 } = params;
 
-    if (!userId) {
+    if (!username) {
       return {
         success: false,
-        error: 'User ID is required',
+        error: 'Username is required',
         games: [],
       };
     }
 
-    // Ensure we're using the full Reddit user ID format (t2_xyz123)
-    const formattedUserId = userId.startsWith('t2_') ? userId : userId;
-    console.log('🔍 [DEBUG] Looking up games for user ID:', formattedUserId);
-
-    // Get game IDs from the user's games sorted set
-    const gameItems = await context.redis.zRange(`user:${formattedUserId}:games`, 0, limit - 1, {
+    // Get game IDs from the user's games sorted set using username
+    const gameItems = await context.redis.zRange(`user:${username}:games`, 0, limit - 1, {
       reverse: true, // Get most recent games first
       by: 'score',
     });
 
     const gameIds = gameItems.map((item) => item.member);
-    console.log(`🔍 [DEBUG] Found ${gameIds.length} games for user ${formattedUserId}:`, gameIds);
+    console.log(`🔍 [DEBUG] Found ${gameIds.length} games for user ${username}:`, gameIds);
 
     if (!gameIds || gameIds.length === 0) {
-      // If no games found with that ID, try to get user info and return helpful message
-      let username = 'this user';
-      try {
-        if (formattedUserId.startsWith('t2_')) {
-          const user = await context.reddit.getUserById(formattedUserId);
-          if (user) {
-            username = `u/${user.username}`;
-          }
-        }
-      } catch (userError) {
-        console.error('❌ [DEBUG] Error fetching user details:', userError);
-      }
-
       return {
         success: true,
         games: [],
-        message: `No games found for ${username}`,
+        message: `No games found for u/${username}`,
       };
     }
 
@@ -599,7 +676,6 @@ export async function getUserGames(
         const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
 
         if (rawGameData && Object.keys(rawGameData).length > 0) {
-          // Create a properly typed game data object
           const gameData: GameData = {
             id: gameId,
             word: rawGameData.word,
@@ -607,7 +683,7 @@ export async function getUserGames(
             questionText: rawGameData.questionText,
             gifs: [], // Will be filled below
             createdAt: rawGameData.createdAt,
-            creatorId: rawGameData.creatorId,
+            username: rawGameData.username,
             redditPostId: rawGameData.redditPostId,
           };
 
@@ -631,7 +707,7 @@ export async function getUserGames(
     return {
       success: true,
       games,
-      message: `Found ${games.length} games`,
+      message: `Found ${games.length} games created by ${username}`,
     };
   } catch (error) {
     console.error('❌ [DEBUG] Error in getUserGames:', error);

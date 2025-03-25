@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationProps, Page } from '../lib/types';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
@@ -9,6 +8,8 @@ import {
   LeaderboardEntry,
   GameFlowState,
   PlayerGameState,
+  NavigationProps,
+  Page
 } from '../lib/types';
 
 interface GamePageProps extends NavigationProps {
@@ -16,7 +17,7 @@ interface GamePageProps extends NavigationProps {
   gameId?: string;
 }
 
-export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
+export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGameId }) => {
   // game data
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [gameFlowState, setGameFlowState] = useState<GameFlowState>('loading');
@@ -37,17 +38,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
   const [finalScore, setFinalScore] = useState<ScoreData | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  // @ts-ignore
-  const [userId, setUserId] = useState<string | null>(null);
-  // @ts-ignore
+  const [username, setUsername] = useState<string | null>(null);
   const [playedGameIds, setPlayedGameIds] = useState<string[]>([]);
   // @ts-ignore
   const [isScoreSaving, setIsScoreSaving] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  // @ts-ignore
   const [showErrorPopup, setShowErrorPopup] = useState(false);
   // @ts-ignore
-  const [gameId, setGameId] = useState<string | null>(null);
+  const [gameId, setGameId] = useState<string | null>(propGameId || null);
 
   // transition refs
   const headerRef = useRef<HTMLDivElement>(null);
@@ -56,10 +54,294 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
-  const [username, setUsername] = useState('there');
+
+  // Set up initial game page load animations and event handlers
+  useEffect(() => {
+    console.log('GamePage mounted with propGameId:', propGameId);
+    setIsPageLoaded(true);
+    animatePageElements();
+    setGameStartTime(Date.now());
+
+    // Get user info if available
+    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+
+    // Load previously played game IDs from localStorage
+    loadPlayedGameIds();console.log('🏆 [DEBUG] Marking game completed for:', username);
+
+    console.log("useEffect triggered: Sending 'webViewReady' message");
+    window.parent.postMessage({ type: 'webViewReady' }, '*');
+
+    console.log('useEffect triggered: Waiting for initialization');
+    window.parent.postMessage({ type: 'INIT' }, '*');
+
+    // Set up main message handler
+    const handleMessage = (event: MessageEvent) => {
+      console.log('Message event received:', event);
+      console.log('Raw event data:', event.data);
+
+      // Unwrap the message if it's wrapped in a devvit envelope
+      let actualMessage = event.data;
+      if (actualMessage && actualMessage.type === 'devvit-message' && actualMessage.data?.message) {
+        actualMessage = actualMessage.data.message;
+        console.log('Unwrapped message:', actualMessage);
+      } else {
+        console.log('Message is not wrapped; using raw message:', actualMessage);
+      }
+
+      // Handle user data
+      if (actualMessage.type === 'GET_CURRENT_USER_RESULT') {
+        if (actualMessage.success && actualMessage.user?.username) {
+          setUsername(actualMessage.user.username);
+          console.log('✅ [DEBUG] Set username to:', actualMessage.user.username);
+        } else {
+          console.warn('⚠️ [DEBUG] No username found, using anonymous');
+          setUsername('anonymous');
+        }
+      }
+
+      // Handle initialization
+      if (actualMessage.type === 'INIT_RESPONSE') {
+        console.log('INIT_RESPONSE received:', actualMessage);
+
+        // First priority: use gameId from props (passed from navigation)
+        if (propGameId) {
+          console.log('Using gameId from props:', propGameId);
+          setGameId(propGameId);
+
+          // Request the specific game
+          window.parent.postMessage(
+            {
+              type: 'GET_GAME',
+              data: { gameId: propGameId },
+            },
+            '*'
+          );
+        }
+        // Second priority: use gameId from INIT_RESPONSE
+        else if (actualMessage.data && actualMessage.data.gameId) {
+          console.log('Using gameId from INIT_RESPONSE:', actualMessage.data.gameId);
+          setGameId(actualMessage.data.gameId);
+
+          // Request the specific game
+          window.parent.postMessage(
+            {
+              type: 'GET_GAME',
+              data: { gameId: actualMessage.data.gameId },
+            },
+            '*'
+          );
+        }
+        // No gameId provided, request a random game instead of redirecting
+        else {
+          console.log('No game ID found, requesting a random game');
+          requestRandomGame();
+        }
+      }
+
+      // Handle game data loading
+      if (actualMessage.type === 'GET_GAME_RESULT') {
+        console.log('GET_GAME_RESULT received:', actualMessage);
+        setIsLoading(false);
+
+        if (actualMessage.success && actualMessage.game) {
+          const loadedGameData = actualMessage.game;
+          setGameData(loadedGameData);
+          setGameFlowState('playing');
+          setRevealedLetters(new Set());
+          setGuess('');
+          setGifHintCount(1);
+          setIsCorrect(null);
+
+          // If this is a new game, add it to played games
+          addToPlayedGames(loadedGameData.id);
+        } else {
+          setError(actualMessage.error || 'Game could not be loaded');
+        }
+      }
+
+      // Handle random game result
+      if (actualMessage.type === 'GET_RANDOM_GAME_RESULT') {
+        console.log('GET_RANDOM_GAME_RESULT received:', actualMessage);
+        setIsLoading(false);
+
+        if (actualMessage.success && actualMessage.result && actualMessage.result.game) {
+          const randomGameData = actualMessage.result.game;
+          if (
+            !randomGameData.gifs ||
+            !Array.isArray(randomGameData.gifs) ||
+            randomGameData.gifs.length === 0
+          ) {
+            console.log('Game has no valid GIFs, requesting another game');
+            requestRandomGame();
+            return;
+          }
+          setIsLoading(false);
+          setGameData(randomGameData);
+          setGameFlowState('playing');
+          setGameId(randomGameData.id);
+          setRevealedLetters(new Set());
+          setGuess('');
+          setGifHintCount(1);
+          setIsCorrect(null);
+
+          // Add to played games
+          addToPlayedGames(randomGameData.id);
+        } else {
+          setIsLoading(false);
+          setError(actualMessage.error || 'Failed to load a random game');
+        }
+      }
+
+      // Handle game state loading
+      if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
+        console.log('GET_GAME_STATE_RESULT received:', actualMessage);
+
+        if (actualMessage.success && actualMessage.state) {
+          const state = actualMessage.state as PlayerGameState;
+
+          // Restore game state
+          if (state.gifHintCount) {
+            setGifHintCount(state.gifHintCount);
+          }
+
+          if (state.revealedLetters && Array.isArray(state.revealedLetters)) {
+            const numberArray = state.revealedLetters.map(Number);
+            setRevealedLetters(new Set(numberArray));
+          }
+
+          if (state.guess) {
+            setGuess(state.guess);
+          }
+
+          if (state.isCompleted) {
+            setGameFlowState('completed');
+            window.parent.postMessage(
+              {
+                type: 'GET_GAME_LEADERBOARD',
+                data: { gameId: gameData?.id, limit: 10 },
+              },
+              '*'
+            );
+          }
+        }
+      }
+
+      // Handle score calculation
+      if (actualMessage.type === 'CALCULATE_SCORE_RESULT') {
+        console.log('CALCULATE_SCORE_RESULT received:', actualMessage);
+
+        if (actualMessage.success && actualMessage.result) {
+          const score = actualMessage.result;
+          console.log('💾 [DEBUG] Saving score for username:', username);
+          setFinalScore({
+            username: username || 'anonymous',
+            gameId: gameData?.id || '',
+            score: score.score,
+            gifPenalty: score.gifPenalty,
+            wordPenalty: score.wordPenalty,
+            timeTaken: score.timeTaken || Math.floor((Date.now() - gameStartTime) / 1000),
+            timestamp: Date.now(),
+          });
+
+          // Save the score
+          window.parent.postMessage(
+            {
+              type: 'SAVE_SCORE',
+              data: {
+                ...score,
+                username: username || 'anonymous',
+                gameId: gameData?.id,
+                timestamp: Date.now(),
+              },
+            },
+            '*'
+          );
+        }
+      }
+
+      // Handle score saving
+      if (actualMessage.type === 'SAVE_SCORE_RESULT') {
+        console.log('SAVE_SCORE_RESULT received:', actualMessage);
+        setIsScoreSaving(false);
+
+        if (actualMessage.success) {
+          console.log('Score saved successfully');
+
+          // Get leaderboard
+          window.parent.postMessage(
+            {
+              type: 'GET_GAME_LEADERBOARD',
+              data: { gameId: gameData?.id, limit: 10 },
+            },
+            '*'
+          );
+        } else {
+          console.error('Error saving score:', actualMessage.error);
+        }
+      }
+
+      // Handle leaderboard data
+      if (actualMessage.type === 'GET_GAME_LEADERBOARD_RESULT') {
+        console.log('GET_GAME_LEADERBOARD_RESULT received:', actualMessage);
+
+        if (
+          actualMessage.success &&
+          actualMessage.result &&
+          Array.isArray(actualMessage.result.leaderboard)
+        ) {
+          setLeaderboard(actualMessage.result.leaderboard);
+          setShowLeaderboard(true);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    console.log('Message event listener added');
+
+    // Cleanup the event listener on unmount
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      console.log('Message event listener removed');
+    };
+  }, [propGameId]);
+
+  // Save game state when it changes
+  useEffect(() => {
+    if (gameData && username && gameFlowState === 'playing') {
+      const revealedLettersArray = Array.from(revealedLetters);
+
+      window.parent.postMessage(
+        {
+          type: 'SAVE_GAME_STATE',
+          data: {
+            username: username || 'anonymous',
+            gameId: gameData.id,
+            playerState: {
+              gifHintCount,
+              revealedLetters: revealedLettersArray,
+              guess,
+              lastPlayed: Date.now(),
+              isCompleted: false,
+            },
+          },
+        },
+        '*'
+      );
+    }
+  }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState]);
 
   useEffect(() => {
-    setIsPageLoaded(true);
+    if (isCorrect === true) {
+      console.log('Correct answer detected! Showing celebration');
+      handleCorrectGuess();
+    }
+    if (isCorrect === false) {
+      console.log('Incorrect answer detected! Showing shake animation');
+      handleIncorrectGuess();
+    }
+  }, [isCorrect]);
+
+  // Helper functions
+  const animatePageElements = () => {
     setTimeout(() => {
       if (headerRef.current) {
         transitions.animateElement(headerRef.current, {
@@ -115,12 +397,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
         });
       }
     }, 900);
-    setIsPageLoaded(true);
-    setGameStartTime(Date.now());
-    // Get user info if available
-    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+  };
 
-    // Load previously played game IDs from localStorage
+  const loadPlayedGameIds = () => {
     const savedGameIds = localStorage.getItem('playedGameIds');
     if (savedGameIds) {
       try {
@@ -130,345 +409,177 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
         localStorage.removeItem('playedGameIds');
       }
     }
+  };
 
-    console.log("useEffect triggered: Sending 'webViewReady' message");
-    window.parent.postMessage({ type: 'webViewReady' }, '*');
+  const addToPlayedGames = (newGameId: string) => {
+    if (!newGameId) return;
 
-    console.log('useEffect triggered: Waiting for initialization');
-    window.parent.postMessage({ type: 'INIT' }, '*');
+    // Add to played games list and save to localStorage
+    const updatedGameIds = [...playedGameIds, newGameId];
+    setPlayedGameIds(updatedGameIds);
 
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'GET_CURRENT_USER_RESULT') {
-        if (event.data.success && event.data.user) {
-          setUserId(event.data.user.id);
-        } else {
-          setUserId('anonymous');
+    try {
+      localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
+    } catch (e) {
+      console.error('Error saving playedGameIds to localStorage:', e);
+    }
+  };
+
+  // Add this to your GamePage component
+  const requestRandomGame = () => {
+    console.log('Requesting a random game with valid GIFs');
+    setIsLoading(true);
+
+    // Get any previously played game IDs from localStorage
+    let playedGameIds: string[] = [];
+    try {
+      const savedIds = localStorage.getItem('playedGameIds');
+      if (savedIds) {
+        playedGameIds = JSON.parse(savedIds);
+      }
+    } catch (e) {
+      console.error('Error parsing played game IDs:', e);
+    }
+
+    // Request a random game
+    window.parent.postMessage(
+      {
+        type: 'GET_RANDOM_GAME',
+        data: {
+          excludeIds: playedGameIds,
+          preferUserCreated: true,
+        },
+      },
+      '*'
+    );
+  };
+
+  const handleCorrectGuess = () => {
+    if (gameData && username) {
+      console.log('🏆 [DEBUG] Marking game completed for:', username);
+      window.parent.postMessage({
+        type: 'MARK_GAME_COMPLETED',
+        data: {
+          gameId: gameData?.id,
+          username: username,
         }
-      }
-      console.log('Message event received:', event);
-      console.log('Raw event data:', event.data);
-
-      // Unwrap the message if it's wrapped in a devvit envelope.
-      let actualMessage = event.data;
-      if (actualMessage && actualMessage.type === 'devvit-message' && actualMessage.data?.message) {
-        actualMessage = actualMessage.data.message;
-        console.log('Unwrapped message:', actualMessage);
-      } else {
-        console.log('Message is not wrapped; using raw message:', actualMessage);
-      }
-
-      if (actualMessage.type === 'GET_CURRENT_USER_RESULT') {
-        if (actualMessage.success && actualMessage.user) {
-          setUserId(actualMessage.user.id);
-        } else {
-          setUserId('anonymous');
-        }
-      }
-
-      if (actualMessage.type === 'INIT_RESPONSE') {
-        console.log('INIT_RESPONSE received:', actualMessage);
-        if (actualMessage.data && actualMessage.data.gameId) {
-          console.log('Game ID found in INIT_RESPONSE:', actualMessage.data.gameId);
-          setGameId(actualMessage.data.gameId);
-
-          // Request the specific game
-          window.parent.postMessage(
-            {
-              type: 'GET_GAME',
-              data: { gameId: actualMessage.data.gameId },
-            },
-            '*'
-          );
-        } else {
-          // No specific game ID, so redirect back to landing
-          console.log('No game ID found, redirecting to landing page');
-          onNavigate('landing');
-        }
-      }
-
-      if (actualMessage.type === 'GET_GAME_RESULT') {
-        console.log('GET_GAME_RESULT received:', actualMessage);
-        setIsLoading(false);
-
-        if (actualMessage.success && actualMessage.game) {
-          const gameData = actualMessage.game;
-          setGameData(gameData);
-          setGameFlowState('playing');
-          setRevealedLetters(new Set());
-          setGuess(''); // Clear previous guess
-          setGifHintCount(1); // Reset GIF hints
-          setIsCorrect(null);
-        } else {
-          setError(actualMessage.error || 'Game could not be loaded');
-          // Optionally redirect if game loading fails
-          setTimeout(() => onNavigate('landing'), 2000);
-        }
-      }
-
-      if (actualMessage && actualMessage.type === 'GET_GAME_STATE_RESULT') {
-        console.log('GET_GAME_STATE_RESULT received:', actualMessage);
-
-        if (actualMessage.success && actualMessage.state) {
-          const state = actualMessage.state as PlayerGameState;
-
-          // Restore game state
-          if (state.gifHintCount) {
-            setGifHintCount(state.gifHintCount);
-          }
-
-          if (state.revealedLetters && Array.isArray(state.revealedLetters)) {
-            // Ensure all elements are numbers
-            const numberArray = state.revealedLetters.map(Number);
-            setRevealedLetters(new Set(numberArray));
-          }
-
-          if (state.guess) {
-            setGuess(state.guess);
-          }
-
-          if (state.isCompleted) {
-            setGameFlowState('completed');
-            // Get leaderboard if game was completed
-            window.parent.postMessage(
-              {
-                type: 'GET_GAME_LEADERBOARD',
-                data: { gameId: gameData?.id, limit: 10 },
-              },
-              '*'
-            );
-          }
-        }
-      }
-
-      if (actualMessage && actualMessage.type === 'CALCULATE_SCORE_RESULT') {
-        console.log('CALCULATE_SCORE_RESULT received:', actualMessage);
-
-        if (actualMessage.success && actualMessage.result) {
-          const score = actualMessage.result;
-          setFinalScore({
-            score: score.score,
-            gifPenalty: score.gifPenalty,
-            wordPenalty: score.wordPenalty,
-            timeTaken: score.timeTaken || Math.floor((Date.now() - gameStartTime) / 1000),
-            userId: userId || 'anonymous',
-            gameId: gameData?.id || '',
-            timestamp: Date.now(),
-          });
-
-          // Save the score
-          window.parent.postMessage(
-            {
-              type: 'SAVE_SCORE',
-              data: {
-                ...score,
-                userId,
-                gameId: gameData?.id,
-                timestamp: Date.now(),
-              },
-            },
-            '*'
-          );
-        }
-      }
-
-      if (actualMessage && actualMessage.type === 'SAVE_SCORE_RESULT') {
-        console.log('SAVE_SCORE_RESULT received:', actualMessage);
-        setIsScoreSaving(false);
-
-        if (actualMessage.success) {
-          console.log('Score saved successfully');
-
-          // Get leaderboard
-          window.parent.postMessage(
-            {
-              type: 'GET_GAME_LEADERBOARD',
-              data: { gameId: gameData?.id, limit: 10 },
-            },
-            '*'
-          );
-        } else {
-          console.error('Error saving score:', actualMessage.error);
-        }
-      }
-
-      if (actualMessage && actualMessage.type === 'GET_GAME_LEADERBOARD_RESULT') {
-        console.log('GET_GAME_LEADERBOARD_RESULT received:', actualMessage);
-
-        if (
-          actualMessage.success &&
-          actualMessage.result &&
-          Array.isArray(actualMessage.result.leaderboard)
-        ) {
-          setLeaderboard(actualMessage.result.leaderboard);
-          setShowLeaderboard(true);
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    console.log('Message event listener added');
-
-    // Cleanup the event listener on unmount
-    return () => {
-      window.removeEventListener('message', handleMessage);
-      console.log('Message event listener removed');
-    };
-  }, []);
-
-  useEffect(() => {
-    if (gameData && userId && gameFlowState === 'playing') {
-      const revealedLettersArray = Array.from(revealedLetters);
-
-      window.parent.postMessage(
-        {
-          type: 'SAVE_GAME_STATE',
-          data: {
-            userId: userId || 'anonymous',
-            gameId: gameData.id,
-            playerState: {
+      }, '*');
+      try {
+        // Calculate score on server side
+        setIsScoreSaving(true);
+        window.parent.postMessage(
+          {
+            type: 'CALCULATE_SCORE',
+            data: {
+              word: gameData.word,
               gifHintCount,
-              revealedLetters: revealedLettersArray,
-              guess,
-              lastPlayed: Date.now(),
-              isCompleted: false,
+              revealedLetterCount: revealedLetters.size,
+              timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
             },
           },
-        },
-        '*'
-      );
-    }
-  }, [gameData, userId, gifHintCount, revealedLetters, guess, gameFlowState]);
-
-  useEffect (() => {
-    try {
-      const currentUsername = await context.reddit.getCurrentUsername();
-      if (currentUsername) {
-        setUsername(currentUsername);
-      }
-    } catch (userError) {
-      console.error('Error getting username:', userError);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isCorrect === true) {
-      console.log('Correct answer detected! Showing celebration');
-
-      if (gameData) {
-        try {
-          // Calculate score on server side
-          setIsScoreSaving(true);
-          window.parent.postMessage(
-            {
-              type: 'CALCULATE_SCORE',
-              data: {
-                word: gameData.word,
-                gifHintCount,
-                revealedLetterCount: revealedLetters.size,
-                timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
-              },
-            },
-            '*'
-          );
-        } catch (error) {
-          console.error('Error calculating score:', error);
-          setFinalScore({
-            score: 0,
-            gifPenalty: 0,
-            wordPenalty: 0,
-            timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
-            userId: userId || 'anonymous',
-            gameId: gameData?.id || '',
-            timestamp: Date.now(),
-          });
-
-          window.parent.postMessage(
-            {
-              type: 'GET_GAME_LEADERBOARD',
-              data: { gameId: gameData?.id, limit: 10 },
-            },
-            '*'
-          );
-        }
-
-        // Apply green background to answer boxes
-        const boxes = document.querySelectorAll('.answer-box');
-        boxes.forEach((box) => {
-          (box as HTMLElement).style.backgroundColor = '#86efac'; // Light green
-          (box as HTMLElement).style.transition = 'background-color 0.5s ease';
+          '*'
+        );
+      } catch (error) {
+        console.error('Error calculating score:', error);
+        setFinalScore({
+          username: username || 'anonymous',
+          gameId: gameData?.id || '',
+          score: 0,
+          gifPenalty: 0,
+          wordPenalty: 0,
+          timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+          timestamp: Date.now(),
         });
 
-        // Create confetti
-        const confettiContainer = document.createElement('div');
-        confettiContainer.style.position = 'fixed';
-        confettiContainer.style.top = '0';
-        confettiContainer.style.left = '0';
-        confettiContainer.style.width = '100%';
-        confettiContainer.style.height = '100%';
-        confettiContainer.style.pointerEvents = 'none';
-        confettiContainer.style.zIndex = '9999';
-        document.body.appendChild(confettiContainer);
-
-        for (let i = 0; i < 50; i++) {
-          const confetti = document.createElement('div');
-          confetti.style.position = 'absolute';
-          confetti.style.width = '10px';
-          confetti.style.height = '10px';
-          confetti.style.backgroundColor = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'][
-            Math.floor(Math.random() * 5)
-          ];
-          confetti.style.left = `${Math.random() * 100}%`;
-          confetti.style.top = '-10px';
-
-          // Set inline animation style
-          confetti.style.animation = 'confetti-fall 4s linear forwards';
-          confetti.style.animationDelay = `${Math.random() * 2}s`;
-
-          confettiContainer.appendChild(confetti);
-        }
-
-        // Show success message
-        setTimeout(() => {
-          window.alert('Congratulations! You guessed the secret word!');
-        }, 100);
-
-        // Clean up
-        setTimeout(() => {
-          if (document.body.contains(confettiContainer)) {
-            document.body.removeChild(confettiContainer);
-          }
-        }, 5000);
-      }
-    }
-    if (isCorrect === false) {
-      console.log('Incorrect answer detected! Showing shake animation');
-
-      // Apply shake animation directly to the container
-      const container = document.getElementById('answer-boxes-container');
-      if (container) {
-        // Reset animation first to ensure it plays again if triggered multiple times
-        container.style.animation = 'none';
-
-        // Force reflow to make sure the animation restarts
-        void container.offsetWidth;
-
-        // Apply animation
-        container.style.animation = 'shake 0.8s ease-in-out';
-
-        // Apply red background to answer boxes
-        const boxes = document.querySelectorAll('.answer-box');
-        boxes.forEach((box) => {
-          (box as HTMLElement).style.backgroundColor = '#fecaca'; // Light red
-          (box as HTMLElement).style.transition = 'background-color 0.5s ease';
-        });
+        window.parent.postMessage(
+          {
+            type: 'GET_GAME_LEADERBOARD',
+            data: { gameId: gameData?.id, limit: 10 },
+          },
+          '*'
+        );
       }
 
-      // Show error message
+      // Apply green background to answer boxes
+      const boxes = document.querySelectorAll('.answer-box');
+      boxes.forEach((box) => {
+        (box as HTMLElement).style.backgroundColor = '#86efac'; // Light green
+        (box as HTMLElement).style.transition = 'background-color 0.5s ease';
+      });
+
+      // Create confetti
+      createConfetti();
+
+      // Show success message
       setTimeout(() => {
-        window.alert('Incorrect guess. Try again!');
+        window.alert('Congratulations! You guessed the secret word!');
       }, 100);
     }
-  }, [isCorrect]);
+  };
+
+  const handleIncorrectGuess = () => {
+    // Apply shake animation directly to the container
+    const container = document.getElementById('answer-boxes-container');
+    if (container) {
+      // Reset animation first to ensure it plays again if triggered multiple times
+      container.style.animation = 'none';
+
+      // Force reflow to make sure the animation restarts
+      void container.offsetWidth;
+
+      // Apply animation
+      container.style.animation = 'shake 0.8s ease-in-out';
+
+      // Apply red background to answer boxes
+      const boxes = document.querySelectorAll('.answer-box');
+      boxes.forEach((box) => {
+        (box as HTMLElement).style.backgroundColor = '#fecaca'; // Light red
+        (box as HTMLElement).style.transition = 'background-color 0.5s ease';
+      });
+    }
+
+    // Show error message
+    setTimeout(() => {
+      window.alert('Incorrect guess. Try again!');
+    }, 100);
+  };
+
+  const createConfetti = () => {
+    const confettiContainer = document.createElement('div');
+    confettiContainer.style.position = 'fixed';
+    confettiContainer.style.top = '0';
+    confettiContainer.style.left = '0';
+    confettiContainer.style.width = '100%';
+    confettiContainer.style.height = '100%';
+    confettiContainer.style.pointerEvents = 'none';
+    confettiContainer.style.zIndex = '9999';
+    document.body.appendChild(confettiContainer);
+
+    for (let i = 0; i < 50; i++) {
+      const confetti = document.createElement('div');
+      confetti.style.position = 'absolute';
+      confetti.style.width = '10px';
+      confetti.style.height = '10px';
+      confetti.style.backgroundColor = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'][
+        Math.floor(Math.random() * 5)
+      ];
+      confetti.style.left = `${Math.random() * 100}%`;
+      confetti.style.top = '-10px';
+
+      // Set inline animation style
+      confetti.style.animation = 'confetti-fall 4s linear forwards';
+      confetti.style.animationDelay = `${Math.random() * 2}s`;
+
+      confettiContainer.appendChild(confetti);
+    }
+
+    // Clean up
+    setTimeout(() => {
+      if (document.body.contains(confettiContainer)) {
+        document.body.removeChild(confettiContainer);
+      }
+    }, 5000);
+  };
 
   const answer = gameData ? gameData.word.toUpperCase() : '';
 
@@ -610,6 +721,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
 
     if (cleanedGuess === cleanedAnswer) {
       console.log('CORRECT ANSWER!');
+      setIsCorrect(true);
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 3000);
       // Update game state to completed
@@ -618,12 +730,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
       const score = calculateFinalScore();
 
       setFinalScore({
-        score: score,
-        gifPenalty: gifHintCount >= 2 ? (gifHintCount === 2 ? 10 : (gifHintCount === 3 ? 20 : 40)) : 0,
-        wordPenalty: revealedLetters.size > 0 ? score < 100 ? 100 - score : 0 : 0,
-        timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
-        userId: userId || 'anonymous',
+        username: username || 'anonymous',
         gameId: gameData?.id || '',
+        score: score,
+        gifPenalty:
+          gifHintCount >= 2 ? (gifHintCount === 2 ? 10 : gifHintCount === 3 ? 20 : 40) : 0,
+        wordPenalty: revealedLetters.size > 0 ? (score < 100 ? 100 - score : 0) : 0,
+        timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
         timestamp: Date.now(),
       });
 
@@ -644,7 +757,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
         {
           type: 'SAVE_GAME_STATE',
           data: {
-            userId,
+            username,
             gameId: gameData.id,
             playerState: {
               gifHintCount,
@@ -674,17 +787,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
       );
     } else {
       console.log('INCORRECT ANSWER!');
-      // Set animate shaking
-      setIsShaking(true);
+      setIsCorrect(false);
 
       // Show error popup
       setShowErrorPopup(true);
       setTimeout(() => setShowErrorPopup(false), 2000);
-
-      // Reset shaking state after animation time
-      setTimeout(() => {
-        setIsShaking(false);
-      }, 1000);
     }
   };
 
@@ -716,6 +823,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
   };
 
   const renderGifArea = () => {
+    console.log('Game data:', gameData);
+    console.log('GIF URLs:', gameData?.gifs);
     if (!gameData) {
       return (
         <div className="flex h-56 items-center justify-center md:h-64 lg:h-72">
@@ -937,7 +1046,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
   };
 
   const handleNewGame = () => {
-    onNavigate('landing');
+    onNavigate('game');
   };
 
   if (gameFlowState === 'won') {
@@ -946,7 +1055,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
         <div className="mb-8 transform text-center transition-all duration-500 hover:scale-105">
           <ComicText size={1.2} color="#FF4500">
             {' '}
-            You've already solved this enigma!
+            Hurray! You guessed it right!{' '}
           </ComicText>
           <div className="mt-4 text-lg text-gray-400">
             <ComicText size={0.7} color="#fff">
@@ -955,7 +1064,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
             </ComicText>
           </div>
         </div>
-  
+
         <div className="flex gap-4">
           <button
             onClick={() => {
@@ -973,7 +1082,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
               View Results
             </ComicText>
           </button>
-  
+
           <button
             onClick={handleNewGame}
             className="cursor-pointer rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
@@ -1260,7 +1369,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
                 </thead>
                 <tbody>
                   {leaderboard.map((entry, index) => (
-                    <tr key={index} className={entry.userId === userId ? 'bg-yellow-50' : ''}>
+                    <tr key={index} className={entry.username === username ? 'bg-yellow-50' : ''}>
                       <td className="border-t p-2">{index + 1}</td>
                       <td className="border-t p-2">{entry.username}</td>
                       <td className="border-t p-2 text-right">{entry.score}</td>
@@ -1288,7 +1397,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate }) => {
                 onClick={() => {
                   setShowLeaderboard(false);
                   setTimeout(() => {
-                    onNavigate('landing');
+                    onNavigate('game');
                   }, 300);
                 }}
                 className="cursor-pointer rounded-lg bg-gray-600 px-4 py-2 text-white transition-all hover:bg-gray-700"

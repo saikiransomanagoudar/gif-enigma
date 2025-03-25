@@ -10,6 +10,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isboardOpen, setboardOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     // Detect dark mode
@@ -35,6 +36,60 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  const handlePlayClick = () => {
+    setIsLoading(true);
+    
+    // Get list of previously played games from localStorage
+    let playedGameIds: string[] = [];
+    try {
+      const savedGameIds = localStorage.getItem('playedGameIds');
+      if (savedGameIds) {
+        playedGameIds = JSON.parse(savedGameIds);
+      }
+    } catch (e) {
+      console.error('Error parsing playedGameIds from localStorage:', e);
+    }
+
+    // Request a random game, preferring user-created ones
+    window.parent.postMessage(
+      { 
+        type: 'GET_RANDOM_GAME',
+        data: { 
+          excludeIds: playedGameIds,
+          preferUserCreated: true 
+        }
+      }, 
+      '*'
+    );
+
+    // Listen for the game response
+    const handleGameResponse = (event: MessageEvent) => {
+      let message = event.data;
+      
+      // Unwrap if message is in a devvit envelope
+      if (message && message.type === 'devvit-message' && message.data?.message) {
+        message = message.data.message;
+      }
+      
+      if (message.type === 'GET_RANDOM_GAME_RESULT') {
+        setIsLoading(false);
+        window.removeEventListener('message', handleGameResponse);
+        
+        if (message.success && message.game) {
+          console.log('Random game loaded:', message.game.id);
+          // Navigate to game page with the loaded game
+          onNavigate('game', { gameId: message.game.id });
+        } else {
+          console.error('Failed to load random game:', message.error);
+          // Navigate to game page anyway, the GamePage will handle the error
+          onNavigate('game');
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleGameResponse);
+  };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
   const textColor = isDarkMode
@@ -95,20 +150,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h2>
 
-            {/* Subtitle
-            <motion.h2
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.8 }}
-            >
-              <ComicText
-                size={0.8}
-                color={textColor}
-                className={`mt-[-15px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
-              >
-                Can you guess the hidden word from a GIF?
-              </ComicText>
-            </motion.h2> */}
             {/* Welcome Message */}
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
@@ -131,7 +172,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           {/* Play GIF */}
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
-            onClick={() => onNavigate('game')}
+            onClick={handlePlayClick}
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 1.2 }}
@@ -139,11 +180,16 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <img
               src="/landing-page/lets-play.gif"
               alt="Play GIF"
-              className="block w-full rounded-2xl"
+              className={`block w-full rounded-2xl ${isLoading ? 'opacity-50' : ''}`}
             />
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
-              Tap to Play →
+              {isLoading ? 'Loading...' : 'Tap to Play →'}
             </div>
+            {isLoading && (
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-blue-500"></div>
+              </div>
+            )}
           </motion.div>
 
           {/* Create GIF */}
