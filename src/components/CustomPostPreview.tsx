@@ -146,24 +146,23 @@ export const CustomPostPreview = ({
     setPendingNavigation(null);
   }
 
-  // Store navigation intent in Redis for persistence
-  const storeNavigationIntent = async (page: Page, gameId?: string) => {
+  const storeLandingPage = async () => {
     try {
       if (context.postId) {
-        console.log('[DEBUG-NAV] CustomPostPreview: Storing navigation intent in Redis:', page, gameId);
+        console.log('[DEBUG-NAV] CustomPostPreview: Storing landing page in Redis');
         await context.redis.hSet(`navState:${context.postId}`, {
-          page,
-          ...(gameId ? { gameId } : {})
+          page: 'landing'
         });
       }
     } catch (error) {
-      console.error('[DEBUG-NAV] CustomPostPreview: Error storing navigation intent:', error);
+      console.error('[DEBUG-NAV] CustomPostPreview: Error storing landing page:', error);
     }
   };
 
   const handlePlayGame = () => {
-    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed, gameId:', previewData.gameId);
+    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
     
+    storeLandingPage();
     // Mount the WebView
     onMount();
     
@@ -172,16 +171,13 @@ export const CustomPostPreview = ({
       safePostMessage({
         type: 'NAVIGATE',
         data: {
-          page: 'game',
-          params: previewData.gameId ? { gameId: previewData.gameId } : {}
+          page: 'landing'
         }
       });
     } else {
       console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet, storing pending navigation');
-      // Store the navigation request to be sent when WebView is ready
       setPendingNavigation({
-        page: 'game',
-        gameId: previewData.gameId
+        page: 'landing'
       });
     }
   };
@@ -237,7 +233,7 @@ export const CustomPostPreview = ({
           >
             <hstack alignment="middle center">
               <ComicText size={0.2} color="white">
-                S tart Playing
+                S        tart    Playing
               </ComicText>
               <text> 👉</text>
             </hstack>

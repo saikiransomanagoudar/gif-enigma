@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
 import { ComicText } from '../lib/fonts';
 import { NavigationProps } from '../lib/types';
@@ -11,6 +11,13 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isboardOpen, setboardOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Detect dark mode
@@ -21,6 +28,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
+  // In your LandingPage component
   useEffect(() => {
     // Request Reddit username
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
@@ -30,6 +38,8 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           setRedditUsername(event.data.user?.username || '');
         } else {
           console.error('Error fetching user:', event.data.error);
+          // Set a default or anonymous username
+          setRedditUsername('');
         }
       }
     };
@@ -39,7 +49,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   const handlePlayClick = () => {
     setIsLoading(true);
-    
+
     // Get list of previously played games from localStorage
     let playedGameIds: string[] = [];
     try {
@@ -53,42 +63,54 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
     // Request a random game, preferring user-created ones
     window.parent.postMessage(
-      { 
+      {
         type: 'GET_RANDOM_GAME',
-        data: { 
+        data: {
           excludeIds: playedGameIds,
-          preferUserCreated: true 
-        }
-      }, 
+          preferUserCreated: true,
+        },
+      },
       '*'
     );
 
     // Listen for the game response
     const handleGameResponse = (event: MessageEvent) => {
       let message = event.data;
-      
+
       // Unwrap if message is in a devvit envelope
       if (message && message.type === 'devvit-message' && message.data?.message) {
         message = message.data.message;
       }
-      
+
       if (message.type === 'GET_RANDOM_GAME_RESULT') {
         setIsLoading(false);
         window.removeEventListener('message', handleGameResponse);
-        
-        if (message.success && message.game) {
-          console.log('Random game loaded:', message.game.id);
+
+        // The game data could be nested in different ways based on your logs
+        const gameData =
+          message.game || (message.result && (message.result.game || message.result));
+
+        if (message.success && gameData && gameData.id) {
+          console.log('Random game loaded:', gameData.id);
           // Navigate to game page with the loaded game
-          onNavigate('game', { gameId: message.game.id });
+          onNavigate('game', { gameId: gameData.id });
         } else {
           console.error('Failed to load random game:', message.error);
-          // Navigate to game page anyway, the GamePage will handle the error
-          onNavigate('game');
+          // Don't navigate on error, just show a message
+          alert('Could not find a game to play. Please try again later.');
         }
       }
     };
-    
+
     window.addEventListener('message', handleGameResponse);
+
+    // Clean up the event listener after a timeout
+    setTimeout(() => {
+      if (isMounted.current) {
+        window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
+      }
+    }, 10000);
   };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
@@ -161,7 +183,8 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
                 color={textColor}
                 className={`mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
-                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the secret word/phrase from GIFs?
+                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
+                secret word/phrase from GIFs?
               </ComicText>
             </motion.h2>
           </div>

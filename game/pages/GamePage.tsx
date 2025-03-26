@@ -9,7 +9,7 @@ import {
   GameFlowState,
   PlayerGameState,
   NavigationProps,
-  Page
+  Page,
 } from '../lib/types';
 
 interface GamePageProps extends NavigationProps {
@@ -30,6 +30,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+  const gameIdRef = useRef(propGameId);
+  gameIdRef.current = propGameId;
   // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
 
@@ -66,7 +68,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
 
     // Load previously played game IDs from localStorage
-    loadPlayedGameIds();console.log('🏆 [DEBUG] Marking game completed for:', username);
+    loadPlayedGameIds();
+    console.log('🏆 [DEBUG] Marking game completed for:', username);
 
     console.log("useEffect triggered: Sending 'webViewReady' message");
     window.parent.postMessage({ type: 'webViewReady' }, '*');
@@ -103,37 +106,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       if (actualMessage.type === 'INIT_RESPONSE') {
         console.log('INIT_RESPONSE received:', actualMessage);
 
-        // First priority: use gameId from props (passed from navigation)
-        if (propGameId) {
-          console.log('Using gameId from props:', propGameId);
-          setGameId(propGameId);
-
-          // Request the specific game
-          window.parent.postMessage(
-            {
-              type: 'GET_GAME',
-              data: { gameId: propGameId },
-            },
-            '*'
-          );
-        }
-        // Second priority: use gameId from INIT_RESPONSE
-        else if (actualMessage.data && actualMessage.data.gameId) {
+        if (gameIdRef.current) {
+          console.log('Using gameId from props:', gameIdRef.current);
+          setGameId(gameIdRef.current);
+          window.parent.postMessage({ type: 'GET_GAME', data: { gameId: gameIdRef.current } }, '*');
+        } else if (actualMessage.data?.gameId) {
+          // Only proceed if propGameId wasn't already set
           console.log('Using gameId from INIT_RESPONSE:', actualMessage.data.gameId);
           setGameId(actualMessage.data.gameId);
-
-          // Request the specific game
           window.parent.postMessage(
-            {
-              type: 'GET_GAME',
-              data: { gameId: actualMessage.data.gameId },
-            },
+            { type: 'GET_GAME', data: { gameId: actualMessage.data.gameId } },
             '*'
           );
-        }
-        // No gameId provided, request a random game instead of redirecting
-        else {
-          console.log('No game ID found, requesting a random game');
+        } else {
           requestRandomGame();
         }
       }
@@ -458,13 +443,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     if (gameData) {
       const currentUsername = username || 'anonymous';
       console.log('🏆 [DEBUG] Marking game completed for:', currentUsername);
-      window.parent.postMessage({
-        type: 'MARK_GAME_COMPLETED',
-        data: {
-          gameId: gameData?.id,
-          username: currentUsername,
-        }
-      }, '*');
+      window.parent.postMessage(
+        {
+          type: 'MARK_GAME_COMPLETED',
+          data: {
+            gameId: gameData?.id,
+            username: currentUsername,
+          },
+        },
+        '*'
+      );
       try {
         // Calculate score on server side
         setIsScoreSaving(true);

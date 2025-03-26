@@ -79,7 +79,7 @@ Devvit.addCustomPostType({
           console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
           return {
             page: storedState.page as Page,
-            gameId: storedState.gameId,
+            gameId: storedState.gameId ?? null,
           };
         }
       } catch (error) {
@@ -89,6 +89,80 @@ Devvit.addCustomPostType({
       console.log('[DEBUG-STORAGE] No stored navigation state found');
       return { page: null };
     };
+
+    const {
+      data: username,
+      loading,
+      error,
+    } = useAsync(async () => {
+      return (await context.reddit.getCurrentUsername()) ?? null;
+    });
+
+    const {
+      data: randomGame,
+      loading: gameLoading,
+      error: gameError,
+    } = useAsync(
+      async () => {
+        // Get previously played game IDs from navState or a default empty array
+        let excludeIds: string[] = [];
+        try {
+          const navStateKey = `navState:${context.postId || 'default'}`;
+          const userGameData = await context.redis.hGetAll(`userGames:${username || 'anonymous'}`);
+          if (userGameData && userGameData.playedGames) {
+            excludeIds = JSON.parse(userGameData.playedGames);
+          }
+        } catch (err) {
+          console.error('[DEBUG] Error getting played games:', err);
+        }
+
+        // Import and call getRandomGame
+        const { getRandomGame } = await import('../game/server/gameHandler.server.js');
+        const result = await getRandomGame(
+          {
+            excludeIds,
+            preferUserCreated: true,
+            username: username || undefined,
+          },
+          context
+        );
+
+        return result;
+      },
+      {
+        // Re-run when username changes or post ID changes
+        depends: [username, context.postId || 'default'],
+      }
+    );
+
+    const {
+      data: randomGameData,
+      loading: randomGameLoading,
+      error: randomGameError,
+    } = useAsync(
+      async () => {
+        try {
+          // Do any necessary data retrieval
+          const { getRandomGame } = await import('../game/server/gameHandler.server.js');
+          // Use a default empty array for excludeIds if none is provided
+          const result = await getRandomGame(
+            {
+              excludeIds: [],
+              preferUserCreated: true,
+            },
+            context
+          );
+
+          return result;
+        } catch (error) {
+          console.error('Error in randomGame useAsync:', error);
+          throw error;
+        }
+      },
+      {
+        depends: [context.postId || 'default'],
+      }
+    );
 
     useAsync(
       async () => {
@@ -103,6 +177,54 @@ Devvit.addCustomPostType({
         depends: [],
       }
     );
+
+    const {
+      data: navigationState,
+      loading: navLoading,
+      error: navError,
+    } = useAsync(
+      async () => {
+        console.log('[DEBUG-STORAGE] Retrieving navigation state with useAsync');
+
+        try {
+          const navStateKey = `navState:${context.postId || 'default'}`;
+          const storedState = await context.redis.hGetAll(navStateKey);
+
+          if (storedState && storedState.page) {
+            console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
+            return {
+              page: storedState.page as Page,
+              gameId: storedState.gameId,
+            };
+          }
+        } catch (redisError) {
+          console.error('[DEBUG-STORAGE] Redis error in useAsync:', redisError);
+          // Don't throw - return a default instead
+        }
+
+        console.log('[DEBUG-STORAGE] No stored navigation state found, using default');
+        return { page: 'landing' as Page, gameId: null };
+      },
+      {
+        depends: [context.postId || 'default'],
+        // Handle errors within the effect
+      }
+    );
+
+    // Then you can use navigationState.page and navigationState.gameId elsewhere
+    useAsync(
+      async () => {
+        if (navigationState) {
+          persistentPage = navigationState.page;
+          console.log('[DEBUG-STORAGE] Set persistentPage from useAsync:', persistentPage);
+        }
+        return null;
+      },
+      {
+        depends: [navigationState],
+      }
+    );
+
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
       onMessage: async (
@@ -136,37 +258,23 @@ Devvit.addCustomPostType({
             console.log('[DEBUG] main.tsx: webViewReady received');
             isWebViewReadyFlag = true;
 
-            // Check if there's any pending navigation from Redis
-            try {
-              console.log('[DEBUG] main.tsx: Checking for pending navigation');
-              const navStateKey = `navState:${context.postId || 'default'}`;
-              const storedState = await context.redis.hGetAll(navStateKey);
+            // Send the navigation state from useAsync
+            if (navigationState) {
+              const navResponse: any = {
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: navigationState.page,
+                  ...(navigationState.gameId ? { gameId: navigationState.gameId } : {}),
+                },
+              };
 
-              if (storedState && storedState.page) {
-                console.log('[DEBUG] main.tsx: Found pending navigation to:', storedState.page);
-
-                // Set persistentPage from storage
-                persistentPage = storedState.page as Page;
-
-                // Tell the WebView about this navigation
-                const navResponse: any = {
-                  type: 'SET_NAVIGATION_STATE',
-                  data: {
-                    page: persistentPage,
-                    ...(storedState.gameId ? { gameId: storedState.gameId } : {}),
-                  },
-                };
-
-                console.log(
-                  '[DEBUG] main.tsx: Sending pending navigation to WebView:',
-                  JSON.stringify(navResponse)
-                );
-                postMessage(navResponse);
-              } else {
-                console.log('[DEBUG] main.tsx: No pending navigation found');
-              }
-            } catch (error) {
-              console.error('[DEBUG] main.tsx: Error checking for pending navigation:', error);
+              console.log(
+                '[DEBUG] main.tsx: Sending navigation from useAsync:',
+                JSON.stringify(navResponse)
+              );
+              postMessage(navResponse);
+            } else {
+              console.log('[DEBUG] main.tsx: No navigation state available yet');
             }
             break;
 
@@ -176,51 +284,83 @@ Devvit.addCustomPostType({
               persistentPage
             );
 
-            if (!persistentPage) {
-              // Try to retrieve from storage first
-              const navState = await retrieveNavigationState();
-              if (navState.page) {
-                persistentPage = navState.page;
+            // Use the navigation state from useAsync if available
+            if (navigationState) {
+              // Create a properly typed response object that matches BlocksToWebviewMessage
+              const navResponse: BlocksToWebviewMessage = {
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: navigationState.page,
+                },
+              };
+
+              // Add gameId if it exists
+              if (navigationState.gameId) {
+                // Use a type assertion to add the gameId property
+                (navResponse.data as any).gameId = navigationState.gameId;
                 console.log(
-                  '[DEBUG] main.tsx: Retrieved persistentPage from storage:',
-                  persistentPage
+                  '[DEBUG] main.tsx: Including gameId in navigation state:',
+                  navigationState.gameId
                 );
-              } else {
-                // Default to landing if no stored page
-                persistentPage = 'landing';
-                console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
               }
+
+              console.log(
+                '[DEBUG] main.tsx: Sending navigation state from useAsync:',
+                JSON.stringify(navResponse)
+              );
+              postMessage(navResponse);
+            } else if (persistentPage) {
+              // Create a properly typed response for persistentPage
+              const navResponse: BlocksToWebviewMessage = {
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: persistentPage,
+                },
+              };
+
+              // Handle game page and gameId retrieval
+              if (persistentPage === 'game') {
+                (async () => {
+                  try {
+                    const navStateKey = `navState:${context.postId || 'default'}`;
+                    const storedState = await context.redis.hGetAll(navStateKey);
+                    if (storedState && storedState.gameId) {
+                      // Use a type assertion to add gameId
+                      (navResponse.data as any).gameId = storedState.gameId;
+                      console.log(
+                        '[DEBUG] main.tsx: Including gameId in navigation state:',
+                        storedState.gameId
+                      );
+                    }
+                  } catch (error) {
+                    console.error('[DEBUG] main.tsx: Error retrieving gameId from storage:', error);
+                  } finally {
+                    console.log(
+                      '[DEBUG] main.tsx: Sending navigation state from persistentPage:',
+                      JSON.stringify(navResponse)
+                    );
+                    postMessage(navResponse);
+                  }
+                })();
+                return;
+              }
+
+              console.log(
+                '[DEBUG] main.tsx: Sending navigation state from persistentPage:',
+                JSON.stringify(navResponse)
+              );
+              postMessage(navResponse);
+            } else {
+              // Default to landing with proper type
+              console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
+              postMessage({
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: 'landing',
+                },
+                success: true, // Add the required success property
+              } as BlocksToWebviewMessage);
             }
-
-            // Send the current navigation state explicitly
-            const navigationState: any = {
-              type: 'SET_NAVIGATION_STATE',
-              data: {
-                page: persistentPage,
-              },
-            };
-            if (persistentPage === 'game') {
-              // Try to get the gameId from state or storage
-              let gameId;
-              try {
-                const navStateKey = `navState:${context.postId || 'default'}`;
-                const storedState = await context.redis.hGetAll(navStateKey);
-                gameId = storedState.gameId;
-              } catch (error) {
-                console.error('[DEBUG] main.tsx: Error retrieving gameId from storage:', error);
-              }
-
-              if (gameId) {
-                navigationState.data.gameId = gameId;
-                console.log('[DEBUG] main.tsx: Including gameId in navigation state:', gameId);
-              }
-            }
-
-            console.log(
-              '[DEBUG] main.tsx: Sending navigation state:',
-              JSON.stringify(navigationState)
-            );
-            postMessage(navigationState);
             break;
 
           case 'INIT':
@@ -261,8 +401,6 @@ Devvit.addCustomPostType({
 
           case 'GET_CURRENT_USER':
             try {
-              const username = await context.reddit.getCurrentUsername();
-
               if (username) {
                 postMessage({
                   type: 'GET_CURRENT_USER_RESULT',
@@ -286,74 +424,58 @@ Devvit.addCustomPostType({
             }
             break;
 
-          case 'GET_USER_GAMES':
-            try {
-              console.log('Getting games for user:', event.data.userId);
-              const userId = event.data.userId;
-              const result = await getUserGames(
-                {
-                  userId,
-                  limit: event.data.limit || 10,
-                },
-                context
-              );
-              const serializedGames = result.games
-                ? result.games.map(
-                    (game: {
-                      id: any;
-                      word: any;
-                      maskedWord: any;
-                      questionText: any;
-                      gifs: any;
-                      createdAt: any;
-                      creatorId: any;
-                      creatorUsername: any;
-                      redditPostId: any;
-                    }) => ({
-                      id: game.id,
-                      word: game.word,
-                      maskedWord: game.maskedWord,
-                      questionText: game.questionText,
-                      gifs: Array.isArray(game.gifs) ? game.gifs : [],
-                      createdAt: game.createdAt,
-                      creatorId: game.creatorId,
-                      creatorUsername: game.creatorUsername,
-                      redditPostId: game.redditPostId,
-                    })
-                  )
-                : [];
-
-              postMessage({
-                type: 'GET_USER_GAMES_RESULT',
-                success: result.success,
-                games: serializedGames,
-                message: result.message,
-                error: result.error || undefined,
-              });
-            } catch (error) {
-              console.error('Error getting user games:', error);
-              postMessage({
-                type: 'GET_USER_GAMES_RESULT',
-                success: false,
-                error: String(error),
-              });
-            }
-            break;
-
           case 'GET_RANDOM_GAME':
             try {
-              console.log('Getting random game, excluding:', event.data.excludeIds);
-              // Import the getRandomGame function from gameHandler.server.js
-              const { getRandomGame } = await import('../game/server/gameHandler.server.js');
-              const result = await getRandomGame(event.data || {}, context);
+              console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
 
-              // Convert to serializable format if needed
-              postMessage({
-                type: 'GET_RANDOM_GAME_RESULT',
-                success: result.success,
-                result: result,
-                error: result.error || undefined,
-              });
+              if (randomGameLoading) {
+                postMessage({
+                  type: 'GET_RANDOM_GAME_RESULT',
+                  success: false,
+                  error: 'Game data is still loading',
+                });
+                return;
+              }
+
+              if (randomGameError) {
+                // Send the error to the client
+                postMessage({
+                  type: 'GET_RANDOM_GAME_RESULT',
+                  success: false,
+                  error: String(randomGameError),
+                });
+                return;
+              }
+
+              if (randomGameData && randomGameData.success && randomGameData.game) {
+                // Send the pre-loaded random game data
+                postMessage({
+                  type: 'GET_RANDOM_GAME_RESULT',
+                  success: true,
+                  result: {
+                    success: true,
+                    game: {
+                      id: randomGameData.game.id,
+                      word: randomGameData.game.word,
+                      maskedWord: randomGameData.game.maskedWord,
+                      questionText: randomGameData.game.questionText,
+                      gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
+                      createdAt: randomGameData.game.createdAt,
+                      username:
+                        randomGameData.game.username ||
+                        randomGameData.game.creatorUsername ||
+                        'anonymous',
+                    },
+                  },
+                });
+              } else {
+                // Send failure message
+                postMessage({
+                  type: 'GET_RANDOM_GAME_RESULT',
+                  success: false,
+                  error: randomGameData?.error || 'No game found',
+                });
+              }
             } catch (error) {
               console.error('Error getting random game:', error);
               postMessage({
@@ -659,48 +781,44 @@ Devvit.addCustomPostType({
             break;
 
           case 'NAVIGATE':
+            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
+
+            // Extract navigation data - directly access the fields on the event
+            const targetPage = event.data?.page;
+            const targetGameId = event.data?.params?.gameId;
+
             console.log(
-              '[DEBUG] main.tsx: NAVIGATE message received with data:',
-              JSON.stringify(event.data)
+              `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
             );
 
-            // Extract page and gameId
-            let targetPage = null;
-            let gameId = undefined;
-
-            if (event.data && typeof event.data === 'object') {
-              targetPage = event.data.page;
-
-              if (event.data.params && event.data.params.gameId) {
-                gameId = event.data.params.gameId;
-              }
-            }
-
             if (targetPage) {
-              console.log('[DEBUG] main.tsx: Setting persistentPage to:', targetPage);
+              // Set persistent page
               persistentPage = targetPage;
+              console.log('[DEBUG-NAV] main.tsx: Set persistentPage to:', persistentPage);
 
-              // Store the navigation state - Make sure this line is included
-              await storeNavigationState(targetPage, gameId);
+              // Store in Redis
+              await storeNavigationState(targetPage, targetGameId);
 
-              // Send response
-              const navResponse: any = {
+              // Create navigation response with explicit type
+              const navResponse: BlocksToWebviewMessage = {
                 type: 'NAVIGATION_RESULT',
                 success: true,
                 page: targetPage,
+                ...(targetGameId ? { gameId: targetGameId } : {}),
               };
 
-              if (gameId) {
-                navResponse.gameId = gameId;
-              }
-
               console.log(
-                '[DEBUG] main.tsx: Sending NAVIGATION_RESULT:',
+                '[DEBUG-NAV] main.tsx: Sending navigation response:',
                 JSON.stringify(navResponse)
               );
               postMessage(navResponse);
             } else {
-              console.error('[DEBUG] main.tsx: Could not find page in NAVIGATE message');
+              console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
+              postMessage({
+                type: 'NAVIGATION_RESULT',
+                success: false,
+                error: 'Missing page in navigation request',
+              } as BlocksToWebviewMessage);
             }
             break;
         }

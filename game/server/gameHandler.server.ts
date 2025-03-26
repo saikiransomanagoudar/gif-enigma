@@ -39,7 +39,7 @@ export async function getRandomGame(
     // Get user's completed games from Redis if username is provided
     let completedGames: string[] = [];
     if (username) {
-      completedGames = await context.redis.sMembers(`user:${username}:completedGames`);
+      completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, { by: 'score' });
       console.log('🔍 [DEBUG] User completed games:', completedGames);
     }
 

@@ -292,45 +292,45 @@ function App() {
             }
             break;
 
-          case 'devvit-message':
-            console.log('[DEBUG-DETAIL] App.tsx: Found nested devvit-message:', message);
-
-            // Check if there's a message property inside the data
-            if (message.data && message.data.message) {
-              console.log(
-                '[DEBUG-DETAIL] App.tsx: Found nested message inside data:',
-                message.data.message
-              );
-
-              // Check for a game command specifically in the nested message
-              if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
+            case 'devvit-message':
+              console.log('[DEBUG-DETAIL] App.tsx: Found nested devvit-message:', message);
+            
+              // Check if there's a message property inside the data
+              if (message.data && message.data.message) {
                 console.log(
-                  '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
-                  message.data.message.game
+                  '[DEBUG-DETAIL] App.tsx: Found nested message inside data:',
+                  message.data.message
                 );
-                if (message.data.message.game && message.data.message.game.id) {
+            
+                // Check for a game command specifically in the nested message
+                if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
                   console.log(
-                    '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
-                    message.data.message.game.id
+                    '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
+                    message.data.message.game
                   );
-                  setGameId(message.data.message.game.id);
-                  setCurrentPage('game');
+                  if (message.data.message.game && message.data.message.game.id) {
+                    console.log(
+                      '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
+                      message.data.message.game.id
+                    );
+                    setGameId(message.data.message.game.id);
+                  }
                 }
+            
+                // Process the nested message
+                handleUnwrappedMessage(message.data.message);
               }
-
-              // Process the nested message
-              handleUnwrappedMessage(message.data.message);
-            }
-            // Also check for direct navigation data in the message
-            else if (message.data && message.data.page === 'game' && message.data.gameId) {
-              console.log(
-                '[DEBUG-CRITICAL] App.tsx: Found gameId in devvit-message data:',
-                message.data.gameId
-              );
-              setGameId(message.data.gameId);
-              setCurrentPage('game');
-            }
-            break;
+              // Also check for direct navigation data in the message
+              else if (message.data && message.data.page && message.data.gameId) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Found page and gameId in devvit-message data:',
+                  message.data.page, message.data.gameId
+                );
+                setGameId(message.data.gameId);
+                // Only set to the specific page mentioned in the message
+                setCurrentPage(message.data.page);
+              }
+              break;
 
           default:
             console.log(
