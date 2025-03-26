@@ -49,6 +49,60 @@ Devvit.addCustomPostType({
   render: (context) => {
     let persistentPage: Page | null = null;
     let isWebViewReadyFlag: boolean = false;
+    const storeNavigationState = async (page: Page, gameId?: string) => {
+      console.log('[DEBUG-STORAGE] Storing navigation state:', page, gameId);
+
+      try {
+        // Store in Redis with the post ID as part of the key
+        const navStateKey = `navState:${context.postId || 'default'}`;
+
+        // Store navigation data
+        await context.redis.hSet(navStateKey, {
+          page,
+          ...(gameId ? { gameId } : {}),
+        });
+
+        console.log('[DEBUG-STORAGE] Navigation state stored successfully');
+      } catch (error) {
+        console.error('[DEBUG-STORAGE] Error storing navigation state:', error);
+      }
+    };
+    // Function to retrieve navigation state
+    const retrieveNavigationState = async (): Promise<{ page: Page | null; gameId?: string }> => {
+      console.log('[DEBUG-STORAGE] Retrieving navigation state');
+
+      try {
+        const navStateKey = `navState:${context.postId || 'default'}`;
+        const storedState = await context.redis.hGetAll(navStateKey);
+
+        if (storedState && storedState.page) {
+          console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
+          return {
+            page: storedState.page as Page,
+            gameId: storedState.gameId,
+          };
+        }
+      } catch (error) {
+        console.error('[DEBUG-STORAGE] Error retrieving navigation state:', error);
+      }
+
+      console.log('[DEBUG-STORAGE] No stored navigation state found');
+      return { page: null };
+    };
+
+    useAsync(
+      async () => {
+        const navState = await retrieveNavigationState();
+        if (navState.page) {
+          persistentPage = navState.page;
+          console.log('[DEBUG-STORAGE] Initialized persistentPage from storage:', persistentPage);
+        }
+        return null;
+      },
+      {
+        depends: [],
+      }
+    );
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
       onMessage: async (
@@ -81,6 +135,92 @@ Devvit.addCustomPostType({
           case 'webViewReady':
             console.log('[DEBUG] main.tsx: webViewReady received');
             isWebViewReadyFlag = true;
+
+            // Check if there's any pending navigation from Redis
+            try {
+              console.log('[DEBUG] main.tsx: Checking for pending navigation');
+              const navStateKey = `navState:${context.postId || 'default'}`;
+              const storedState = await context.redis.hGetAll(navStateKey);
+
+              if (storedState && storedState.page) {
+                console.log('[DEBUG] main.tsx: Found pending navigation to:', storedState.page);
+
+                // Set persistentPage from storage
+                persistentPage = storedState.page as Page;
+
+                // Tell the WebView about this navigation
+                const navResponse: any = {
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: persistentPage,
+                    ...(storedState.gameId ? { gameId: storedState.gameId } : {}),
+                  },
+                };
+
+                console.log(
+                  '[DEBUG] main.tsx: Sending pending navigation to WebView:',
+                  JSON.stringify(navResponse)
+                );
+                postMessage(navResponse);
+              } else {
+                console.log('[DEBUG] main.tsx: No pending navigation found');
+              }
+            } catch (error) {
+              console.error('[DEBUG] main.tsx: Error checking for pending navigation:', error);
+            }
+            break;
+
+          case 'requestNavigationState':
+            console.log(
+              '[DEBUG] main.tsx: requestNavigationState received, persistentPage:',
+              persistentPage
+            );
+
+            if (!persistentPage) {
+              // Try to retrieve from storage first
+              const navState = await retrieveNavigationState();
+              if (navState.page) {
+                persistentPage = navState.page;
+                console.log(
+                  '[DEBUG] main.tsx: Retrieved persistentPage from storage:',
+                  persistentPage
+                );
+              } else {
+                // Default to landing if no stored page
+                persistentPage = 'landing';
+                console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
+              }
+            }
+
+            // Send the current navigation state explicitly
+            const navigationState: any = {
+              type: 'SET_NAVIGATION_STATE',
+              data: {
+                page: persistentPage,
+              },
+            };
+            if (persistentPage === 'game') {
+              // Try to get the gameId from state or storage
+              let gameId;
+              try {
+                const navStateKey = `navState:${context.postId || 'default'}`;
+                const storedState = await context.redis.hGetAll(navStateKey);
+                gameId = storedState.gameId;
+              } catch (error) {
+                console.error('[DEBUG] main.tsx: Error retrieving gameId from storage:', error);
+              }
+
+              if (gameId) {
+                navigationState.data.gameId = gameId;
+                console.log('[DEBUG] main.tsx: Including gameId in navigation state:', gameId);
+              }
+            }
+
+            console.log(
+              '[DEBUG] main.tsx: Sending navigation state:',
+              JSON.stringify(navigationState)
+            );
+            postMessage(navigationState);
             break;
 
           case 'INIT':
@@ -230,7 +370,7 @@ Devvit.addCustomPostType({
               const { calculateScore } = await import('../game/server/scoringService.js');
               const scoreResult = {
                 ...calculateScore(event.data),
-                username: event.data.username
+                username: event.data.username,
               };
 
               postMessage({
@@ -490,19 +630,19 @@ Devvit.addCustomPostType({
 
           case 'MARK_GAME_COMPLETED':
             try {
-              await context.redis.zAdd(
-                `user:${event.data.username}:completedGames`,
-                { member: event.data.gameId, score: Date.now() }
-              );
+              await context.redis.zAdd(`user:${event.data.username}:completedGames`, {
+                member: event.data.gameId,
+                score: Date.now(),
+              });
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
-                success: true
+                success: true,
               });
             } catch (error) {
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: false,
-                error: String(error)
+                error: String(error),
               });
             }
             break;
@@ -519,52 +659,48 @@ Devvit.addCustomPostType({
             break;
 
           case 'NAVIGATE':
-            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received!');
-            try {
-              console.log('[DEBUG-NAV] main.tsx: Full NAVIGATE message:', JSON.stringify(event));
+            console.log(
+              '[DEBUG] main.tsx: NAVIGATE message received with data:',
+              JSON.stringify(event.data)
+            );
 
-              // Extract page and gameId from the message
-              let targetPage: Page | null = null;
-              let gameId: string | undefined = undefined;
+            // Extract page and gameId
+            let targetPage = null;
+            let gameId = undefined;
 
-              if (event.data && typeof event.data === 'object') {
-                targetPage = event.data.page as Page;
-                if (event.data.params && event.data.params.gameId) {
-                  gameId = event.data.params.gameId;
-                }
-              } else if (event.page) {
-                targetPage = event.page as Page;
-                if (event.gameId) {
-                  gameId = event.gameId;
-                }
+            if (event.data && typeof event.data === 'object') {
+              targetPage = event.data.page;
+
+              if (event.data.params && event.data.params.gameId) {
+                gameId = event.data.params.gameId;
+              }
+            }
+
+            if (targetPage) {
+              console.log('[DEBUG] main.tsx: Setting persistentPage to:', targetPage);
+              persistentPage = targetPage;
+
+              // Store the navigation state - Make sure this line is included
+              await storeNavigationState(targetPage, gameId);
+
+              // Send response
+              const navResponse: any = {
+                type: 'NAVIGATION_RESULT',
+                success: true,
+                page: targetPage,
+              };
+
+              if (gameId) {
+                navResponse.gameId = gameId;
               }
 
-              if (targetPage) {
-                console.log('[DEBUG-NAV] main.tsx: Setting persistentPage to:', targetPage);
-                persistentPage = targetPage;
-
-                // Create a properly typed response
-                const navigationResult: any = {
-                  type: 'NAVIGATION_RESULT',
-                  success: true,
-                  page: targetPage,
-                };
-
-                // Add gameId if it exists
-                if (gameId) {
-                  navigationResult.gameId = gameId;
-                }
-
-                console.log(
-                  '[DEBUG-NAV] main.tsx: Sending response:',
-                  JSON.stringify(navigationResult)
-                );
-                postMessage(navigationResult);
-              } else {
-                console.error('[DEBUG-NAV] main.tsx: Could not find page in NAVIGATE message');
-              }
-            } catch (error) {
-              console.error('[DEBUG-NAV] main.tsx: Error processing NAVIGATE message:', error);
+              console.log(
+                '[DEBUG] main.tsx: Sending NAVIGATION_RESULT:',
+                JSON.stringify(navResponse)
+              );
+              postMessage(navResponse);
+            } else {
+              console.error('[DEBUG] main.tsx: Could not find page in NAVIGATE message');
             }
             break;
         }

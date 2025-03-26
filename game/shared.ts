@@ -11,6 +11,7 @@ import { GameData, Page } from './lib/types';
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
   | { type: 'webViewReady' }
+  | { type: 'requestNavigationState' }
   | {
       type: 'setCounter';
       data: { newCounter: number };
@@ -140,9 +141,9 @@ export type WebviewToBlockMessage =
       type: 'GET_GAME_PREVIEW';
     }
   | {
-    type: 'MARK_GAME_COMPLETED';
-    success: boolean;
-  };
+      type: 'MARK_GAME_COMPLETED';
+      success: boolean;
+    };
 
 export type BlocksToWebviewMessage =
   | {
@@ -150,6 +151,13 @@ export type BlocksToWebviewMessage =
       data: {
         postId: string;
         desiredPage?: Page;
+      };
+    }
+  | {
+      type: 'SET_NAVIGATION_STATE';
+      data: {
+        page: Page;
+        gameId?: string;
       };
     }
   | {

@@ -49,7 +49,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
         // Create post title
         // const wordDisplay = maskedWord ? maskedWord.replace(/_/g, ' _') : '';
-        const postTitle = `Can you guess the word/phrase from GIFs?`;
+        const postTitle = `Can you decode the word or phrase hidden in this GIF?`;
 
         // Store game preview data for faster access (do this BEFORE creating post)
         await context.redis.hSet(`gamePreview:${gameId}`, {

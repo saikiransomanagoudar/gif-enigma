@@ -10,7 +10,7 @@ export async function fetchGeminiRecommendations(
   context: Context,
   category: CategoryType,
   inputType: 'word' | 'phrase',
-  count = 10
+  count = 50
 ): Promise<{ success: boolean; recommendations: string[]; error?: string; debug?: any }> {
   console.log(`[SERVER] Fetching recommendations for category: ${category}, type: ${inputType}, count: ${count}`);
   
@@ -165,7 +165,7 @@ export async function testGeminiConnection(
           ],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 10,
+            maxOutputTokens: 50,
             topP: 0.95,
           },
         }),

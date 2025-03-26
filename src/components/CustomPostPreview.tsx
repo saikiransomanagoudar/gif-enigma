@@ -1,6 +1,6 @@
 import { Devvit, Context, useState, useAsync } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
-// import { Page } from '../../game/lib/types.js';
+import { Page } from '../../game/lib/types.js';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../../game/shared.js';
 
 interface CustomPostPreviewProps {
@@ -30,6 +30,10 @@ export const CustomPostPreview = ({
     playGif: null,
     buildGif: null,
   });
+  const [pendingNavigation, setPendingNavigation] = useState<{
+    page: Page;
+    gameId?: string;
+  } | null>(null);
 
   useAsync(
     async () => {
@@ -126,21 +130,59 @@ export const CustomPostPreview = ({
     postMessage(message);
   };
 
-  const handlePlayGame = () => {
-    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
-    onMount();
+  // Handle the case when WebView becomes ready and we have pending navigation
+  if (isWebViewReady && pendingNavigation) {
+    console.log('[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:', pendingNavigation.page);
+    
+    safePostMessage({
+      type: 'NAVIGATE',
+      data: {
+        page: pendingNavigation.page,
+        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {}
+      }
+    });
+    
+    // Clear pending navigation to prevent duplicate sends
+    setPendingNavigation(null);
+  }
 
+  // Store navigation intent in Redis for persistence
+  const storeNavigationIntent = async (page: Page, gameId?: string) => {
+    try {
+      if (context.postId) {
+        console.log('[DEBUG-NAV] CustomPostPreview: Storing navigation intent in Redis:', page, gameId);
+        await context.redis.hSet(`navState:${context.postId}`, {
+          page,
+          ...(gameId ? { gameId } : {})
+        });
+      }
+    } catch (error) {
+      console.error('[DEBUG-NAV] CustomPostPreview: Error storing navigation intent:', error);
+    }
+  };
+
+  const handlePlayGame = () => {
+    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed, gameId:', previewData.gameId);
+    
+    // Mount the WebView
+    onMount();
+    
     if (isWebViewReady) {
       console.log('[DEBUG-NAV] CustomPostPreview: WebView ready, sending navigation');
       safePostMessage({
         type: 'NAVIGATE',
         data: {
           page: 'game',
-          params: {}
-        },
+          params: previewData.gameId ? { gameId: previewData.gameId } : {}
+        }
       });
     } else {
-      console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet');
+      console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet, storing pending navigation');
+      // Store the navigation request to be sent when WebView is ready
+      setPendingNavigation({
+        page: 'game',
+        gameId: previewData.gameId
+      });
     }
   };
 
@@ -195,7 +237,7 @@ export const CustomPostPreview = ({
           >
             <hstack alignment="middle center">
               <ComicText size={0.2} color="white">
-                S       tart      Playing
+                S tart Playing
               </ComicText>
               <text> 👉</text>
             </hstack>

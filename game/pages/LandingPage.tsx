@@ -185,11 +185,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
               {isLoading ? 'Loading...' : 'Tap to Play →'}
             </div>
-            {isLoading && (
+            {/* {isLoading && (
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-blue-500"></div>
               </div>
-            )}
+            )} */}
           </motion.div>
 
           {/* Create GIF */}

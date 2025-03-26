@@ -25,6 +25,7 @@ export const GamePostPreview = ({
   const [username, setUsername] = useState('there');
   const [gifLoaded, setGifLoaded] = useState(true); // Start with true since we can't track loading
   const [letterBoxes, setLetterBoxes] = useState<string[]>([]);
+  const [pendingNavigation, setPendingNavigation] = useState<{ page: Page; gameId?: string } | null>(null);
 
   // Load game data for this post
   useAsync(
@@ -101,10 +102,46 @@ export const GamePostPreview = ({
     postMessage(message);
   };
 
+  // Handle the case when WebView becomes ready and we have pending navigation
+  if (isWebViewReady && pendingNavigation) {
+    console.log('[DEBUG-NAV] GamePostPreview: WebView now ready, sending pending navigation to:', pendingNavigation.page);
+    
+    safePostMessage({
+      type: 'NAVIGATE',
+      data: {
+        page: pendingNavigation.page,
+        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {}
+      }
+    });
+    
+    // Clear pending navigation to prevent duplicate sends
+    setPendingNavigation(null);
+  }
+
+  // Store game ID in Redis for persistence
+  const storeGameId = async (gameId: string) => {
+    try {
+      if (context.postId) {
+        console.log('[DEBUG-NAV] GamePostPreview: Storing gameId in Redis:', gameId);
+        await context.redis.hSet(`navState:${context.postId}`, {
+          gameId,
+          page: 'game'
+        });
+      }
+    } catch (error) {
+      console.error('[DEBUG-NAV] GamePostPreview: Error storing gameId:', error);
+    }
+  };
+
   const handlePlayGame = () => {
     if (previewData.gameId) {
       console.log("[DEBUG-NAV] GamePostPreview: onPress handlePlayGame, gameId:", previewData.gameId);
       context.ui.showToast('Loading game...');
+      
+      // Store the gameId in Redis for persistence
+      storeGameId(previewData.gameId);
+      
+      // Mount the WebView
       onMount();
       
       if (isWebViewReady) {
@@ -117,9 +154,12 @@ export const GamePostPreview = ({
           }
         });
       } else {
-        console.log('[DEBUG-NAV] GamePostPreview: WebView not ready yet');
-        // The WebView isn't ready yet
-        // You could set a flag here if needed
+        console.log('[DEBUG-NAV] GamePostPreview: WebView not ready yet, storing pending navigation');
+        // Store the navigation request to be sent when WebView is ready
+        setPendingNavigation({
+          page: 'game',
+          gameId: previewData.gameId
+        });
       }
     } else {
       console.log("[DEBUG-NAV] GamePostPreview: Game not found");
@@ -222,12 +262,12 @@ export const GamePostPreview = ({
         )}
 
         {/* Word to guess with boxes */}
-        <vstack padding="small" alignment="center middle" gap="small">
+        <vstack padding="small" alignment="center middle" gap="large">
           <text size="medium" weight="bold" color="#ffffff">
             Guess the word/phrase:
           </text>
 
-          <hstack gap="small" alignment="center middle">
+          <hstack gap="large" alignment="center middle">
             {letterBoxes.map((letter, index) => (
               <vstack
                 key={index.toString()}
@@ -251,23 +291,17 @@ export const GamePostPreview = ({
       {/* Play button */}
       <vstack padding="medium" alignment="center middle">
         <hstack
-          backgroundColor="#FF4500"
           cornerRadius="full"
+          backgroundColor='#FF4500'
           padding="medium"
           onPress={handlePlayGame}
           alignment="center middle"
-          width={180}
         >
-          <text color="#ffffff" weight="bold">
+          <text color='#FFFFFF' weight="bold">
             Solve It!
           </text>
         </hstack>
 
-        <vstack padding="small">
-          <text size="small" color="#7fcfff">
-            {`Hi u/${username}, can you solve this GIF Enigma?`}
-          </text>
-        </vstack>
       </vstack>
 
       {/* Footer */}
