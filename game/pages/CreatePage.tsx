@@ -320,7 +320,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       window.parent.postMessage(
         {
           type: 'SEARCH_TENOR_GIFS',
-          data: { query: term, limit: 8 },
+          data: { query: term, limit: 16 },
         },
         '*'
       );

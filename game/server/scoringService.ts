@@ -105,6 +105,50 @@ export async function saveScore(
       member: `${gameId}:${username}`,
     });
 
+    // -------- Begin Cumulative Leaderboard Additions --------
+    
+    // Track that this user completed this game
+    await context.redis.zAdd(`user:${username}:completedGames`, {
+      member: gameId,
+      score: timestamp,
+    });
+    
+    // Update user stats
+    try {
+      // Get existing user stats
+      const userStats = await context.redis.hGetAll(`userStats:${username}`);
+      
+      // Calculate new stats
+      const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
+      const gamesWon = Number(userStats.gamesWon || 0) + 1; // Assuming a score means they won
+      const totalScore = Number(userStats.totalScore || 0) + score;
+      const bestScore = Math.max(Number(userStats.bestScore || 0), score);
+      const averageScore = Math.round(totalScore / gamesPlayed);
+      
+      // Save updated stats
+      await context.redis.hSet(`userStats:${username}`, {
+        gamesPlayed: gamesPlayed.toString(),
+        gamesWon: gamesWon.toString(),
+        totalScore: totalScore.toString(),
+        bestScore: bestScore.toString(),
+        averageScore: averageScore.toString(),
+        lastPlayed: timestamp.toString(),
+      });
+      
+      // Update cumulative leaderboard
+      await context.redis.zAdd('cumulativeLeaderboard', {
+        score: totalScore,
+        member: username,
+      });
+      
+      console.log(`✅ [DEBUG] Updated user stats for ${username}, total score: ${totalScore}`);
+    } catch (statsError) {
+      console.error(`❌ [DEBUG] Error updating user stats for ${username}:`, statsError);
+      // Continue with the function even if user stats update fails
+    }
+
+    // -------- End Cumulative Leaderboard Additions --------
+
     console.log('✅ [DEBUG] Score saved successfully for user:', username);
     return { success: true };
   } catch (error) {
@@ -276,3 +320,58 @@ export async function getUserScores(
     return { success: false, error: String(error) };
   }
 }
+
+export async function getCumulativeLeaderboard(
+  params: { limit?: number },
+  context: Context
+): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
+  try {
+    console.log('🔍 [DEBUG] getCumulativeLeaderboard called with params:', params);
+    const { limit = 10 } = params;
+
+    // Get top users from cumulative leaderboard
+    const leaderboardItems = await context.redis.zRange('cumulativeLeaderboard', 0, limit - 1, {
+      reverse: true,
+      by: 'rank',
+    });
+
+    if (!leaderboardItems || leaderboardItems.length === 0) {
+      return { success: true, leaderboard: [] };
+    }
+
+    const leaderboard: LeaderboardEntry[] = [];
+
+    for (let i = 0; i < leaderboardItems.length; i++) {
+      const item = leaderboardItems[i];
+      const username = typeof item.member === 'string' ? item.member : '';
+      
+      try {
+        // Get user stats
+        const userStats = await context.redis.hGetAll(`userStats:${username}`);
+
+        if (!userStats || Object.keys(userStats).length === 0) {
+          continue;
+        }
+
+        leaderboard.push({
+          rank: i + 1,
+          username: username,
+          score: Number(userStats.totalScore || item.score),
+          gamesPlayed: Number(userStats.gamesPlayed || 0),
+          gamesWon: Number(userStats.gamesWon || 0),
+          bestScore: Number(userStats.bestScore || 0),
+          averageScore: Number(userStats.averageScore || 0),
+          timestamp: Number(userStats.lastPlayed || 0)
+        });
+      } catch (entryError) {
+        console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
+      }
+    }
+
+    return { success: true, leaderboard };
+  } catch (error) {
+    console.error('❌ [DEBUG] Error getting cumulative leaderboard:', error);
+    return { success: false, error: String(error) };
+  }
+}
+

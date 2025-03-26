@@ -12,6 +12,7 @@ import {
   getGlobalLeaderboard,
   getUserScores,
   calculateScore,
+  getCumulativeLeaderboard
 } from './scoringService';
 
 export {
@@ -26,6 +27,7 @@ export {
   getGlobalLeaderboard,
   getUserScores,
   calculateScore,
+  getCumulativeLeaderboard
 };
 
 export async function getRandomGame(

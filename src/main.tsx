@@ -22,6 +22,7 @@ import {
   getGlobalLeaderboard,
   getUserScores,
   calculateScore,
+  getCumulativeLeaderboard,
 } from '../game/server/scoringService.js';
 
 Devvit.addSettings([
@@ -63,6 +64,8 @@ Devvit.addCustomPostType({
   render: (context) => {
     let persistentPage: Page | null = null;
     let isWebViewReadyFlag: boolean = false;
+    const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
+      useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
       try {
         // Store in Redis with the post ID as part of the key
@@ -160,6 +163,31 @@ Devvit.addCustomPostType({
         // Handle errors within the effect
       }
     );
+
+    const {
+      data: cumulativeLeaderboardData,
+      loading: cumulativeLeaderboardLoading,
+      error: cumulativeLeaderboardError,
+    } = useAsync(
+      async () => {
+        try {
+          console.log('Fetching cumulative leaderboard data...');
+          const result = await getCumulativeLeaderboard({ limit: 20 }, context);
+          console.log('Cumulative leaderboard data:', result);
+          return result;
+        } catch (error) {
+          console.error('Error fetching cumulative leaderboard:', error);
+          throw error;
+        }
+      },
+      {
+        depends: [cumulativeLeaderboardRefreshTrigger],
+      }
+    );
+
+    const refreshCumulativeLeaderboard = () => {
+      setCumulativeLeaderboardRefreshTrigger((prev) => prev + 1);
+    };
 
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
@@ -440,6 +468,72 @@ Devvit.addCustomPostType({
             }
             break;
 
+          case 'GET_CUMULATIVE_LEADERBOARD':
+            try {
+              console.log('Getting cumulative leaderboard with limit:', event.data?.limit);
+
+              if (cumulativeLeaderboardData && !event.data?.forceRefresh) {
+                console.log('Using cached cumulative leaderboard data');
+                postMessage({
+                  type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
+                  success: true,
+                  result: {
+                    leaderboard: cumulativeLeaderboardData.leaderboard || [],
+                    isCached: true,
+                  },
+                });
+                return;
+              }
+
+              // Otherwise fetch fresh data
+              const result = await getCumulativeLeaderboard(event.data || {}, context);
+
+              // Force a refresh of our cached data for next time
+              if (event.data?.forceRefresh) {
+                refreshCumulativeLeaderboard();
+              }
+
+              postMessage({
+                type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
+                success: result.success,
+                result: { leaderboard: result.leaderboard || [] },
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error getting cumulative leaderboard:', error);
+              postMessage({
+                type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          // Also add this case to pass back the preloaded data to the client when requested
+          case 'GET_INITIAL_DATA':
+            try {
+              console.log('Sending initial data to client');
+
+              // Send all the preloaded data together
+              postMessage({
+                type: 'INITIAL_DATA_RESULT',
+                success: true,
+                data: {
+                  username: username || null,
+                  randomGame: randomGameData?.success ? randomGameData.game : null,
+                  cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
+                  // Include other cached data as needed
+                },
+              });
+            } catch (error) {
+              console.error('Error sending initial data:', error);
+              postMessage({
+                type: 'INITIAL_DATA_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
           case 'SAVE_GAME_STATE':
             try {
               console.log('Saving game state:', event.data);
@@ -756,16 +850,6 @@ Devvit.addCustomPostType({
           },
         }
       );
-
-      if (isLoading) {
-        return (
-          <vstack height="100%" width="100%" alignment="center middle">
-            <text style="heading" size="medium">
-              Loading GIF Enigma...
-            </text>
-          </vstack>
-        );
-      }
 
       return isGame ? (
         <GamePostPreview

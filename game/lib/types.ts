@@ -67,6 +67,7 @@ export interface UserStats {
   averageScore: number;
   totalScore: number;
   hintsUsed: number;
+  lastPlayed?: number;
   [key: string]: any;
 }
 
@@ -78,6 +79,10 @@ export interface LeaderboardEntry {
   wordPenalty?: number;
   timeTaken?: number;
   timestamp: number;
+  gamesPlayed?: number;
+  gamesWon?: number;
+  bestScore?: number;
+  averageScore?: number;
 }
 
 export interface CreatorData {

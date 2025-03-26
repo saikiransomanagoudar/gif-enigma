@@ -45,28 +45,55 @@ export async function getRecommendations(
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
+    const timestamp = Date.now();
+    const randomSeed = Math.floor(Math.random() * 1000);
+
     const prompt =
       inputType === 'word'
-        ? `Generate ${count} single words related to ${category}. ${
-            category === 'Movies'
-              ? 'Include film titles, characters, and quotes, and inspirational movie quotes.'
-              : category === 'Gaming'
-                ? 'Include games, characters, and gaming terms, and inspirational gaming quotes.'
-                : category === 'Books'
-                  ? 'Include titles, authors, characters, and quotes, and inspirational quotes.'
-                  : 'Topics include anything and everything, and also inspirational..'
-          } All words must be at least 5 characters long and safe for all audiences (not NSFW). Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["word1", "word2", "word3"]`
-        : `Generate ${count} phrases (each with a minimum of two words) related to ${category}. ${
-            category === 'Movies'
-              ? 'Include film titles, characters, and quotes, and also inspirational movie quotes.'
-              : category === 'Gaming'
-                ? 'Include games, characters, and gaming terms, and also inspirational gaming quotes.'
-                : category === 'Books'
-                  ? 'Include titles, authors, characters, quotes, inspirational quotes.'
-                  : 'Topics include anything and everything, and also inspirational.'
-          } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["phrase1", "phrase2", "phrase3"]`;
-
-    console.log(`[DEBUG] Prompt: ${prompt.substring(0, 100)}...`);
+        ? `Generate ${count} DIVERSE single words that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
+    ${
+      category === 'Movies'
+        ? 'Include iconic film moments, expressive characters, memorable movie scenes, visual movie concepts, and action sequences that translate well to GIFs.'
+        : category === 'Gaming'
+          ? 'Include game characters in action, victory/defeat moments, iconic gaming moves, game memes, and memorable gaming scenes that make great GIFs.'
+          : category === 'Books'
+            ? 'Include visually adaptable book characters, dramatic book scenes that have been filmed, book-to-movie moments, and expressive literary concepts.'
+            : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
+    } 
+    All words must be at least 5 characters long and safe for all audiences (not NSFW).
+    
+    IMPORTANT GIF SEARCH OPTIMIZATION:
+    - Choose words that have VISUAL APPEAL when animated
+    - Include terms commonly found in popular GIFs and memes
+    - Focus on ACTIONS, REACTIONS, and EMOTIONS that animate well
+    - Select words that have clear visual representations
+    - Include pop culture references that appear frequently in GIFs
+    - Avoid abstract concepts that don't translate well to visual media
+    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
+    
+    Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["word1", "word2", "word3"]`
+        : `Generate ${count} DIVERSE phrases (each with a minimum of two words) that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
+    ${
+      category === 'Movies'
+        ? 'Include iconic film quotes, character reactions, movie scene descriptions, and visual moments that are popular in GIF format.'
+        : category === 'Gaming'
+          ? 'Include gaming catchphrases, character actions, game moments, and gaming memes that are commonly found as GIFs.'
+          : category === 'Books'
+            ? 'Include book quotes that have been adapted to film, character moments, and dramatic scenes that would appear in GIF format.'
+            : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
+    } 
+    Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).
+    
+    IMPORTANT GIF SEARCH OPTIMIZATION:
+    - Focus on phrases that describe ACTIONS or REACTIONS (like "mind blown" or "happy dance")
+    - Include popular meme phrases that are frequently made into GIFs
+    - Choose phrases that have clear visual representations
+    - Include phrases from viral videos, TV shows, or movies that became GIFs
+    - Focus on dynamic content rather than static concepts
+    - Consider what phrases people actually search for when looking for reaction GIFs
+    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
+    
+    Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["phrase1", "phrase2", "phrase3"]`;
 
     const requestBody = {
       contents: [
@@ -79,9 +106,10 @@ export async function getRecommendations(
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.88,
         maxOutputTokens: 200,
-        topP: 0.95,
+        topP: 0.93,
+        topK: 45,
         responseMimeType: 'application/json',
       },
     };
@@ -242,14 +270,28 @@ export async function getSynonyms(
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
-    const prompt = `For the word "${word}", generate four sets of search terms that could be used to find related GIFs, arranged from abstract/indirect to very specific:
-1. First set: Extremely abstract or conceptual terms (3 terms)
-2. Second set: Somewhat related but still indirect terms (3 terms)
-3. Third set: More direct and closer to the word (3 terms)
-4. Fourth set: Very specific and direct terms (3 terms)
-Return ONLY a valid JSON array of strings with no additional text, formatting, or explanations. Example: ['item1','item2','item3']`;
+    const timestamp = Date.now();
+    const randomSeed = Math.floor(Math.random() * 1000);
 
-    console.log(`[DEBUG] Synonyms prompt: ${prompt.substring(0, 100)}...`);
+    const prompt = `For the word "${word}", generate four sets of HIGHLY EFFECTIVE Tenor GIF search terms, arranged from abstract to specific:
+
+1. First set: Abstract/conceptual terms that would yield interesting GIFs indirectly related to "${word}" (3 terms)
+2. Second set: Popular expressions, reactions, or emotions that relate to "${word}" and work well as GIF searches (3 terms)
+3. Third set: Visual scenarios or popular media references relating to "${word}" that would make great GIFs (3 terms)
+4. Fourth set: Direct and specific search terms for "${word}" that would yield the most relevant GIFs (3 terms)
+
+IMPORTANT GUIDELINES FOR EFFECTIVE GIF SEARCH TERMS:
+- Focus on VISUAL and ACTION-ORIENTED terms that would appear in GIFs
+- Include popular memes, movie scenes, TV moments related to the concept
+- Use terms that capture EMOTIONS and REACTIONS people express in GIFs
+- Include terms that would yield animated content (not just static images)
+- Consider what content creators would tag their GIFs with
+- Use a mix of specific character names, show titles, and descriptive actions
+- Favor concise, popular search terms that Tenor users would likely use
+- Use timestamp ${timestamp} and seed ${randomSeed} to ensure variety
+
+Return ONLY a valid JSON array of arrays with no additional text, formatting, or explanations.
+Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","term8","term9"],["term10","term11","term12"]]`;
 
     const requestBody = {
       contents: [
@@ -262,9 +304,10 @@ Return ONLY a valid JSON array of strings with no additional text, formatting, o
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.85,
         maxOutputTokens: 200,
-        topP: 0.95,
+        topP: 0.92,
+        topK: 50,
         responseMimeType: 'application/json',
       },
     };

@@ -90,7 +90,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
 export async function searchTenorGifs(
   context: Context,
   query: string,
-  limit: number = 8
+  limit: number = 16
 ): Promise<TenorGifResult[]> {
   console.log('🔍 [DEBUG] searchTenorGifs called with query:', query, 'limit:', limit);
 

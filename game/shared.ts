@@ -136,7 +136,9 @@ export type WebviewToBlockMessage =
   | {
       type: 'MARK_GAME_COMPLETED';
       success: boolean;
-    };
+    }
+  | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
+  | { type: 'GET_INITIAL_DATA' };
 
 export type BlocksToWebviewMessage =
   | {
@@ -347,6 +349,43 @@ export type BlocksToWebviewMessage =
   | {
       type: 'MARK_GAME_COMPLETED_RESULT';
       success: boolean;
+      error?: string;
+    }
+  | {
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: Array<{
+          rank?: number;
+          username: string;
+          score: number;
+          gamesPlayed?: number;
+          gamesWon?: number;
+          bestScore?: number;
+          averageScore?: number;
+          timestamp: number;
+        }>;
+        isCached?: boolean;
+      };
+      error?: string;
+    }
+  | {
+      type: 'INITIAL_DATA_RESULT';
+      success: boolean;
+      data?: {
+        username: string | null;
+        randomGame: GameData | null;
+        cumulativeLeaderboard: Array<{
+          rank?: number;
+          username: string;
+          score: number;
+          gamesPlayed?: number;
+          gamesWon?: number;
+          bestScore?: number;
+          averageScore?: number;
+          timestamp: number;
+        }>;
+      };
       error?: string;
     };
 
