@@ -64,8 +64,6 @@ Devvit.addCustomPostType({
     let persistentPage: Page | null = null;
     let isWebViewReadyFlag: boolean = false;
     const storeNavigationState = async (page: Page, gameId?: string) => {
-      console.log('[DEBUG-STORAGE] Storing navigation state:', page, gameId);
-
       try {
         // Store in Redis with the post ID as part of the key
         const navStateKey = `navState:${context.postId || 'default'}`;
@@ -76,7 +74,7 @@ Devvit.addCustomPostType({
           ...(gameId ? { gameId } : {}),
         });
 
-        console.log('[DEBUG-STORAGE] Navigation state stored successfully');
+        console.log('[DEBUG-STORAGE] Navigation state stored successfully:', page, gameId);
       } catch (error) {
         console.error('[DEBUG-STORAGE] Error storing navigation state:', error);
       }
@@ -134,20 +132,6 @@ Devvit.addCustomPostType({
       }
     );
 
-    useAsync(
-      async () => {
-        const navState = await retrieveNavigationState();
-        if (navState.page) {
-          persistentPage = navState.page;
-          console.log('[DEBUG-STORAGE] Initialized persistentPage from storage:', persistentPage);
-        }
-        return null;
-      },
-      {
-        depends: [],
-      }
-    );
-
     const { data: navigationState } = useAsync(
       async () => {
         console.log('[DEBUG-STORAGE] Retrieving navigation state with useAsync');
@@ -174,36 +158,6 @@ Devvit.addCustomPostType({
       {
         depends: [context.postId || 'default'],
         // Handle errors within the effect
-      }
-    );
-
-    // Then you can use navigationState.page and navigationState.gameId elsewhere
-    useAsync(
-      async () => {
-        if (navigationState) {
-          persistentPage = navigationState.page;
-          console.log('[DEBUG-STORAGE] Set persistentPage from useAsync:', persistentPage);
-        }
-        return null;
-      },
-      {
-        depends: [navigationState],
-      }
-    );
-
-    const { data: gameData, loading: gameDataLoading, error: gameDataError } = useAsync(
-      async () => {
-        let gameId = '';
-        const result = await getGame(
-          {
-            gameId: gameId,
-          },
-          context
-        );
-        return result;
-      },
-      {
-        depends: [],
       }
     );
 
@@ -256,17 +210,21 @@ Devvit.addCustomPostType({
               );
               postMessage(navResponse);
             } else {
-              console.log('[DEBUG] main.tsx: No navigation state available yet');
+              // Default to landing if navigation state isn't available yet
+              console.log('[DEBUG] main.tsx: No navigation state available, defaulting to landing');
+              postMessage({
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: 'landing',
+                },
+              });
             }
             break;
 
           case 'requestNavigationState':
-            console.log(
-              '[DEBUG] main.tsx: requestNavigationState received, persistentPage:',
-              persistentPage
-            );
+            console.log('[DEBUG] main.tsx: requestNavigationState received');
 
-            // Use the navigation state from useAsync if available
+            // Always use the navigation state from useAsync
             if (navigationState) {
               // Create a properly typed response object that matches BlocksToWebviewMessage
               const navResponse: BlocksToWebviewMessage = {
@@ -291,49 +249,8 @@ Devvit.addCustomPostType({
                 JSON.stringify(navResponse)
               );
               postMessage(navResponse);
-            } else if (persistentPage) {
-              // Create a properly typed response for persistentPage
-              const navResponse: BlocksToWebviewMessage = {
-                type: 'SET_NAVIGATION_STATE',
-                data: {
-                  page: persistentPage,
-                },
-              };
-
-              // Handle game page and gameId retrieval
-              if (persistentPage === 'game') {
-                (async () => {
-                  try {
-                    const navStateKey = `navState:${context.postId || 'default'}`;
-                    const storedState = await context.redis.hGetAll(navStateKey);
-                    if (storedState && storedState.gameId) {
-                      // Use a type assertion to add gameId
-                      (navResponse.data as any).gameId = storedState.gameId;
-                      console.log(
-                        '[DEBUG] main.tsx: Including gameId in navigation state:',
-                        storedState.gameId
-                      );
-                    }
-                  } catch (error) {
-                    console.error('[DEBUG] main.tsx: Error retrieving gameId from storage:', error);
-                  } finally {
-                    console.log(
-                      '[DEBUG] main.tsx: Sending navigation state from persistentPage:',
-                      JSON.stringify(navResponse)
-                    );
-                    postMessage(navResponse);
-                  }
-                })();
-                return;
-              }
-
-              console.log(
-                '[DEBUG] main.tsx: Sending navigation state from persistentPage:',
-                JSON.stringify(navResponse)
-              );
-              postMessage(navResponse);
             } else {
-              // Default to landing with proper type
+              // Default to landing if navigation state isn't available
               console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
@@ -346,17 +263,19 @@ Devvit.addCustomPostType({
             break;
 
           case 'INIT':
-            console.log(
-              '[DEBUG-NAV] main.tsx: INIT message received, current persistentPage:',
-              persistentPage
-            );
+            console.log('[DEBUG-NAV] main.tsx: INIT message received');
+
+            // Use navigationState instead of persistentPage
+            const desiredPage = navigationState?.page || 'landing';
+            const gameId = navigationState?.gameId;
 
             // Create a properly typed response
             const initResponse: any = {
               type: 'INIT_RESPONSE',
               data: {
                 postId: context.postId || '',
-                desiredPage: persistentPage,
+                desiredPage,
+                ...(gameId ? { gameId } : {}),
               },
             };
 
@@ -417,23 +336,25 @@ Devvit.addCustomPostType({
 
               if (randomGameData && randomGameData.success && randomGameData.game) {
                 // Send the pre-loaded random game data
+                const gameToSend = {
+                  id: randomGameData.game.id,
+                  word: randomGameData.game.word,
+                  maskedWord: randomGameData.game.maskedWord,
+                  questionText: randomGameData.game.questionText,
+                  gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
+                  createdAt: randomGameData.game.createdAt,
+                  username:
+                    randomGameData.game.username ||
+                    randomGameData.game.creatorUsername ||
+                    'anonymous',
+                };
+                console.log('Sending game with ID:', gameToSend.id);
                 postMessage({
                   type: 'GET_RANDOM_GAME_RESULT',
                   success: true,
                   result: {
                     success: true,
-                    game: {
-                      id: randomGameData.game.id,
-                      word: randomGameData.game.word,
-                      maskedWord: randomGameData.game.maskedWord,
-                      questionText: randomGameData.game.questionText,
-                      gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
-                      createdAt: randomGameData.game.createdAt,
-                      username:
-                        randomGameData.game.username ||
-                        randomGameData.game.creatorUsername ||
-                        'anonymous',
-                    },
+                    game: gameToSend,
                   },
                 });
               } else {
@@ -542,35 +463,37 @@ Devvit.addCustomPostType({
           case 'GET_GAME':
             try {
               console.log('Getting game:', event.data.gameId);
-              
-              if (gameDataLoading) {
+
+              if (!event.data.gameId) {
                 postMessage({
                   type: 'GET_GAME_RESULT',
                   success: false,
-                  error: 'Game data is still loading',
+                  error: 'Missing gameId parameter',
                 });
                 return;
               }
-              if (gameDataError) {
+
+              // Use the provided gameId to fetch the game
+              const result = await getGame(
+                {
+                  gameId: event.data.gameId,
+                },
+                context
+              );
+
+              console.log('Game data retrieved:', result.success, result.game?.id);
+
+              if (result.success && result.game) {
+                postMessage({
+                  type: 'GET_GAME_RESULT',
+                  success: true,
+                  game: result.game,
+                });
+              } else {
                 postMessage({
                   type: 'GET_GAME_RESULT',
                   success: false,
-                  error: String(gameDataError),
-                });
-                return;
-              }
-              if (gameData && gameData.success && gameData.game) {
-                postMessage({
-                  type: 'GET_GAME_RESULT',
-                  success: gameData.success,
-                  game: gameData.game,
-                });
-              }
-              else {
-                postMessage({
-                  type: 'GET_GAME_RESULT',
-                  success: false,
-                  error: gameData?.error || 'No game found',
+                  error: result.error || 'Game not found',
                 });
               }
             } catch (error) {
@@ -765,7 +688,7 @@ Devvit.addCustomPostType({
           case 'NAVIGATE':
             console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
 
-            // Extract navigation data - directly access the fields on the event
+            // Extract navigation data
             const targetPage = event.data?.page;
             const targetGameId = event.data?.params?.gameId;
 
@@ -774,14 +697,10 @@ Devvit.addCustomPostType({
             );
 
             if (targetPage) {
-              // Set persistent page
-              persistentPage = targetPage;
-              console.log('[DEBUG-NAV] main.tsx: Set persistentPage to:', persistentPage);
-
-              // Store in Redis
+              // Store in Redis using our helper function
               await storeNavigationState(targetPage, targetGameId);
 
-              // Create navigation response with explicit type
+              // Send navigation response
               const navResponse: BlocksToWebviewMessage = {
                 type: 'NAVIGATION_RESULT',
                 success: true,

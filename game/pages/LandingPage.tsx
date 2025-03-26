@@ -47,40 +47,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // Listen for the game response
-  const handleGameResponse = (event: MessageEvent) => {
-    let message = event.data;
-
-    // Unwrap if message is in a devvit envelope
-    if (message && message.type === 'devvit-message' && message.data?.message) {
-      message = message.data.message;
-    }
-
-    if (message.type === 'GET_RANDOM_GAME_RESULT') {
-      setIsLoading(false);
-      window.removeEventListener('message', handleGameResponse);
-
-      // The game data could be nested in different ways based on your logs
-      const gameData =
-        message.game || (message.result && (message.result.game || message.result));
-
-      if (message.success && gameData && gameData.id) {
-        console.log('Random game loaded:', gameData.id);
-        // Navigate to game page with the loaded game
-        onNavigate('game', { gameId: gameData.id });
-      } else {
-        console.error('Failed to load random game:', message.error);
-        // Don't navigate on error, just show a message
-        alert('Could not find a game to play. Please try again later.');
-      }
-    }
-  };
-
-  window.addEventListener('message', handleGameResponse);
-
   const handlePlayClick = () => {
     setIsLoading(true);
-
+  
     // Get list of previously played games from localStorage
     let playedGameIds: string[] = [];
     try {
@@ -91,9 +60,64 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     } catch (e) {
       console.error('Error parsing playedGameIds from localStorage:', e);
     }
-
-    // Request a random game, preferring user-created ones
+  
+    // Create a new game response handler
+    const handleGameResponse = (event: MessageEvent) => {
+      console.log('Message event received:', event.data);
+      
+      // Unwrap the message if needed
+      let message = event.data;
+      if (message && message.type === 'devvit-message' && message.data?.message) {
+        message = message.data.message;
+      } else if (message && message.type === 'devvit-message' && message.data) {
+        message = message.data;
+      }
+      
+      // Only process if this is a random game result
+      if (message.type === 'GET_RANDOM_GAME_RESULT') {
+        // Clean up listener immediately
+        window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
+        
+        // Find the game ID
+        let gameId = null;
+        if (message.success && message.game && message.game.id) {
+          gameId = message.game.id;
+        } else if (message.success && message.result && message.result.game && message.result.game.id) {
+          gameId = message.result.game.id;
+        } else if (message.success && message.result && message.result.id) {
+          gameId = message.result.id;
+        }
+        
+        // If we found a valid game ID, navigate to the game page
+        if (gameId) {
+          console.log('Navigating to game with ID:', gameId);
+          
+          // Save to played games first
+          try {
+            const updatedGameIds = [...playedGameIds, gameId];
+            localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
+          } catch (e) {
+            console.error('Error updating playedGameIds:', e);
+          }
+          
+          // Direct navigation via React state
+          onNavigate('game', { gameId });
+        } else {
+          console.error('No valid game ID found in response');
+          alert('Could not find a game to play. Please try again later.');
+        }
+      }
+    };
+  
+    // Remove any existing listener first
+    window.removeEventListener('message', handleGameResponse);
+    
+    // Add the listener
     window.addEventListener('message', handleGameResponse);
+    
+    // Request a random game from the backend
+    console.log('Requesting random game...');
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
@@ -104,14 +128,15 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       },
       '*'
     );
-
-    // Clean up the event listener after a timeout
+  
+    // Clean up if we don't get a response in a reasonable time
     setTimeout(() => {
       if (isMounted.current) {
         window.removeEventListener('message', handleGameResponse);
         setIsLoading(false);
+        console.log('Game loading timed out');
       }
-    }, 10000);
+    }, 5000);
   };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background

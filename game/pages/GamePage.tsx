@@ -60,22 +60,28 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   // Set up initial game page load animations and event handlers
   useEffect(() => {
     console.log('GamePage mounted with propGameId:', propGameId);
+    if (!propGameId) {
+      console.error('Error: GamePage mounted without a gameId');
+      return;
+    }
     setIsPageLoaded(true);
     animatePageElements();
     setGameStartTime(Date.now());
 
+    console.log('Directly requesting game data for ID:', propGameId);
+    window.parent.postMessage(
+      {
+        type: 'GET_GAME',
+        data: { gameId: propGameId },
+      },
+      '*'
+    );
     // Get user info if available
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
 
     // Load previously played game IDs from localStorage
     loadPlayedGameIds();
     console.log('🏆 [DEBUG] Marking game completed for:', username);
-
-    console.log("useEffect triggered: Sending 'webViewReady' message");
-    window.parent.postMessage({ type: 'webViewReady' }, '*');
-
-    console.log('useEffect triggered: Waiting for initialization');
-    window.parent.postMessage({ type: 'INIT' }, '*');
 
     // Set up main message handler
     const handleMessage = (event: MessageEvent) => {
@@ -89,6 +95,26 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         console.log('Unwrapped message:', actualMessage);
       } else {
         console.log('Message is not wrapped; using raw message:', actualMessage);
+      }
+
+      if (actualMessage.type === 'GET_GAME_RESULT') {
+        console.log('GET_GAME_RESULT received:', actualMessage);
+        setIsLoading(false);
+        
+        if (actualMessage.success && actualMessage.game) {
+          const loadedGameData = actualMessage.game;
+          setGameData(loadedGameData);
+          setGameFlowState('playing');
+          setRevealedLetters(new Set());
+          setGuess('');
+          setGifHintCount(1);
+          setIsCorrect(null);
+          
+          // If this is a new game, add it to played games
+          addToPlayedGames(loadedGameData.id);
+        } else {
+          setError(actualMessage.error || 'Game could not be loaded');
+        }
       }
 
       // Handle user data
@@ -109,7 +135,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         if (gameIdRef.current) {
           console.log('Using gameId from props:', gameIdRef.current);
           setGameId(gameIdRef.current);
-          window.parent.postMessage({ type: 'GET_GAME_ID', data: { gameId: gameIdRef.current } }, '*');
+          window.parent.postMessage(
+            { type: 'GET_GAME_ID', data: { gameId: gameIdRef.current } },
+            '*'
+          );
         } else if (actualMessage.data?.gameId) {
           // Only proceed if propGameId wasn't already set
           console.log('Using gameId from INIT_RESPONSE:', actualMessage.data.gameId);
@@ -120,27 +149,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           );
         } else {
           requestRandomGame();
-        }
-      }
-
-      // Handle game data loading
-      if (actualMessage.type === 'GET_GAME_ID_RESULT') {
-        console.log('GET_GAME_ID_RESULT received:', actualMessage);
-        setIsLoading(false);
-
-        if (actualMessage.success && actualMessage.id) {
-          const loadedGameData = actualMessage.game;
-          setGameData(loadedGameData);
-          setGameFlowState('playing');
-          setRevealedLetters(new Set());
-          setGuess('');
-          setGifHintCount(1);
-          setIsCorrect(null);
-
-          // If this is a new game, add it to played games
-          addToPlayedGames(loadedGameData.id);
-        } else {
-          setError(actualMessage.error || 'Game could not be loaded');
         }
       }
 
@@ -180,24 +188,24 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       // Handle game state loading
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
         console.log('GET_GAME_STATE_RESULT received:', actualMessage);
-
+        
         if (actualMessage.success && actualMessage.state) {
           const state = actualMessage.state as PlayerGameState;
-
+          
           // Restore game state
           if (state.gifHintCount) {
             setGifHintCount(state.gifHintCount);
           }
-
+          
           if (state.revealedLetters && Array.isArray(state.revealedLetters)) {
             const numberArray = state.revealedLetters.map(Number);
             setRevealedLetters(new Set(numberArray));
           }
-
+          
           if (state.guess) {
             setGuess(state.guess);
           }
-
+          
           if (state.isCompleted) {
             setGameFlowState('completed');
             window.parent.postMessage(

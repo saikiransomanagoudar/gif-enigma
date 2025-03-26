@@ -46,7 +46,7 @@ export async function searchTenorGifs(
   params: TenorSearchParams,
   context: Context
 ): Promise<TenorGifResult[]> {
-  const { query, limit = 26 } = params;
+  const { query, limit = 8 } = params;
   const contentfilter = "high";
   const media_filter = "gif,tinygif,mediumgif,nanogif";
 

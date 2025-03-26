@@ -23,7 +23,7 @@ export async function getRecommendations(
   context: Context
 ): Promise<{ success: boolean; recommendations?: string[]; error?: string; debug?: any }> {
   try {
-    const { category, inputType, count = 50 } = params;
+    const { category, inputType, count = 20 } = params;
 
     // Add debug log
     console.log(

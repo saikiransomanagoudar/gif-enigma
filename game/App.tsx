@@ -56,6 +56,13 @@ type DevvitMessage =
       };
     }
   | {
+      type: 'GET_RANDOM_GAME_RESULT';
+      success: boolean;
+      game?: any;
+      result?: any;
+      error?: string;
+    }
+  | {
       type: 'devvit-message';
       data: {
         message: DevvitMessage;
@@ -184,6 +191,32 @@ function App() {
       try {
         // Use type assertion to treat as DevvitMessage
         const typedMessage = message as DevvitMessage;
+
+        // Handle random game result specifically
+        if (typedMessage.type === 'GET_RANDOM_GAME_RESULT') {
+          console.log('[DEBUG-CRITICAL] App.tsx: GET_RANDOM_GAME_RESULT received:', typedMessage);
+
+          // Extract game data from different possible formats
+          let gameData = null;
+
+          if (typedMessage.success && typedMessage.result && typedMessage.result.game) {
+            // Format: {success: true, result: {success: true, game: {...}}}
+            gameData = typedMessage.result.game;
+          } else if (typedMessage.success && typedMessage.game) {
+            // Format: {success: true, game: {...}}
+            gameData = typedMessage.game;
+          } else if (typedMessage.success && typedMessage.result) {
+            // Format: {success: true, result: {...}}
+            gameData = typedMessage.result;
+          }
+
+          if (gameData && gameData.id) {
+            console.log('[DEBUG-CRITICAL] App.tsx: Extracted game ID:', gameData.id);
+            setGameId(gameData.id);
+            setCurrentPage('game');
+          }
+          return;
+        }
 
         switch (typedMessage.type) {
           case 'initialData':
@@ -488,21 +521,50 @@ function App() {
   };
 
   const handleNavigate = (page: Page, params?: { gameId?: string }) => {
-    // Block invalid game navigation
-    if (page === 'game' && !params?.gameId) {
-      console.error('Cannot navigate to game without gameId');
-      return;
+  console.log(`[NAV] App.tsx handleNavigate called:`, { page, params });
+
+  // Block invalid game navigation
+  if (page === 'game' && !params?.gameId) {
+    console.error('[NAV] Cannot navigate to game without gameId');
+    return;
+  }
+
+  // Set local state FIRST - this is the critical part
+  if (page === 'game' && params?.gameId) {
+    console.log(`[NAV] Setting gameId to: ${params.gameId}`);
+    setGameId(params.gameId);
+    console.log(`[NAV] Setting currentPage to: ${page}`);
+    setCurrentPage(page);
+  } else {
+    console.log(`[NAV] Setting currentPage to: ${page}`);
+    setCurrentPage(page);
+    
+    // Reset gameId if needed
+    if (currentPage === 'game') {
+      console.log('[NAV] Resetting gameId');
+      setGameId(null);
     }
-    // Set states atomically
-    if (page === 'game') {
-      setGameId(params!.gameId!); // Set gameId first
-      setCurrentPage(page); // Then update page
-    } else {
-      setCurrentPage(page);
-      // Reset gameId if leaving game page
-      if (currentPage === 'game') setGameId(null);
-    }
-  };
+  }
+  
+  // AFTER updating local state, tell the server about the change
+  // This is secondary - the UI should update even if this fails
+  try {
+    console.log(`[NAV] Notifying server about navigation:`, { page, params });
+    window.parent.postMessage(
+      {
+        type: 'NAVIGATE',
+        data: {
+          page,
+          params,
+        },
+      },
+      '*'
+    );
+  } catch (err) {
+    console.error('[NAV] Error sending navigation message to server:', err);
+    // Continue anyway - local navigation is more important
+  }
+};
 
   // Handle category selection
   const handleCategorySelect = (category: CategoryType) => {
@@ -513,8 +575,10 @@ function App() {
 
   // Render the appropriate page
   const renderPage = () => {
-    const pageProps = {
-      onNavigate: handleNavigate,
+    console.log('[RENDER] Frontend: Rendering page:', currentPage, 'with gameId:', gameId);
+  
+    // Create pageProps without onNavigate property
+    const commonProps = {
       userData,
       sendMessageToDevvit,
       searchTenorGifs,
@@ -526,49 +590,33 @@ function App() {
       recommendations,
       synonyms,
     };
-
-    // Add detailed logging to page rendering
-    console.log('[DEBUG-RENDER] Frontend: Rendering page:', currentPage, 'with gameId:', gameId);
-
+  
     switch (currentPage) {
       case 'landing':
-        console.log('[DEBUG-RENDER] Rendering LandingPage');
-        return <LandingPage {...pageProps} />;
+        return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
       case 'category':
-        console.log('[DEBUG-RENDER] Rendering CategoryPage');
         return <CategoryPage onNavigate={setCurrentPage} onCategorySelect={handleCategorySelect} />;
       case 'create':
-        console.log('[DEBUG-RENDER] Rendering CreatePage');
-        return <CreatePage context={undefined} {...pageProps} category={selectedCategory} />;
+        return <CreatePage context={undefined} {...commonProps} category={selectedCategory} onNavigate={handleNavigate} />;
       case 'howToPlay':
-        console.log('[DEBUG-RENDER] Rendering HowToPlayPage');
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
-        console.log('[DEBUG-RENDER] Rendering LeaderboardPage');
         return <LeaderboardPage onNavigate={setCurrentPage} />;
       case 'game':
-        console.log('[DEBUG-RENDER] Rendering GamePage with gameId:', gameId);
+        // Safety check - should never happen due to our handleNavigate logic
         if (!gameId) {
-          console.error('[DEBUG-ERROR] Attempting to render GamePage without gameId!');
-          // Add defensive approach: Return to landing page if no gameId
-          console.log('[DEBUG-RENDER] Redirecting to landing page due to missing gameId');
+          console.error('[RENDER] Attempting to render GamePage without gameId!');
           setTimeout(() => setCurrentPage('landing'), 0);
-          // Show loading state instead of the GamePage
           return (
             <div className="flex h-screen items-center justify-center">
-              <p className="text-lg">Loading game data...</p>
+              <p className="text-lg">Error: Missing game data. Redirecting...</p>
             </div>
           );
         }
-        return <GamePage onNavigate={setCurrentPage} gameId={gameId} />;
+        return <GamePage onNavigate={handleNavigate} gameId={gameId} />;
       default:
-        // Fallback to landing if currentPage is unrecognized
-        console.log(
-          '[DEBUG-ERROR] Unrecognized currentPage:',
-          currentPage,
-          'defaulting to LandingPage'
-        );
-        return <LandingPage {...pageProps} />;
+        console.log('[RENDER] Unrecognized currentPage:', currentPage);
+        return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
     }
   };
 
