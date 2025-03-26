@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavigationProps } from '../App';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/Fonts';
+import { ComicText } from '../lib/fonts';
 import * as transitions from '../../src/utils/transitions';
+import { NavigationProps, Page } from '../lib/types';
 export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
 
 export interface CategoryNavigationProps extends NavigationProps {
+  onNavigate: (page: Page) => void;
   onCategorySelect?: (category: CategoryType) => void;
 }
 
@@ -22,6 +23,17 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   const subtitleRef = useRef<HTMLDivElement>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
   const categoryGridRef = useRef<HTMLDivElement>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+
+  useEffect(() => {
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
 
   const categories: {
     type: CategoryType;
@@ -160,7 +172,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
   return (
     <div
-      className="flex min-h-screen flex-col items-center p-5 transition-opacity duration-500"
+      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       {/* Header section */}
@@ -171,15 +183,16 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
         <button
           ref={backButtonRef}
           onClick={handleBackClick}
-          className="left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-          style={{ backgroundColor: colors.primary }}
+          className={`${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+          
+         
         >
           <span className="mr-1 text-sm text-white">👈</span>
           <ComicText size={0.5} color="white">
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
+        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:mt-[-20px] max-sm:ml-[12px]">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-500"
@@ -195,7 +208,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
             <ComicText
               size={0.8}
               color={colors.textSecondary}
-              className="mt-2 text-sm sm:text-base md:text-lg dark:text-gray-300"
+              className="mt-2 text-sm sm:text-base md:text-lg"
             >
               Choose category for your enigma
             </ComicText>
@@ -204,14 +217,14 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4">
-        <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
+        <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
           {categories.map((category) => (
             <button
               key={category.type}
               onClick={() => handleCategorySelect(category.type)}
               onMouseEnter={() => setHoverCategory(category.type)}
               onMouseLeave={() => setHoverCategory(null)}
-              className="category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
+              className="max-sm:h-4/5 category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
               style={{
                 overflow: 'hidden',
                 transform:

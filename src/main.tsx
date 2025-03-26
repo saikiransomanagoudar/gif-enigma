@@ -1,14 +1,14 @@
-import { Devvit, Context, useWebView, useState } from '@devvit/public-api';
+import { Devvit, Context, useWebView, useState, useAsync } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
-import { saveGame, getUserGames } from '../game/server/gameHandler.server.js';
-import { ComicText } from './utils/fonts/comicText.js';
+import { saveGame, getUserGames, getGame } from '../game/server/gameHandler.server.js';
+import { Page } from '../game/lib/types.js';
 import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
 } from '../game/server/geminiApi.server.js';
 import { CustomPostPreview } from './components/CustomPostPreview.js';
-import { ScoreData } from '../game/server/scoringService.js';
+import { GamePostPreview } from './components/GamePostPreview.js';
 
 Devvit.addSettings([
   {
@@ -44,25 +44,65 @@ Devvit.configure({
 });
 
 Devvit.addCustomPostType({
-  name: 'GIF Enigma',
+  name: 'giftest01',
   height: 'tall',
   render: (context) => {
+    let persistentPage: Page | null = null;
+    let isWebViewReadyFlag: boolean = false;
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
       onMessage: async (
-        event: WebviewToBlockMessage,
+        rawMessage: WebviewToBlockMessage,
         { postMessage }: { postMessage: (message: BlocksToWebviewMessage) => void }
       ) => {
-        console.log('Received message from web app:', event.type);
+        console.log('[DEBUG] main.tsx onMessage received:', rawMessage);
+
+        // Unwrap the devvit-message wrapper(s) (using a cast to any)
+        let event: any;
+        const messageAny = rawMessage as any;
+        if (messageAny?.type === 'devvit-message') {
+          if (messageAny.data?.type === 'devvit-message' && messageAny.data?.message) {
+            // Double-wrapped scenario
+            event = messageAny.data.message;
+            console.log('[DEBUG] main.tsx unwrapped double layer:', event);
+          } else if (messageAny.data) {
+            // Single-wrapped scenario
+            event = messageAny.data;
+            console.log('[DEBUG] main.tsx unwrapped single layer:', event);
+          } else {
+            console.log('[DEBUG] main.tsx: No data to unwrap, using raw message');
+            event = messageAny;
+          }
+        } else {
+          event = messageAny;
+        }
 
         switch (event.type) {
+          case 'webViewReady':
+            console.log('[DEBUG] main.tsx: webViewReady received');
+            isWebViewReadyFlag = true;
+            break;
+
           case 'INIT':
-            postMessage({
+            console.log(
+              '[DEBUG-NAV] main.tsx: INIT message received, current persistentPage:',
+              persistentPage
+            );
+
+            // Create a properly typed response
+            const initResponse: any = {
               type: 'INIT_RESPONSE',
               data: {
                 postId: context.postId || '',
+                desiredPage: persistentPage,
               },
-            });
+            };
+
+            console.log(
+              '[DEBUG-NAV] main.tsx: Sending INIT_RESPONSE:',
+              JSON.stringify(initResponse)
+            );
+            postMessage(initResponse);
             break;
 
           case 'GAME_DATA':
@@ -188,7 +228,10 @@ Devvit.addCustomPostType({
             try {
               console.log('Calculating score:', event.data);
               const { calculateScore } = await import('../game/server/scoringService.js');
-              const scoreResult = calculateScore(event.data);
+              const scoreResult = {
+                ...calculateScore(event.data),
+                username: event.data.username
+              };
 
               postMessage({
                 type: 'CALCULATE_SCORE_RESULT',
@@ -207,7 +250,7 @@ Devvit.addCustomPostType({
 
           case 'SAVE_SCORE':
             try {
-              console.log('Saving score:', event.data);
+              console.log('💾 [DEBUG] Saving score with data:', event.data);
               const { saveScore } = await import('../game/server/scoringService.js');
               const result = await saveScore(event.data, context);
 
@@ -263,6 +306,32 @@ Devvit.addCustomPostType({
               console.error('Error saving game state:', error);
               postMessage({
                 type: 'SAVE_GAME_STATE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_GAME':
+            try {
+              console.log('Getting game:', event.data.gameId);
+              const result = await getGame(
+                {
+                  gameId: event.data.gameId,
+                },
+                context
+              );
+
+              postMessage({
+                type: 'GET_GAME_RESULT',
+                success: result.success,
+                game: result.game,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error getting game:', error);
+              postMessage({
+                type: 'GET_GAME_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -394,12 +463,14 @@ Devvit.addCustomPostType({
 
           case 'SAVE_GAME':
             try {
+              const username = await context.reddit.getCurrentUsername();
               const result = await saveGame(event.data, context);
               if (result.success && result.redditPostId) {
                 await context.redis.hSet(`post:${result.redditPostId}`, { gameId: result.gameId! });
                 await context.redis.hSet(`gamePreview:${result.gameId}`, {
                   maskedWord: event.data.maskedWord,
                   gifs: JSON.stringify(event.data.gifs),
+                  creatorUsername: username || 'Unknown',
                 });
               }
               postMessage({
@@ -417,31 +488,150 @@ Devvit.addCustomPostType({
             }
             break;
 
-          case 'NAVIGATE':
-            console.log('MainApp: Navigation request', event.data);
+          case 'MARK_GAME_COMPLETED':
+            try {
+              await context.redis.zAdd(
+                `user:${event.data.username}:completedGames`,
+                { member: event.data.gameId, score: Date.now() }
+              );
+              postMessage({
+                type: 'MARK_GAME_COMPLETED_RESULT',
+                success: true
+              });
+            } catch (error) {
+              postMessage({
+                type: 'MARK_GAME_COMPLETED_RESULT',
+                success: false,
+                error: String(error)
+              });
+            }
+            break;
+          case 'NAVIGATION':
+            console.log('[DEBUG] main.tsx: NAVIGATION message received:', event);
+            persistentPage = event.page;
+            console.log('[DEBUG] main.tsx: persistentPage set to:', persistentPage);
             postMessage({
               type: 'NAVIGATION_RESULT',
               success: true,
-              page: event.data.page,
-              // Include gameId if it exists in params
-              ...(event.data.params?.gameId ? { gameId: event.data.params.gameId } : {}),
+              page: event.page,
+              ...(event.gameId ? { gameId: event.gameId } : {}),
             });
             break;
 
-          default:
-            console.error('Unknown message type', event);
+          case 'NAVIGATE':
+            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received!');
+            try {
+              console.log('[DEBUG-NAV] main.tsx: Full NAVIGATE message:', JSON.stringify(event));
+
+              // Extract page and gameId from the message
+              let targetPage: Page | null = null;
+              let gameId: string | undefined = undefined;
+
+              if (event.data && typeof event.data === 'object') {
+                targetPage = event.data.page as Page;
+                if (event.data.params && event.data.params.gameId) {
+                  gameId = event.data.params.gameId;
+                }
+              } else if (event.page) {
+                targetPage = event.page as Page;
+                if (event.gameId) {
+                  gameId = event.gameId;
+                }
+              }
+
+              if (targetPage) {
+                console.log('[DEBUG-NAV] main.tsx: Setting persistentPage to:', targetPage);
+                persistentPage = targetPage;
+
+                // Create a properly typed response
+                const navigationResult: any = {
+                  type: 'NAVIGATION_RESULT',
+                  success: true,
+                  page: targetPage,
+                };
+
+                // Add gameId if it exists
+                if (gameId) {
+                  navigationResult.gameId = gameId;
+                }
+
+                console.log(
+                  '[DEBUG-NAV] main.tsx: Sending response:',
+                  JSON.stringify(navigationResult)
+                );
+                postMessage(navigationResult);
+              } else {
+                console.error('[DEBUG-NAV] main.tsx: Could not find page in NAVIGATE message');
+              }
+            } catch (error) {
+              console.error('[DEBUG-NAV] main.tsx: Error processing NAVIGATE message:', error);
+            }
             break;
         }
       },
     });
 
+    const PostPreviewComponent = ({
+      context,
+      mount,
+      postMessage,
+    }: {
+      context: Context;
+      mount: any;
+      postMessage: any;
+    }) => {
+      const [isGame, setIsGame] = useState(false);
+      const [isLoading, setIsLoading] = useState(true);
+
+      useAsync(
+        async () => {
+          if (!context.postId) return false;
+
+          // Check if this post has a game ID associated with it
+          const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+          console.log('Post preview check - gameId found:', gameId);
+          return !!gameId; // Convert to boolean
+        },
+        {
+          depends: [context.postId ?? ''],
+          finally: (result, error) => {
+            setIsGame(!!result);
+            setIsLoading(false);
+            console.log('Post preview component - isGame:', !!result);
+          },
+        }
+      );
+
+      if (isLoading) {
+        return (
+          <vstack height="100%" width="100%" alignment="center middle">
+            <text style="heading" size="medium">
+              Loading GIF Enigma...
+            </text>
+          </vstack>
+        );
+      }
+
+      return isGame ? (
+        <GamePostPreview
+          context={context}
+          onMount={mount}
+          postMessage={postMessage}
+          isWebViewReady={isWebViewReadyFlag}
+        />
+      ) : (
+        <CustomPostPreview
+          context={context}
+          onMount={mount}
+          postMessage={postMessage}
+          isWebViewReady={isWebViewReadyFlag}
+        />
+      );
+    };
+
     return (
       <zstack height="100%" width="100%" alignment="center middle">
-        <CustomPostPreview 
-          context={context} 
-          onMount={mount} 
-          postMessage={postMessage} 
-        />
+        <PostPreviewComponent context={context} mount={mount} postMessage={postMessage} />
       </zstack>
     );
   },
@@ -454,13 +644,18 @@ Devvit.addMenuItem({
   onPress: async (_, context) => {
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
-    // const url1 = await context.assets.getURL('lets-play.gif');
-    // const url2 = await context.assets.getURL('lets-build.gif');
-    // context.ui.showToast(`GIF URLs: ${url1} and ${url2}`);
+
     const post = await reddit.submitPost({
       title: 'New GIF Enigma Challenge!',
       subredditName: subreddit.name,
-      preview: <CustomPostPreview context={context} onMount={() => {}} postMessage={() => {}} />,
+      preview: (
+        <CustomPostPreview
+          context={context}
+          onMount={() => {}}
+          postMessage={() => {}}
+          isWebViewReady={false}
+        />
+      ),
     });
 
     ui.showToast('Created new GIF Enigma post!');

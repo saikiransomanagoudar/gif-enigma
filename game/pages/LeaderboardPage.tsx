@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { colors } from "../lib/styles";
-import { NavigationProps } from "../App";
+import { NavigationProps } from "../lib/types";
 
 export interface LeaderboardPageProps extends NavigationProps {}
 

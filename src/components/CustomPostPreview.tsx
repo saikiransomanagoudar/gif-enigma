@@ -1,198 +1,173 @@
-import { Devvit, Context, useState, useAsync, useInterval } from '@devvit/public-api';
+import { Devvit, Context, useState, useAsync } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
-import { BlocksToWebviewMessage, Page, WebviewToBlockMessage } from '../../game/shared.js';
+// import { Page } from '../../game/lib/types.js';
+import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../../game/shared.js';
 
 interface CustomPostPreviewProps {
   context: Context;
   onMount: () => void;
   postMessage: (message: BlocksToWebviewMessage) => void;
+  isWebViewReady: boolean;
 }
 
-export const CustomPostPreview = ({ context, onMount, postMessage }: CustomPostPreviewProps) => {
+export const CustomPostPreview = ({
+  context,
+  onMount,
+  postMessage,
+  isWebViewReady,
+}: CustomPostPreviewProps) => {
   const [previewData, setPreviewData] = useState<{
     maskedWord?: string;
     gifs?: string[];
     gameId?: string;
   }>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [username, setUsername] = useState<string>('there');
-  const [pendingNavigation, setPendingNavigation] = useState<{
-    page: Page;
-    gameId?: string;
-  } | null>(null);
+  const [username, setUsername] = useState('there');
+  const [gifUrls, setGifUrls] = useState<{
+    playGif: string | null;
+    buildGif: string | null;
+  }>({
+    playGif: null,
+    buildGif: null,
+  });
 
-  // Use interval to handle navigation after mounting the WebView
-  const navInterval = useInterval(() => {
-    if (pendingNavigation) {
-      console.log('PostPreview: Sending navigation result for', pendingNavigation.page);
+  useAsync(
+    async () => {
+      // Get asset URLs
+      const playGifUrl = context.assets.getURL('lets-play.gif');
+      const buildGifUrl = context.assets.getURL('lets-build.gif');
 
-      postMessage({
-        type: 'NAVIGATION_RESULT',
-        success: true,
-        page: pendingNavigation.page,
-        ...(pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {}),
-      });
+      // Get username efficiently
+      const currentUsername = (await context.reddit.getCurrentUsername()) || '';
 
-      setPendingNavigation(null);
-      navInterval.stop();
+      // Return all data together
+      return {
+        playGifUrl,
+        buildGifUrl,
+        currentUsername: currentUsername,
+      };
+    },
+    {
+      // Use the finally callback for state updates
+      finally: (data, error) => {
+        if (data && !error) {
+          // Update state with the fetched data
+          setGifUrls({
+            playGif: data.playGifUrl,
+            buildGif: data.buildGifUrl,
+          });
+
+          if (data.currentUsername) {
+            setUsername(data.currentUsername);
+          }
+        }
+
+        if (error) {
+          console.error('Error fetching assets or username:', error);
+        }
+      },
     }
-  }, 300);
+  );
 
   useAsync(
     async () => {
       if (!context.postId) return null;
 
-      try {
-        try {
-          const currentUsername = await context.reddit.getCurrentUsername();
-          if (currentUsername) {
-            setUsername(currentUsername);
-          }
-        } catch (usernameError) {
-          console.error('Error fetching username:', usernameError);
-        }
-        // First try to get game ID from post relationship
-        const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+      // Get game ID from post relationship
+      const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+      if (!gameId) return null;
 
-        if (gameId) {
-          // Get preview data from game preview storage
-          const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
+      // Try to get preview data first
+      const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
 
-          if (previewData && previewData.maskedWord) {
-            setPreviewData({
-              maskedWord: previewData.maskedWord,
-              gifs: JSON.parse(previewData.gifs || '[]'),
-              gameId: gameId,
-            });
-          } else {
-            // Fallback: Get game data directly from game storage
-            const gameData = await context.redis.hGetAll(`game:${gameId}`);
-            if (gameData && gameData.maskedWord) {
-              setPreviewData({
-                maskedWord: gameData.maskedWord,
-                gifs: JSON.parse(gameData.gifs || '[]'),
-                gameId: gameId,
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error loading game preview:', error);
+      if (previewData && previewData.maskedWord) {
+        return {
+          maskedWord: previewData.maskedWord,
+          gifs: JSON.parse(previewData.gifs || '[]'),
+          gameId: gameId,
+        };
       }
+
+      // Fallback to game data
+      const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      if (gameData && gameData.maskedWord) {
+        return {
+          maskedWord: gameData.maskedWord,
+          gifs: JSON.parse(gameData.gifs || '[]'),
+          gameId: gameId,
+        };
+      }
+
       return null;
     },
     {
       depends: [context.postId ?? ''],
       finally: (data, error) => {
         if (data && !error) {
-          setUsername(data);
+          setPreviewData(data);
         }
+
         if (error) {
-          console.error('Error fetching username:', error);
+          console.error('Error loading game preview:', error);
         }
-        setIsLoading(false)
-      }
+
+        setIsLoading(false);
+      },
     }
   );
 
+  //  Helper function to send navigation messages
+  const safePostMessage = (message: any) => {
+    console.log(
+      '[DEBUG-NAV] CustomPostPreview: Sending navigation message:',
+      JSON.stringify(message)
+    );
+    // @ts-ignore - Ignore TypeScript errors
+    postMessage(message);
+  };
+
   const handlePlayGame = () => {
-    if (previewData.gameId) {
-      context.ui.showToast('Loading game...');
-      onMount();
-      console.log('PostPreview: Sending NAVIGATION_RESULT for game page');
-      postMessage({
-        type: 'NAVIGATION_RESULT',
-        success: true,
-        page: 'game',
-        gameId: previewData.gameId,
+    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
+    onMount();
+
+    if (isWebViewReady) {
+      console.log('[DEBUG-NAV] CustomPostPreview: WebView ready, sending navigation');
+      safePostMessage({
+        type: 'NAVIGATE',
+        data: {
+          page: 'game',
+          params: {}
+        },
       });
     } else {
-      context.ui.showToast('Game not found. Try creating a new one!');
+      console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet');
     }
   };
 
-  const handleCreateGame = () => {
-    console.log('PostPreview: Mounting WebView for create game');
-    onMount();
-
-    // Send NAVIGATION_RESULT message which is a valid type in BlocksToWebviewMessage
-    console.log('PostPreview: Sending NAVIGATION_RESULT for category page');
-    postMessage({
-      type: 'NAVIGATION_RESULT',
-      success: true,
-      page: 'category',
-    });
-  };
-
-  const handleHowToPlay = () => {
-    console.log('PostPreview: Mounting WebView for how to play');
-    onMount();
-
-    // Send NAVIGATION_RESULT message which is a valid type in BlocksToWebviewMessage
-    console.log('PostPreview: Sending NAVIGATION_RESULT for howToPlay page');
-    postMessage({
-      type: 'NAVIGATION_RESULT',
-      success: true,
-      page: 'howToPlay',
-    });
-  };
-
-  const handleLeaderboard = () => {
-    console.log('PostPreview: Mounting WebView for leaderboard');
-    onMount();
-
-    postMessage({
-      type: 'NAVIGATION_RESULT',
-      success: true,
-      page: 'leaderboard',
-    });
-  };
-
-  if (isLoading) {
-    return (
-      <vstack height="100%" width="100%" alignment="center middle">
-        <text style="heading" size="medium">
-          Loading GIF Enigma...
-        </text>
-      </vstack>
-    );
-  }
-
   return (
     <vstack height="100%" width="100%" backgroundColor="#0d1629">
-      {/* Top section with leaderboard */}
-      <hstack width="100%" padding="small" alignment="middle">
-        <spacer grow />
-        <hstack
-          padding="xsmall"
-          border="thin"
-          onPress={handleLeaderboard}
-          backgroundColor="#f4f4f4"
-          cornerRadius="full"
-        >
-          <ComicText size={0.2} color="#000000">
-            Leaderboard
-          </ComicText>
-        </hstack>
-      </hstack>
+      <spacer size="large" />
 
-      {/* Title */}
+      {/* title */}
       <vstack alignment="center middle" padding="medium">
-        <ComicText size={0.8} color="#FF4500">
+        <ComicText size={0.7} color="#FF4500">
           GIF Enigma
         </ComicText>
       </vstack>
 
       {/* Intro text */}
-      <vstack alignment="middle" padding="medium">
-        <ComicText size={0.25} color="#7fcfff" alignment="center">
-          {'                  Hi    ' + username + ',    ready    to    unravel    the    secret    word    from    GIFs?'}
+      <vstack alignment="middle" padding="xsmall">
+        <spacer size="large" />
+        <ComicText size={0.25} color="#7fcfff">
+          {`                                  Hi    ${username},    ready    to    unravel`}
+        </ComicText>
+        <ComicText size={0.25} color="#7fcfff">
+          {`                                  the    secret    word/phrase    from    GIFs?`}
         </ComicText>
       </vstack>
 
       {/* Main buttons section */}
       <hstack width="100%" padding="medium" alignment="center middle" gap="medium">
-        {/* Play button */}
         <vstack
           backgroundColor="#c6c6e1"
           cornerRadius="large"
@@ -200,9 +175,10 @@ export const CustomPostPreview = ({ context, onMount, postMessage }: CustomPostP
           alignment="center middle"
           onPress={handlePlayGame}
         >
+          <spacer size="medium" />
           <vstack gap="medium" padding="medium" height={150}>
             <image
-              url="lets-play.gif"
+              url="eyebrows.gif"
               imageWidth={100}
               imageHeight={100}
               grow
@@ -217,60 +193,15 @@ export const CustomPostPreview = ({ context, onMount, postMessage }: CustomPostP
             width="100%"
             alignment="center"
           >
-            <ComicText size={0.2} color="white">
-              Tap to Play →
-            </ComicText>
-          </vstack>
-        </vstack>
-
-        {/* Create button */}
-        <vstack
-          backgroundColor="#aec6cd"
-          cornerRadius="large"
-          width="45%"
-          alignment="center middle"
-          onPress={handleCreateGame}
-        >
-          <vstack gap="medium" padding="medium" height={100}>
-            <image
-              url="lets-build.gif"
-              imageWidth={100}
-              imageHeight={100}
-              grow
-              width={100}
-              resizeMode="fit"
-              description="Character building"
-            />
-          </vstack>
-          <vstack
-            backgroundColor="rgba(0,0,0,0.3)"
-            padding="xsmall"
-            width="100%"
-            alignment="center"
-          >
-            <ComicText size={0.2} color="white">
-              Tap to Create →
-            </ComicText>
+            <hstack alignment="middle center">
+              <ComicText size={0.2} color="white">
+                S       tart      Playing
+              </ComicText>
+              <text> 👉</text>
+            </hstack>
           </vstack>
         </vstack>
       </hstack>
-
-      {/* How this game works button */}
-      <vstack padding="medium" alignment="center">
-        <hstack
-          padding="xsmall"
-          border="thin"
-          onPress={handleHowToPlay}
-          backgroundColor="#f4f4f4"
-          cornerRadius="full"
-          alignment="middle center"
-          gap="small"
-        >
-          <ComicText size={0.2} color="#000000">
-            How this game works?
-          </ComicText>
-        </hstack>
-      </vstack>
     </vstack>
   );
 };

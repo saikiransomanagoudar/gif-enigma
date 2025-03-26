@@ -1,20 +1,5 @@
-// server/scoringService.ts
 import { Context } from '@devvit/public-api';
-
-export interface ScoreData {
-  userId: string;
-  gameId: string;
-  score: number;
-  gifPenalty: number;
-  wordPenalty: number;
-  timeTaken: number; // in seconds
-  timestamp: number;
-}
-
-export interface LeaderboardEntry extends ScoreData {
-  username: string;
-  rank?: number;
-}
+import { ScoreData, LeaderboardEntry } from '../lib/types';
 
 /**
  * Calculate score based on the game state and user actions
@@ -90,15 +75,16 @@ export async function saveScore(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     console.log('🔍 [DEBUG] saveScore called with params:', params);
-    const { userId, gameId, score, gifPenalty, wordPenalty, timeTaken, timestamp } = params;
+    const { username, gameId, score, gifPenalty, wordPenalty, timeTaken, timestamp } = params;
 
-    if (!userId || !gameId) {
-      return { success: false, error: 'User ID and Game ID are required' };
+    
+    if (!username || !gameId) {
+      return { success: false, error: 'Username and Game ID are required' };
     }
 
     // Store user score for this game in a hash
-    await context.redis.hSet(`score:${gameId}:${userId}`, {
-      userId,
+    await context.redis.hSet(`score:${gameId}:${username}`, {
+      username: username,
       gameId,
       score: score.toString(),
       gifPenalty: gifPenalty.toString(),
@@ -107,25 +93,19 @@ export async function saveScore(
       timestamp: timestamp.toString(),
     });
 
-    // Add to user's scores sorted set (score as the value)
-    await context.redis.zAdd(`user:${userId}:scores`, {
-      score: score,
-      member: gameId,
-    });
-
     // Add to game's leaderboard sorted set (higher scores first)
     await context.redis.zAdd(`leaderboard:${gameId}`, {
       score: score,
-      member: userId,
+      member: username,
     });
 
     // Add to global leaderboard (higher scores first)
     await context.redis.zAdd('globalLeaderboard', {
       score: score,
-      member: `${gameId}:${userId}`, // Combine gameId and userId to make unique
+      member: `${gameId}:${username}`,
     });
 
-    console.log('✅ [DEBUG] Score saved successfully for user:', userId);
+    console.log('✅ [DEBUG] Score saved successfully for user:', username);
     return { success: true };
   } catch (error) {
     console.error('❌ [DEBUG] Error saving score:', error);
@@ -146,7 +126,7 @@ export async function getGameLeaderboard(
 
     // Get top scores from game's leaderboard (highest scores first)
     const leaderboardItems = await context.redis.zRange(`leaderboard:${gameId}`, 0, limit - 1, {
-      reverse: true, // High scores first
+      reverse: true,
       by: 'rank',
     });
 
@@ -159,43 +139,27 @@ export async function getGameLeaderboard(
 
     for (let i = 0; i < leaderboardItems.length; i++) {
       const item = leaderboardItems[i];
-      const userId = typeof item.member === 'string' ? item.member : '';
-      const score = item.score;
+      const username = typeof item.member === 'string' ? item.member : '';
 
       try {
         // Get score details
-        const scoreData = await context.redis.hGetAll(`score:${gameId}:${userId}`);
+        const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
 
         if (!scoreData || Object.keys(scoreData).length === 0) {
           continue;
         }
 
-        // Get username if possible
-        let username = 'Anonymous';
-        try {
-          if (userId.startsWith('t2_')) {
-            const user = await context.reddit.getUserById(userId);
-            if (user) {
-              username = user.username;
-            }
-          }
-        } catch (userError) {
-          console.error('❌ [DEBUG] Error fetching user details:', userError);
-        }
-
         leaderboard.push({
           rank: i + 1,
-          userId,
-          username,
-          gameId,
-          score: Number(scoreData.score || score),
+          username: username,
+          score: Number(scoreData.score || item.score),
           gifPenalty: Number(scoreData.gifPenalty || 0),
           wordPenalty: Number(scoreData.wordPenalty || 0),
           timeTaken: Number(scoreData.timeTaken || 0),
           timestamp: Number(scoreData.timestamp || 0),
         });
       } catch (entryError) {
-        console.error(`❌ [DEBUG] Error processing leaderboard entry for ${userId}:`, entryError);
+        console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
       }
     }
 
@@ -217,9 +181,9 @@ export async function getGlobalLeaderboard(
     console.log('🔍 [DEBUG] getGlobalLeaderboard called with params:', params);
     const { limit = 10 } = params;
 
-    // Get top scores from global leaderboard (highest scores first)
+    // Get top scores from global leaderboard
     const leaderboardItems = await context.redis.zRange('globalLeaderboard', 0, limit - 1, {
-      reverse: true, // High scores first
+      reverse: true,
       by: 'rank',
     });
 
@@ -227,58 +191,29 @@ export async function getGlobalLeaderboard(
       return { success: true, leaderboard: [] };
     }
 
-    // Build leaderboard with user details
     const leaderboard: LeaderboardEntry[] = [];
 
     for (let i = 0; i < leaderboardItems.length; i++) {
       const item = leaderboardItems[i];
       const combinedId = typeof item.member === 'string' ? item.member : '';
-      const score = item.score;
+      const [gameId, username] = combinedId.split(':');
 
-      // Split the combined ID into gameId and userId
-      const [gameId, userId] = combinedId.split(':');
-
-      if (!gameId || !userId) {
-        continue;
-      }
+      if (!gameId || !username) continue;
 
       try {
-        // Get score details
-        const scoreData = await context.redis.hGetAll(`score:${gameId}:${userId}`);
-
-        if (!scoreData || Object.keys(scoreData).length === 0) {
-          continue;
-        }
-
-        // Get username if possible
-        let username = 'Anonymous';
-        try {
-          if (userId.startsWith('t2_')) {
-            const user = await context.reddit.getUserById(userId);
-            if (user) {
-              username = user.username;
-            }
-          }
-        } catch (userError) {
-          console.error('❌ [DEBUG] Error fetching user details:', userError);
-        }
+        const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
 
         leaderboard.push({
           rank: i + 1,
-          userId,
-          username,
-          gameId,
-          score: Number(scoreData.score || score),
+          username: username,
+          score: Number(scoreData.score || item.score),
           gifPenalty: Number(scoreData.gifPenalty || 0),
           wordPenalty: Number(scoreData.wordPenalty || 0),
           timeTaken: Number(scoreData.timeTaken || 0),
           timestamp: Number(scoreData.timestamp || 0),
         });
       } catch (entryError) {
-        console.error(
-          `❌ [DEBUG] Error processing leaderboard entry for ${combinedId}:`,
-          entryError
-        );
+        console.error(`❌ [DEBUG] Error processing entry ${combinedId}:`, entryError);
       }
     }
 
@@ -293,15 +228,15 @@ export async function getGlobalLeaderboard(
  * Get user's scores from Redis
  */
 export async function getUserScores(
-  params: { userId: string; limit?: number },
+  params: { username: string; limit?: number },
   context: Context
 ): Promise<{ success: boolean; scores?: ScoreData[]; error?: string }> {
   try {
     console.log('🔍 [DEBUG] getUserScores called with params:', params);
-    const { userId, limit = 10 } = params;
+    const { username, limit = 10 } = params;
 
     // Get user's scores (highest scores first)
-    const scoreItems = await context.redis.zRange(`user:${userId}:scores`, 0, limit - 1, {
+    const scoreItems = await context.redis.zRange(`user:${username}:scores`, 0, limit - 1, {
       reverse: true, // High scores first
       by: 'rank',
     });
@@ -318,14 +253,14 @@ export async function getUserScores(
       const score = item.score;
 
       // Get score details
-      const scoreData = await context.redis.hGetAll(`score:${gameId}:${userId}`);
+      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
 
       if (!scoreData || Object.keys(scoreData).length === 0) {
         continue;
       }
 
       scores.push({
-        userId,
+        username,
         gameId,
         score: Number(scoreData.score || score),
         gifPenalty: Number(scoreData.gifPenalty || 0),

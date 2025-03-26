@@ -15,11 +15,11 @@
     "start": "devvit dev"
   },
   "dependencies": {
-    "@devvit/public-api": "0.11.10",
+    "@devvit/public-api": "0.11.11",
     "@google/generative-ai": "^0.24.0",
     "axios": "^1.8.3",
     "clsx": "^2.1.1",
-    "devvit": "^0.11.10",
+    "devvit": "^0.11.11",
     "framer-motion": "^12.5.0",
     "gif-enigma": "file:",
     "gif-test01": "file:",

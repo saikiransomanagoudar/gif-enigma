@@ -29,69 +29,93 @@ export {
 };
 
 export async function getRandomGame(
-  params: { excludeIds?: string[]; preferUserCreated?: boolean },
+  params: { excludeIds?: string[]; preferUserCreated?: boolean, username?: string; },
   context: any
 ) {
   try {
     console.log('🔍 [DEBUG] getRandomGame called with params:', params);
-    const { excludeIds = [], preferUserCreated = true } = params;
+    const { excludeIds = [], preferUserCreated = true, username } = params;
 
+    // Get user's completed games from Redis if username is provided
+    let completedGames: string[] = [];
+    if (username) {
+      completedGames = await context.redis.sMembers(`user:${username}:completedGames`);
+      console.log('🔍 [DEBUG] User completed games:', completedGames);
+    }
+
+    // Combine client-side exclusions with server-side completed games
+    const allExcluded = [...new Set([...excludeIds, ...completedGames])];
+    console.log('🔍 [DEBUG] All excluded game IDs:', allExcluded);
+
+    // Get all active games sorted by score (newest first)
     const gameMembers = await context.redis.zRange('activeGames', '-inf', '+inf', {
       by: 'score',
+      reverse: true, // Get newest games first
     });
 
-    console.log('🔍 [DEBUG] Found games in activeGames:', gameMembers);
-
-    let availableGameIds = gameMembers
-      .map((item: { member: any }) => (typeof item === 'string' ? item : item.member))
-      .filter((id: string) => !excludeIds.includes(id));
-
-    if (availableGameIds.length === 0) {
-      console.error('❌ [DEBUG] No games available after exclusion');
-      return {
-        success: false,
-        error: 'No games available after exclusion',
-        requestedUserCreated: preferUserCreated,
-      };
-    }
+    console.log('🔍 [DEBUG] Found games in activeGames:', gameMembers.length);
 
     let userCreatedGameIds: string[] = [];
     let scheduledGameIds: string[] = [];
 
-    if (preferUserCreated) {
-      for (const gameId of availableGameIds) {
-        const gameData = await context.redis.hGetAll(`game:${gameId}`);
-        if (
-          gameData &&
-          gameData.creatorId &&
-          gameData.creatorId !== 'anonymous' &&
-          gameData.creatorId !== 'system'
-        ) {
+    for (const item of gameMembers) {
+      const gameId = typeof item === 'string' ? item : item.member;
+      
+      // Skip excluded games
+      if (allExcluded.includes(gameId)) {
+        continue;
+      }
+
+      // Get game data
+      const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      
+      // Check if game has valid GIFs
+      let hasValidGifs = false;
+      if (gameData?.gifs) {
+        try {
+          const gifs = JSON.parse(gameData.gifs);
+          hasValidGifs = Array.isArray(gifs) && gifs.length > 0;
+        } catch (e) {
+          console.error(`Error parsing gifs for game ${gameId}:`, e);
+        }
+      }
+      
+      if (hasValidGifs) {
+        if (gameData.creatorId && 
+            gameData.creatorId !== 'anonymous' && 
+            gameData.creatorId !== 'system') {
           userCreatedGameIds.push(gameId);
         } else {
           scheduledGameIds.push(gameId);
         }
       }
-
-      console.log('✅ [DEBUG] Found user-created games:', userCreatedGameIds.length);
-      console.log('✅ [DEBUG] Found scheduled games:', scheduledGameIds.length);
-
-      // Prioritize user-created games if requested
-      if (preferUserCreated && userCreatedGameIds.length > 0) {
-        availableGameIds = userCreatedGameIds;
-      } else if (userCreatedGameIds.length === 0 && scheduledGameIds.length > 0) {
-        // If no user-created games but we have scheduled games
-        availableGameIds = scheduledGameIds;
-      }
     }
 
-    // Pick a random game ID
-    const randomIndex = Math.floor(Math.random() * availableGameIds.length);
-    const randomGameId = availableGameIds[randomIndex];
+    console.log('✅ [DEBUG] User-created games available:', userCreatedGameIds.length);
+    console.log('✅ [DEBUG] Scheduled games available:', scheduledGameIds.length);
 
+    // Determine which pool to select from
+    let candidatePool: string[] = [];
+    if (preferUserCreated && userCreatedGameIds.length > 0) {
+      candidatePool = userCreatedGameIds;
+    } else if (scheduledGameIds.length > 0) {
+      candidatePool = scheduledGameIds;
+    }
+
+    if (candidatePool.length === 0) {
+      console.error('❌ [DEBUG] No valid games available');
+      return {
+        success: false,
+        error: 'No valid games available',
+        requestedUserCreated: preferUserCreated,
+      };
+    }
+
+    // Weighted random selection - newer games have higher chance
+    const randomGameId = weightedRandomSelect(candidatePool);
     console.log('✅ [DEBUG] Selected random game:', randomGameId);
 
-    // Get the game data
+    // Get the full game data
     const gameResult = await getGame({ gameId: randomGameId }, context);
 
     return gameResult;
@@ -101,49 +125,30 @@ export async function getRandomGame(
   }
 }
 
-// export async function purgeLegacyGames(context: Context) {
-//   const BATCH_SIZE = 100;
-//   let cursor = 0;
-//   let deletedCount = 0;
-//   let processed = 0;
+// Helper function for weighted random selection (newer games have higher chance)
+function weightedRandomSelect(gameIds: string[]): string {
+  if (gameIds.length === 0) return '';
+  if (gameIds.length === 1) return gameIds[0];
 
-//   do {
-//     const scanResponse = await context.redis.hScan("game_registry", cursor, `COUNT ${BATCH_SIZE} MATCH game_*`);
-//     cursor = scanResponse.cursor;
-//     const gameIds = scanResponse.fieldValues.map(fv => fv.field);
-    
-//     for (const gameId of gameIds) {
-//       processed++;
-//       const gameKey = `game:${gameId}`;
-      
-//       // Get game data
-//       const gameDataStr = await context.redis.get(gameKey);
-      
-//       if (gameDataStr) {
-//         try {
-//           const gameData = JSON.parse(gameDataStr);
-//           if (gameData?.gifs?.some((url: string) => url.includes('media.tenor.com'))) {
-//             // Start a transaction for deletion
-//             const txn = await context.redis.watch(gameKey, "game_registry");
-//             await txn.multi();
-//             await txn.del(gameKey);
-//             await txn.hDel("game_registry", [gameId]);
-//             await txn.exec();
-//             deletedCount++;
-//           }
-//         } catch (e) {
-//           console.log(`Error parsing game data for ${gameKey}: ${e}`);
-//         }
-//       }
-//     }
-//   } while (cursor !== 0);
+  // Simple linear weighting - earlier indices (newer games) have higher weight
+  const weights = gameIds.map((_, index) => gameIds.length - index);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const random = Math.random() * totalWeight;
 
-//   return { deleted: deletedCount, processed };
-// }
+  let weightSum = 0;
+  for (let i = 0; i < gameIds.length; i++) {
+    weightSum += weights[i];
+    if (random <= weightSum) {
+      return gameIds[i];
+    }
+  }
+
+  return gameIds[gameIds.length - 1]; // fallback
+}
 
 export async function saveGameState(
   params: {
-    userId: string;
+    username: string;
     gameId: string;
     gifHintCount?: number;
     revealedLetters?: number[];
@@ -160,9 +165,9 @@ export async function saveGameState(
 ) {
   try {
     console.log('🔍 [DEBUG] saveGameState called with params:', params);
-    const { userId, gameId, playerState } = params;
+    const { username, gameId, playerState } = params;
 
-    if (!userId || !gameId) {
+    if (!username || !gameId) {
       return { success: false, error: 'User ID and Game ID are required' };
     }
 
@@ -186,7 +191,7 @@ export async function saveGameState(
     }
 
     // Save state in Redis
-    await context.redis.hSet(`gameState:${gameId}:${userId}`, {
+    await context.redis.hSet(`gameState:${gameId}:${username}`, {
       gifHintCount: gifHintCount?.toString() || '1',
       revealedLetters: JSON.stringify(revealedLetters || []),
       guess: guess || '',
@@ -201,17 +206,17 @@ export async function saveGameState(
   }
 }
 
-export async function getGameState(params: { userId: string; gameId: string }, context: any) {
+export async function getGameState(params: { username: string; gameId: string }, context: any) {
   try {
     console.log('🔍 [DEBUG] getGameState called with params:', params);
-    const { userId, gameId } = params;
+    const { username, gameId } = params;
 
-    if (!userId || !gameId) {
+    if (!username || !gameId) {
       return { success: false, error: 'User ID and Game ID are required' };
     }
 
     // Get state from Redis
-    const state = await context.redis.hGetAll(`gameState:${gameId}:${userId}`);
+    const state = await context.redis.hGetAll(`gameState:${gameId}:${username}`);
 
     if (!state || Object.keys(state).length === 0) {
       return { success: false, cached: false };

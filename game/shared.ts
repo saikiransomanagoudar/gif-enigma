@@ -1,5 +1,4 @@
-import { GameData } from './lib/types';
-export type Page = 'home' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'category';
+import { GameData, Page } from './lib/types';
 
 // export interface GetRecentGamesResultMessage {
 //   type: 'GET_RECENT_GAMES_RESULT';
@@ -31,6 +30,11 @@ export type WebviewToBlockMessage =
         guess: string;
       };
     }
+  | {
+      type: 'NAVIGATION';
+      page: Page;
+      gameId?: string;
+    }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
   | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
@@ -58,25 +62,12 @@ export type WebviewToBlockMessage =
         postToSubreddit?: boolean;
       };
     }
-  // | {
-  //     type: 'GET_RECENT_GAMES';
-  //     data?: {
-  //       limit?: number;
-  //     };
-  //   }
   | {
       type: 'GET_GAME';
       data: {
         gameId: string;
       };
     }
-  // | {
-  //     type: 'UPLOAD_TENOR_GIF';
-  //     data: {
-  //       tenorGifUrl: string;
-  //       gifId: string;
-  //     };
-  //   };
   | { type: 'CACHE_GIF_RESULTS'; data: { query: string; results: any[] } }
   | { type: 'GET_CACHED_GIF_RESULTS'; data: { query: string } }
   | { type: 'GET_PLAYABLE_GAME' }
@@ -104,7 +95,7 @@ export type WebviewToBlockMessage =
   | {
       type: 'SAVE_SCORE';
       data: {
-        userId: string;
+        username: string;
         gameId: string;
         score: number;
         gifPenalty: number;
@@ -114,7 +105,6 @@ export type WebviewToBlockMessage =
       };
     }
   | { type: 'GET_GAME_LEADERBOARD'; data: { gameId: string; limit?: number } }
-  // | { type: 'PURGE_LEGACY_GAMES' }
   | {
       type: 'GET_GAME_PREVIEW_DATA';
       data: {
@@ -148,13 +138,18 @@ export type WebviewToBlockMessage =
     }
   | {
       type: 'GET_GAME_PREVIEW';
-    };
+    }
+  | {
+    type: 'MARK_GAME_COMPLETED';
+    success: boolean;
+  };
 
 export type BlocksToWebviewMessage =
   | {
       type: 'INIT_RESPONSE';
       data: {
         postId: string;
+        desiredPage?: Page;
       };
     }
   | {
@@ -311,12 +306,6 @@ export type BlocksToWebviewMessage =
       };
       error?: string;
     }
-  // | {
-  //     type: 'PURGE_LEGACY_GAMES_RESULT';
-  //     success: boolean;
-  //     deleted?: number;
-  //     error?: string;
-  //   }
   | {
       type: 'GAME_PREVIEW_DATA_RESULT';
       success: boolean;
@@ -342,9 +331,14 @@ export type BlocksToWebviewMessage =
       error?: string;
     }
   | {
+      type: 'NAVIGATION';
+      page: Page;
+      gameId?: string;
+    }
+  | {
       type: 'NAVIGATION_RESULT';
       success: boolean;
-      page?: Page;  
+      page?: Page;
       gameId?: string;
       error?: string;
     }
@@ -356,6 +350,11 @@ export type BlocksToWebviewMessage =
         maskedWord?: string;
         gifs?: string[];
       };
+      error?: string;
+    }
+  | {
+      type: 'MARK_GAME_COMPLETED_RESULT';
+      success: boolean;
       error?: string;
     };
 
