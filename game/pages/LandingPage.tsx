@@ -47,6 +47,37 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  // Listen for the game response
+  const handleGameResponse = (event: MessageEvent) => {
+    let message = event.data;
+
+    // Unwrap if message is in a devvit envelope
+    if (message && message.type === 'devvit-message' && message.data?.message) {
+      message = message.data.message;
+    }
+
+    if (message.type === 'GET_RANDOM_GAME_RESULT') {
+      setIsLoading(false);
+      window.removeEventListener('message', handleGameResponse);
+
+      // The game data could be nested in different ways based on your logs
+      const gameData =
+        message.game || (message.result && (message.result.game || message.result));
+
+      if (message.success && gameData && gameData.id) {
+        console.log('Random game loaded:', gameData.id);
+        // Navigate to game page with the loaded game
+        onNavigate('game', { gameId: gameData.id });
+      } else {
+        console.error('Failed to load random game:', message.error);
+        // Don't navigate on error, just show a message
+        alert('Could not find a game to play. Please try again later.');
+      }
+    }
+  };
+
+  window.addEventListener('message', handleGameResponse);
+
   const handlePlayClick = () => {
     setIsLoading(true);
 
@@ -62,6 +93,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     }
 
     // Request a random game, preferring user-created ones
+    window.addEventListener('message', handleGameResponse);
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
@@ -72,37 +104,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       },
       '*'
     );
-
-    // Listen for the game response
-    const handleGameResponse = (event: MessageEvent) => {
-      let message = event.data;
-
-      // Unwrap if message is in a devvit envelope
-      if (message && message.type === 'devvit-message' && message.data?.message) {
-        message = message.data.message;
-      }
-
-      if (message.type === 'GET_RANDOM_GAME_RESULT') {
-        setIsLoading(false);
-        window.removeEventListener('message', handleGameResponse);
-
-        // The game data could be nested in different ways based on your logs
-        const gameData =
-          message.game || (message.result && (message.result.game || message.result));
-
-        if (message.success && gameData && gameData.id) {
-          console.log('Random game loaded:', gameData.id);
-          // Navigate to game page with the loaded game
-          onNavigate('game', { gameId: gameData.id });
-        } else {
-          console.error('Failed to load random game:', message.error);
-          // Don't navigate on error, just show a message
-          alert('Could not find a game to play. Please try again later.');
-        }
-      }
-    };
-
-    window.addEventListener('message', handleGameResponse);
 
     // Clean up the event listener after a timeout
     setTimeout(() => {

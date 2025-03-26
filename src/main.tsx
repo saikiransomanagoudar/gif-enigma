@@ -1,7 +1,14 @@
 import { Devvit, Context, useWebView, useState, useAsync } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
-import { saveGame, getUserGames, getGame } from '../game/server/gameHandler.server.js';
+import {
+  saveGame,
+  getUserGames,
+  getGame,
+  getGameState,
+  saveGameState,
+  getRandomGame,
+} from '../game/server/gameHandler.server.js';
 import { Page } from '../game/lib/types.js';
 import {
   fetchGeminiRecommendations,
@@ -9,6 +16,13 @@ import {
 } from '../game/server/geminiApi.server.js';
 import { CustomPostPreview } from './components/CustomPostPreview.js';
 import { GamePostPreview } from './components/GamePostPreview.js';
+import {
+  saveScore,
+  getGameLeaderboard,
+  getGlobalLeaderboard,
+  getUserScores,
+  calculateScore,
+} from '../game/server/scoringService.js';
 
 Devvit.addSettings([
   {
@@ -90,50 +104,9 @@ Devvit.addCustomPostType({
       return { page: null };
     };
 
-    const {
-      data: username,
-      loading,
-      error,
-    } = useAsync(async () => {
+    const { data: username } = useAsync(async () => {
       return (await context.reddit.getCurrentUsername()) ?? null;
     });
-
-    const {
-      data: randomGame,
-      loading: gameLoading,
-      error: gameError,
-    } = useAsync(
-      async () => {
-        // Get previously played game IDs from navState or a default empty array
-        let excludeIds: string[] = [];
-        try {
-          const navStateKey = `navState:${context.postId || 'default'}`;
-          const userGameData = await context.redis.hGetAll(`userGames:${username || 'anonymous'}`);
-          if (userGameData && userGameData.playedGames) {
-            excludeIds = JSON.parse(userGameData.playedGames);
-          }
-        } catch (err) {
-          console.error('[DEBUG] Error getting played games:', err);
-        }
-
-        // Import and call getRandomGame
-        const { getRandomGame } = await import('../game/server/gameHandler.server.js');
-        const result = await getRandomGame(
-          {
-            excludeIds,
-            preferUserCreated: true,
-            username: username || undefined,
-          },
-          context
-        );
-
-        return result;
-      },
-      {
-        // Re-run when username changes or post ID changes
-        depends: [username, context.postId || 'default'],
-      }
-    );
 
     const {
       data: randomGameData,
@@ -142,9 +115,6 @@ Devvit.addCustomPostType({
     } = useAsync(
       async () => {
         try {
-          // Do any necessary data retrieval
-          const { getRandomGame } = await import('../game/server/gameHandler.server.js');
-          // Use a default empty array for excludeIds if none is provided
           const result = await getRandomGame(
             {
               excludeIds: [],
@@ -178,11 +148,7 @@ Devvit.addCustomPostType({
       }
     );
 
-    const {
-      data: navigationState,
-      loading: navLoading,
-      error: navError,
-    } = useAsync(
+    const { data: navigationState } = useAsync(
       async () => {
         console.log('[DEBUG-STORAGE] Retrieving navigation state with useAsync');
 
@@ -222,6 +188,22 @@ Devvit.addCustomPostType({
       },
       {
         depends: [navigationState],
+      }
+    );
+
+    const { data: gameData, loading: gameDataLoading, error: gameDataError } = useAsync(
+      async () => {
+        let gameId = '';
+        const result = await getGame(
+          {
+            gameId: gameId,
+          },
+          context
+        );
+        return result;
+      },
+      {
+        depends: [],
       }
     );
 
@@ -385,20 +367,6 @@ Devvit.addCustomPostType({
             postMessage(initResponse);
             break;
 
-          case 'GAME_DATA':
-            const { maskedWord, gifs } = event.data;
-            await context.redis.hSet(`gamePreview:${context.postId}`, {
-              maskedWord,
-              gifs: JSON.stringify(gifs),
-            });
-
-            postMessage({
-              type: 'GAME_DATA_RESULT',
-              success: true,
-              data: { maskedWord, gifs },
-            });
-            break;
-
           case 'GET_CURRENT_USER':
             try {
               if (username) {
@@ -489,7 +457,6 @@ Devvit.addCustomPostType({
           case 'CALCULATE_SCORE':
             try {
               console.log('Calculating score:', event.data);
-              const { calculateScore } = await import('../game/server/scoringService.js');
               const scoreResult = {
                 ...calculateScore(event.data),
                 username: event.data.username,
@@ -513,7 +480,7 @@ Devvit.addCustomPostType({
           case 'SAVE_SCORE':
             try {
               console.log('💾 [DEBUG] Saving score with data:', event.data);
-              const { saveScore } = await import('../game/server/scoringService.js');
+
               const result = await saveScore(event.data, context);
 
               postMessage({
@@ -534,7 +501,6 @@ Devvit.addCustomPostType({
           case 'GET_GAME_LEADERBOARD':
             try {
               console.log('Getting game leaderboard for:', event.data.gameId);
-              const { getGameLeaderboard } = await import('../game/server/scoringService.js');
               const result = await getGameLeaderboard(event.data, context);
 
               postMessage({
@@ -556,7 +522,6 @@ Devvit.addCustomPostType({
           case 'SAVE_GAME_STATE':
             try {
               console.log('Saving game state:', event.data);
-              const { saveGameState } = await import('../game/server/gameHandler.server.js');
               const result = await saveGameState(event.data, context);
 
               postMessage({
@@ -577,19 +542,37 @@ Devvit.addCustomPostType({
           case 'GET_GAME':
             try {
               console.log('Getting game:', event.data.gameId);
-              const result = await getGame(
-                {
-                  gameId: event.data.gameId,
-                },
-                context
-              );
-
-              postMessage({
-                type: 'GET_GAME_RESULT',
-                success: result.success,
-                game: result.game,
-                error: result.error || undefined,
-              });
+              
+              if (gameDataLoading) {
+                postMessage({
+                  type: 'GET_GAME_RESULT',
+                  success: false,
+                  error: 'Game data is still loading',
+                });
+                return;
+              }
+              if (gameDataError) {
+                postMessage({
+                  type: 'GET_GAME_RESULT',
+                  success: false,
+                  error: String(gameDataError),
+                });
+                return;
+              }
+              if (gameData && gameData.success && gameData.game) {
+                postMessage({
+                  type: 'GET_GAME_RESULT',
+                  success: gameData.success,
+                  game: gameData.game,
+                });
+              }
+              else {
+                postMessage({
+                  type: 'GET_GAME_RESULT',
+                  success: false,
+                  error: gameData?.error || 'No game found',
+                });
+              }
             } catch (error) {
               console.error('Error getting game:', error);
               postMessage({
@@ -603,7 +586,6 @@ Devvit.addCustomPostType({
           case 'GET_GAME_STATE':
             try {
               console.log('Getting game state:', event.data);
-              const { getGameState } = await import('../game/server/gameHandler.server.js');
               const result = await getGameState(event.data, context);
 
               postMessage({

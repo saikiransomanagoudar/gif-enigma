@@ -26,7 +26,9 @@ export async function getRecommendations(
     const { category, inputType, count = 50 } = params;
 
     // Add debug log
-    console.log(`[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`);
+    console.log(
+      `[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`
+    );
 
     const apiKey = await context.settings.get('gemini-api-key');
 
@@ -44,26 +46,26 @@ export async function getRecommendations(
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
     const prompt =
-    inputType === 'word'
-    ? `Generate ${count} single words related to ${category}. ${
-        category === 'Movies'
-          ? 'Include film titles, characters, and quotes, and inspirational movie quotes.'
-          : category === 'Gaming'
-          ? 'Include games, characters, and gaming terms, and inspirational gaming quotes.'
-          : category === 'Books'
-          ? 'Include titles, authors, characters, and quotes, and inspirational quotes.'
-          : 'Topics include anything and everything, and also inspirational..'
-      } All words must be at least 5 characters long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`
-    : `Generate ${count} phrases (each with a minimum of two words) related to ${category}. ${
-        category === 'Movies'
-          ? 'Include film titles, characters, and quotes, and also inspirational movie quotes.'
-          : category === 'Gaming'
-          ? 'Include games, characters, and gaming terms, and also inspirational gaming quotes.'
-          : category === 'Books'
-          ? 'Include titles, authors, characters, quotes, inspirational quotes.'
-          : 'Topics include anything and everything, and also inspirational.'
-      } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`;
-  
+      inputType === 'word'
+        ? `Generate ${count} single words related to ${category}. ${
+            category === 'Movies'
+              ? 'Include film titles, characters, and quotes, and inspirational movie quotes.'
+              : category === 'Gaming'
+                ? 'Include games, characters, and gaming terms, and inspirational gaming quotes.'
+                : category === 'Books'
+                  ? 'Include titles, authors, characters, and quotes, and inspirational quotes.'
+                  : 'Topics include anything and everything, and also inspirational..'
+          } All words must be at least 5 characters long and safe for all audiences (not NSFW). Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["word1", "word2", "word3"]`
+        : `Generate ${count} phrases (each with a minimum of two words) related to ${category}. ${
+            category === 'Movies'
+              ? 'Include film titles, characters, and quotes, and also inspirational movie quotes.'
+              : category === 'Gaming'
+                ? 'Include games, characters, and gaming terms, and also inspirational gaming quotes.'
+                : category === 'Books'
+                  ? 'Include titles, authors, characters, quotes, inspirational quotes.'
+                  : 'Topics include anything and everything, and also inspirational.'
+          } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["phrase1", "phrase2", "phrase3"]`;
+
     console.log(`[DEBUG] Prompt: ${prompt.substring(0, 100)}...`);
 
     const requestBody = {
@@ -85,7 +87,7 @@ export async function getRecommendations(
     };
 
     console.log('[DEBUG] Sending request to Gemini API');
-    
+
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -120,35 +122,69 @@ export async function getRecommendations(
         textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
         hasError: !!data.error,
       };
-      
+
       console.log('[DEBUG] Response structure:', JSON.stringify(responseStructure));
 
       // Attempt to parse the text from data.candidates[0].content.parts[0].text
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
+        console.log('[DEBUG] Raw API response text:', text); // Added logging
+
+        let sanitizedText = text;
+
+        let recommendations = [];
+        let parseSuccessful = false;
+
+        // First parse attempt
         try {
-          console.log(`[DEBUG] Attempting to parse response text: ${text.substring(0, 100)}...`);
-          const recommendations = JSON.parse(text);
-          
-          if (Array.isArray(recommendations) && recommendations.length > 0) {
-            console.log(`[DEBUG] Successfully parsed ${recommendations.length} recommendations`);
-            return { 
-              success: true, 
-              recommendations,
-              debug: { responseStructure } 
-            };
-          } else {
-            console.error('[ERROR] Parsed response is not a valid array or is empty');
+          console.log('[DEBUG] Attempting to parse sanitized text:', sanitizedText);
+          recommendations = JSON.parse(sanitizedText);
+          parseSuccessful = Array.isArray(recommendations);
+        } catch (primaryError) {
+          console.log('[DEBUG] Primary parse failed, attempting fallback');
+        }
+
+        if (!parseSuccessful) {
+          // Look for anything that looks like a JSON array
+          const arrayMatch = text.match(/\[\s*(['"][^'"]*['"](\s*,\s*['"][^'"]*['"])*)\s*\]/s);
+          if (arrayMatch) {
+            try {
+              const extractedArray = `[${arrayMatch[1]}]`;
+              console.log('[DEBUG] Extracted array text:', extractedArray);
+              recommendations = JSON.parse(extractedArray);
+              parseSuccessful = Array.isArray(recommendations);
+            } catch (fallbackError) {
+              console.error('[ERROR] Fallback parse failed:', fallbackError);
+            }
           }
-        } catch (parseError) {
-          console.error('[ERROR] Error parsing Gemini response:', parseError);
-          console.log('[DEBUG] Raw text that failed to parse:', text);
+
+          // One more fallback - try to manually build the array
+          if (!parseSuccessful) {
+            try {
+              // Extract anything that looks like a quoted string
+              const itemMatches = text.match(/['"]([^'"]+)['"]/g);
+              if (itemMatches && itemMatches.length > 0) {
+                recommendations = itemMatches.map((m) => m.replace(/['"]/g, ''));
+                parseSuccessful = true;
+                console.log('[DEBUG] Manual array extraction successful:', recommendations);
+              }
+            } catch (manualError) {
+              console.error('[ERROR] Manual extraction failed:', manualError);
+            }
+          }
+        }
+
+        if (parseSuccessful && recommendations.length > 0) {
+          // Validate array contents
+          const validItems = recommendations.filter((item: any) => typeof item === 'string');
+          console.log(`[DEBUG] Found ${validItems.length} valid recommendations`);
           return {
-            success: false,
-            error: `Parse error: ${String(parseError)}`,
-            recommendations: getDefaultRecommendations(category, inputType),
-            debug: { parseError: String(parseError), rawText: text },
+            success: true,
+            recommendations: validItems,
+            debug: { responseStructure },
           };
+        } else {
+          console.error('[ERROR] Final parsed array invalid');
         }
       } else {
         console.error('[ERROR] No text found in Gemini response');
@@ -189,7 +225,7 @@ export async function getSynonyms(
 
   try {
     console.log(`[DEBUG] Getting synonyms for word: ${word}`);
-    
+
     // Get the API key from Devvit settings
     const apiKey = await context.settings.get('gemini-api-key');
 
@@ -211,7 +247,7 @@ export async function getSynonyms(
 2. Second set: Somewhat related but still indirect terms (3 terms)
 3. Third set: More direct and closer to the word (3 terms)
 4. Fourth set: Very specific and direct terms (3 terms)
-Return only as a JSON array of arrays with no explanation.`;
+Return ONLY a valid JSON array of strings with no additional text, formatting, or explanations. Example: ['item1','item2','item3']`;
 
     console.log(`[DEBUG] Synonyms prompt: ${prompt.substring(0, 100)}...`);
 
@@ -234,7 +270,7 @@ Return only as a JSON array of arrays with no explanation.`;
     };
 
     console.log('[DEBUG] Sending synonyms request to Gemini API');
-    
+
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -269,7 +305,7 @@ Return only as a JSON array of arrays with no explanation.`;
         textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
         hasError: !!data.error,
       };
-      
+
       console.log('[DEBUG] Synonyms response structure:', JSON.stringify(responseStructure));
 
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -277,13 +313,13 @@ Return only as a JSON array of arrays with no explanation.`;
         try {
           console.log(`[DEBUG] Attempting to parse synonyms text: ${text.substring(0, 100)}...`);
           const synonyms = JSON.parse(text);
-          
+
           if (Array.isArray(synonyms) && synonyms.length > 0) {
             console.log(`[DEBUG] Successfully parsed ${synonyms.length} synonym groups`);
-            return { 
-              success: true, 
+            return {
+              success: true,
               synonyms,
-              debug: { responseStructure } 
+              debug: { responseStructure },
             };
           } else {
             console.error('[ERROR] Parsed synonyms response is not a valid array or is empty');
@@ -476,7 +512,7 @@ function getDefaultSynonyms(word: string): string[][] {
       ['identity', 'persona', 'character'],
       ['blue', 'alien', 'pandora'],
       ['james cameron', 'science fiction', 'movie'],
-      ['film character', 'blue avatar', 'na\'vi'],
+      ['film character', 'blue avatar', "na'vi"],
     ],
     'titanic': [
       ['large', 'massive', 'enormous'],

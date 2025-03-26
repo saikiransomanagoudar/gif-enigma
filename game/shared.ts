@@ -113,13 +113,6 @@ export type WebviewToBlockMessage =
       };
     }
   | {
-      type: 'GAME_DATA';
-      data: {
-        maskedWord: string;
-        gifs: string[];
-      };
-    }
-  | {
       type: 'UPDATE_POST_PREVIEW';
       data: {
         postId: string;
@@ -316,15 +309,6 @@ export type BlocksToWebviewMessage =
     }
   | {
       type: 'GAME_PREVIEW_DATA_RESULT';
-      success: boolean;
-      data?: {
-        maskedWord: string;
-        gifs: string[];
-      };
-      error?: string;
-    }
-  | {
-      type: 'GAME_DATA_RESULT';
       success: boolean;
       data?: {
         maskedWord: string;

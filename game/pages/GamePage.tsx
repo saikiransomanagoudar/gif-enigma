@@ -109,13 +109,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         if (gameIdRef.current) {
           console.log('Using gameId from props:', gameIdRef.current);
           setGameId(gameIdRef.current);
-          window.parent.postMessage({ type: 'GET_GAME', data: { gameId: gameIdRef.current } }, '*');
+          window.parent.postMessage({ type: 'GET_GAME_ID', data: { gameId: gameIdRef.current } }, '*');
         } else if (actualMessage.data?.gameId) {
           // Only proceed if propGameId wasn't already set
           console.log('Using gameId from INIT_RESPONSE:', actualMessage.data.gameId);
           setGameId(actualMessage.data.gameId);
           window.parent.postMessage(
-            { type: 'GET_GAME', data: { gameId: actualMessage.data.gameId } },
+            { type: 'GET_GAME_ID', data: { gameId: actualMessage.data.gameId } },
             '*'
           );
         } else {
@@ -124,11 +124,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
 
       // Handle game data loading
-      if (actualMessage.type === 'GET_GAME_RESULT') {
-        console.log('GET_GAME_RESULT received:', actualMessage);
+      if (actualMessage.type === 'GET_GAME_ID_RESULT') {
+        console.log('GET_GAME_ID_RESULT received:', actualMessage);
         setIsLoading(false);
 
-        if (actualMessage.success && actualMessage.game) {
+        if (actualMessage.success && actualMessage.id) {
           const loadedGameData = actualMessage.game;
           setGameData(loadedGameData);
           setGameFlowState('playing');

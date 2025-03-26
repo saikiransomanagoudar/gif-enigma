@@ -292,45 +292,47 @@ function App() {
             }
             break;
 
-            case 'devvit-message':
-              console.log('[DEBUG-DETAIL] App.tsx: Found nested devvit-message:', message);
-            
-              // Check if there's a message property inside the data
-              if (message.data && message.data.message) {
+          case 'devvit-message':
+            console.log('[DEBUG-DETAIL] App.tsx: Found nested devvit-message:', message);
+
+            // Check if there's a message property inside the data
+            if (message.data && message.data.message) {
+              console.log(
+                '[DEBUG-DETAIL] App.tsx: Found nested message inside data:',
+                message.data.message
+              );
+
+              // Check for a game command specifically in the nested message
+              if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
                 console.log(
-                  '[DEBUG-DETAIL] App.tsx: Found nested message inside data:',
-                  message.data.message
+                  '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
+                  message.data.message.game
                 );
-            
-                // Check for a game command specifically in the nested message
-                if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
+                if (message.data.message.game && message.data.message.game.id) {
                   console.log(
-                    '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
-                    message.data.message.game
+                    '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
+                    message.data.message.game.id
                   );
-                  if (message.data.message.game && message.data.message.game.id) {
-                    console.log(
-                      '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
-                      message.data.message.game.id
-                    );
-                    setGameId(message.data.message.game.id);
-                  }
+                  setGameId(message.data.message.game.id);
+                  setCurrentPage('game'); // MOVE THIS INSIDE THE IF BLOCK
                 }
-            
-                // Process the nested message
-                handleUnwrappedMessage(message.data.message);
               }
-              // Also check for direct navigation data in the message
-              else if (message.data && message.data.page && message.data.gameId) {
-                console.log(
-                  '[DEBUG-CRITICAL] App.tsx: Found page and gameId in devvit-message data:',
-                  message.data.page, message.data.gameId
-                );
-                setGameId(message.data.gameId);
-                // Only set to the specific page mentioned in the message
-                setCurrentPage(message.data.page);
-              }
-              break;
+
+              // Process the nested message
+              handleUnwrappedMessage(message.data.message);
+            }
+            // Also check for direct navigation data in the message
+            else if (message.data && message.data.page && message.data.gameId) {
+              console.log(
+                '[DEBUG-CRITICAL] App.tsx: Found page and gameId in devvit-message data:',
+                message.data.page,
+                message.data.gameId
+              );
+              setGameId(message.data.gameId);
+              // Only set to the specific page mentioned in the message
+              setCurrentPage(message.data.page);
+            }
+            break;
 
           default:
             console.log(
@@ -485,6 +487,23 @@ function App() {
     });
   };
 
+  const handleNavigate = (page: Page, params?: { gameId?: string }) => {
+    // Block invalid game navigation
+    if (page === 'game' && !params?.gameId) {
+      console.error('Cannot navigate to game without gameId');
+      return;
+    }
+    // Set states atomically
+    if (page === 'game') {
+      setGameId(params!.gameId!); // Set gameId first
+      setCurrentPage(page); // Then update page
+    } else {
+      setCurrentPage(page);
+      // Reset gameId if leaving game page
+      if (currentPage === 'game') setGameId(null);
+    }
+  };
+
   // Handle category selection
   const handleCategorySelect = (category: CategoryType) => {
     console.log('Frontend: Category selected:', category);
@@ -495,7 +514,7 @@ function App() {
   // Render the appropriate page
   const renderPage = () => {
     const pageProps = {
-      onNavigate: setCurrentPage,
+      onNavigate: handleNavigate,
       userData,
       sendMessageToDevvit,
       searchTenorGifs,
@@ -531,8 +550,17 @@ function App() {
         console.log('[DEBUG-RENDER] Rendering GamePage with gameId:', gameId);
         if (!gameId) {
           console.error('[DEBUG-ERROR] Attempting to render GamePage without gameId!');
+          // Add defensive approach: Return to landing page if no gameId
+          console.log('[DEBUG-RENDER] Redirecting to landing page due to missing gameId');
+          setTimeout(() => setCurrentPage('landing'), 0);
+          // Show loading state instead of the GamePage
+          return (
+            <div className="flex h-screen items-center justify-center">
+              <p className="text-lg">Loading game data...</p>
+            </div>
+          );
         }
-        return <GamePage onNavigate={setCurrentPage} gameId={gameId || ''} />;
+        return <GamePage onNavigate={setCurrentPage} gameId={gameId} />;
       default:
         // Fallback to landing if currentPage is unrecognized
         console.log(

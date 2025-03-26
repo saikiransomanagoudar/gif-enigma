@@ -24,11 +24,9 @@ export const CustomPostPreview = ({
   const [isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState('there');
   const [gifUrls, setGifUrls] = useState<{
-    playGif: string | null;
-    buildGif: string | null;
+    startGif: string | null;
   }>({
-    playGif: null,
-    buildGif: null,
+    startGif: null,
   });
   const [pendingNavigation, setPendingNavigation] = useState<{
     page: Page;
@@ -38,16 +36,14 @@ export const CustomPostPreview = ({
   useAsync(
     async () => {
       // Get asset URLs
-      const playGifUrl = context.assets.getURL('lets-play.gif');
-      const buildGifUrl = context.assets.getURL('lets-build.gif');
+      const startGifUrl = context.assets.getURL('eyebrows.gif');
 
       // Get username efficiently
       const currentUsername = (await context.reddit.getCurrentUsername()) || '';
 
       // Return all data together
       return {
-        playGifUrl,
-        buildGifUrl,
+        startGifUrl: startGifUrl,
         currentUsername: currentUsername,
       };
     },
@@ -57,8 +53,7 @@ export const CustomPostPreview = ({
         if (data && !error) {
           // Update state with the fetched data
           setGifUrls({
-            playGif: data.playGifUrl,
-            buildGif: data.buildGifUrl,
+            startGif: data.startGifUrl,
           });
 
           if (data.currentUsername) {
@@ -209,24 +204,20 @@ export const CustomPostPreview = ({
         <vstack
           backgroundColor="#c6c6e1"
           cornerRadius="large"
-          width="45%"
+          width="30%"
           alignment="center middle"
           onPress={handlePlayGame}
         >
-          <spacer size="medium" />
-          <vstack gap="medium" padding="medium" height={150}>
+          <vstack gap="medium" height={150} cornerRadius="small">
             <image
               url="eyebrows.gif"
-              imageWidth={100}
+              imageWidth={200}
               imageHeight={100}
-              grow
-              width={100}
-              resizeMode="fit"
-              description="Characters playing"
             />
           </vstack>
           <vstack
             backgroundColor="rgba(0,0,0,0.3)"
+            cornerRadius="large"
             padding="xsmall"
             width="100%"
             alignment="center"
