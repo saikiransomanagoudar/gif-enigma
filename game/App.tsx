@@ -7,6 +7,11 @@ import { CategoryPage, CategoryType } from './pages/CategoryPage';
 import { GamePage } from './pages/GamePage';
 import { Page } from './lib/types';
 
+export type NavigationProps = {
+  onNavigate: (path: string) => void;
+};
+
+
 type DevvitMessage =
   | { type: 'initialData'; data: { username: string; currentCounter: number } }
   | { type: 'updateCounter'; data: { currentCounter: number } }
