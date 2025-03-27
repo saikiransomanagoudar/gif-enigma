@@ -1,12 +1,5 @@
 import { GameData, Page } from './lib/types';
-
-// export interface GetRecentGamesResultMessage {
-//   type: 'GET_RECENT_GAMES_RESULT';
-//   success: boolean;
-//   result?: any;
-//   error?: string;
-//   games?: any[];
-// }
+import { LeaderboardEntry } from './lib/types';
 
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
@@ -31,11 +24,11 @@ export type WebviewToBlockMessage =
         guess: string;
       };
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
   | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
@@ -164,6 +157,18 @@ export type WebviewToBlockMessage =
     }
   | { type: 'REFRESH_POST_PREVIEW'; data?: { gameId?: string } }
   | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
+  | { 
+    type: 'GET_GLOBAL_LEADERBOARD', 
+    data?: { 
+      limit?: number 
+    } 
+  }
+  | { 
+    type: 'GET_USER_STATS', 
+    data: { 
+      username: string 
+    } 
+  }
   | { type: 'GET_INITIAL_DATA' };
 
 export type BlocksToWebviewMessage =
@@ -350,11 +355,11 @@ export type BlocksToWebviewMessage =
       postId?: string;
       error?: string;
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | {
       type: 'NAVIGATION_RESULT';
       success: boolean;
@@ -427,6 +432,30 @@ export type BlocksToWebviewMessage =
       success: boolean;
       completed: boolean;
       error?: string;
+    }
+    | { 
+      type: 'GET_GLOBAL_LEADERBOARD_RESULT', 
+      success: boolean, 
+      result?: { 
+        leaderboard: LeaderboardEntry[] 
+      }, 
+      error?: string 
+    }
+  | { 
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT', 
+      success: boolean, 
+      result?: { 
+        leaderboard: LeaderboardEntry[],
+        isCached?: boolean
+      }, 
+      error?: string 
+    }
+  | { 
+      type: 'GET_USER_STATS_RESULT', 
+      success: boolean, 
+      stats?: any, 
+      rank?: number, 
+      error?: string 
     };
 
 export type DevvitMessage = {

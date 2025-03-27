@@ -455,6 +455,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
   };
 
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  useEffect(() => {
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+  const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black' ;
   const renderGifGrid = () => (
     <div className="mb-4" ref={gifGridRef}>
       <div className="mb-2 flex items-center justify-between">
@@ -471,7 +482,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           return (
             <div
               key={index}
-              className={`gif-slot-${index} relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
+              className={`${backgroundColor} gif-slot-${index} relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
               style={{
                 border: gif ? 'none' : `3px solid ${colors.secondary}`,
               }}
@@ -516,7 +527,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     <ComicText size={0.6} color={colors.textSecondary}>
                       {defaultSynonym ? (
                         <span className="hint-text transition-all duration-300 ease-in-out">
-                          Hint: <span className="text-yellow-400">{defaultSynonym}</span>
+                          Hint: <span className={`text-yellow-400 ${categoryColor}`}>{defaultSynonym}</span>
                         </span>
                       ) : (
                         `Add GIF #${index + 1}`
@@ -574,7 +585,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   return (
     <div
-      className="flex min-h-screen flex-col items-center p-5 transition-opacity duration-500"
+      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <Modal
@@ -702,7 +713,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
           <div
             ref={titleRef}
-            className="translate-y-4 transform opacity-0 transition-all duration-500"
+            className="translate-y-4 transform opacity-0 transition-all duration-500 max-sm:mt-[15px]"
           >
             <ComicText size={1.2} color={colors.primary}>
               Create GIF Enigma
@@ -726,7 +737,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       ? '📚'
                       : '🌐'}
               </span>
-              <ComicText size={0.6} color={colors.textPrimary}>
+              <ComicText size={0.6} color={colors.textSecondary}>
                 Category: <span style={{ fontWeight: 'bold' }}>{currentCategory}</span>
               </ComicText>
             </div>
@@ -749,7 +760,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   <span className="inline-block transition-all duration-300" key={inputType}>
                     Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
                   </span>{' '}
-                  <span style={{ color: 'yellow', fontWeight: 'bold' }}>
+                  <span style={{fontWeight: 'bold' }} className={`${categoryColor}`}>
                     {secretInput.toUpperCase()}
                   </span>
                 </ComicText>

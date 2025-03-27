@@ -60,6 +60,20 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
 
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    // Detect dark mode
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+  }, []);
+
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+  const answerBoxborders = isDarkMode ? '' : 'border border-black';
+
   // Set up initial game page load animations and event handlers
   useEffect(() => {
     console.log('GamePage mounted with propGameId:', propGameId);
@@ -986,7 +1000,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       <div
         ref={answerBoxesRef}
         id="answer-boxes-container"
-        className={`mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
+        className={` mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
         style={{ animation: isShaking ? 'shake 0.8s ease-in-out' : 'none' }}
       >
         {answer.split('').map((ch, idx) => {
@@ -1020,7 +1034,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           return (
             <div
               key={idx}
-              className={`answer-box flex h-10 w-10 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
+              className={`answer-box ${answerBoxborders} flex h-10 w-10 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
             >
               <ComicText size={0.8} color="#2563EB">
                 {displayChar}
@@ -1272,7 +1286,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   return (
     <div
       key={gameKey}
-      className="flex min-h-screen flex-col items-center p-5 transition-opacity duration-500"
+      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <style>
@@ -1569,10 +1583,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           ref={questionRef}
           className="mb-6 translate-y-4 transform px-4 text-center opacity-0 transition-all duration-500"
         >
-          <ComicText size={0.9} color="#2563EB">
+          {/* <ComicText size={0.9} color="#2563EB">
             What {gameData.word.includes(' ') ? 'phrase' : 'word'} comes to your mind when you see
             this GIF?
-          </ComicText>
+          </ComicText> */}
         </div>
       )}
 
@@ -1616,7 +1630,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       {/* Bottom Bar */}
       <div
         ref={bottomBarRef}
-        className="mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500"
+        className="max-sm:flex-col mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500"
       >
         <button
           onClick={handleWordHint}

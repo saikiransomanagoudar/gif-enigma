@@ -24,11 +24,11 @@ type DevvitMessage =
       gameId?: string;
       error?: string;
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | {
       type: 'GET_GEMINI_RECOMMENDATIONS_RESULT';
       success: boolean;
@@ -94,12 +94,12 @@ type WebViewMessage =
       data: { word: string };
     }
   | { type: 'INIT' }
-  | { type: 'requestNavigationState' }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    };
+  | { type: 'requestNavigationState' };
+// | {
+//     type: 'NAVIGATION';
+//     page: Page;
+//     gameId?: string;
+//   };
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
@@ -181,8 +181,14 @@ function App() {
     // Helper to handle the *unwrapped* message
     function handleUnwrappedMessage(message: any) {
       // Safety check to ensure we have a message with a type
-      if (!message || typeof message !== 'object' || !message.type) {
-        console.log('[DEBUG-ERROR] App.tsx: Invalid message format:', message);
+      if (!message || typeof message !== 'object' || message === null) {
+        console.error('Invalid message structure');
+        return;
+      }
+
+      const messageType = message.type || message?.data?.type;
+      if (!messageType) {
+        console.error('Message missing type property');
         return;
       }
 
@@ -261,22 +267,22 @@ function App() {
             }
             break;
 
-          case 'NAVIGATION':
-            console.log(
-              '[DEBUG-CRITICAL] App.tsx: Direct NAVIGATION message received:',
-              typedMessage
-            );
-            // Handle gameId for game page
-            if (typedMessage.page === 'game' && typedMessage.gameId) {
-              console.log(
-                '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
-                typedMessage.gameId
-              );
-              setGameId(typedMessage.gameId);
-            }
-            console.log('[DEBUG-CRITICAL] App.tsx: Updating currentPage to:', typedMessage.page);
-            setCurrentPage(typedMessage.page);
-            break;
+          // case 'NAVIGATION':
+          //   console.log(
+          //     '[DEBUG-CRITICAL] App.tsx: Direct NAVIGATION message received:',
+          //     typedMessage
+          //   );
+          //   // Handle gameId for game page
+          //   if (typedMessage.page === 'game' && typedMessage.gameId) {
+          //     console.log(
+          //       '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
+          //       typedMessage.gameId
+          //     );
+          //     setGameId(typedMessage.gameId);
+          //   }
+          //   console.log('[DEBUG-CRITICAL] App.tsx: Updating currentPage to:', typedMessage.page);
+          //   setCurrentPage(typedMessage.page);
+          //   break;
 
           case 'NAVIGATION_RESULT':
             console.log('[DEBUG-CRITICAL] App.tsx: NAVIGATION_RESULT received:', typedMessage);
@@ -521,50 +527,50 @@ function App() {
   };
 
   const handleNavigate = (page: Page, params?: { gameId?: string }) => {
-  console.log(`[NAV] App.tsx handleNavigate called:`, { page, params });
+    console.log(`[NAV] App.tsx handleNavigate called:`, { page, params });
 
-  // Block invalid game navigation
-  if (page === 'game' && !params?.gameId) {
-    console.error('[NAV] Cannot navigate to game without gameId');
-    return;
-  }
-
-  // Set local state FIRST - this is the critical part
-  if (page === 'game' && params?.gameId) {
-    console.log(`[NAV] Setting gameId to: ${params.gameId}`);
-    setGameId(params.gameId);
-    console.log(`[NAV] Setting currentPage to: ${page}`);
-    setCurrentPage(page);
-  } else {
-    console.log(`[NAV] Setting currentPage to: ${page}`);
-    setCurrentPage(page);
-    
-    // Reset gameId if needed
-    if (currentPage === 'game') {
-      console.log('[NAV] Resetting gameId');
-      setGameId(null);
+    // Block invalid game navigation
+    if (page === 'game' && !params?.gameId) {
+      console.error('[NAV] Cannot navigate to game without gameId');
+      return;
     }
-  }
-  
-  // AFTER updating local state, tell the server about the change
-  // This is secondary - the UI should update even if this fails
-  try {
-    console.log(`[NAV] Notifying server about navigation:`, { page, params });
-    window.parent.postMessage(
-      {
-        type: 'NAVIGATE',
-        data: {
-          page,
-          params,
+
+    // Set local state FIRST - this is the critical part
+    if (page === 'game' && params?.gameId) {
+      console.log(`[NAV] Setting gameId to: ${params.gameId}`);
+      setGameId(params.gameId);
+      console.log(`[NAV] Setting currentPage to: ${page}`);
+      setCurrentPage(page);
+    } else {
+      console.log(`[NAV] Setting currentPage to: ${page}`);
+      setCurrentPage(page);
+
+      // Reset gameId if needed
+      if (currentPage === 'game') {
+        console.log('[NAV] Resetting gameId');
+        setGameId(null);
+      }
+    }
+
+    // AFTER updating local state, tell the server about the change
+    // This is secondary - the UI should update even if this fails
+    try {
+      console.log(`[NAV] Notifying server about navigation:`, { page, params });
+      window.parent.postMessage(
+        {
+          type: 'NAVIGATE',
+          data: {
+            page,
+            params,
+          },
         },
-      },
-      '*'
-    );
-  } catch (err) {
-    console.error('[NAV] Error sending navigation message to server:', err);
-    // Continue anyway - local navigation is more important
-  }
-};
+        '*'
+      );
+    } catch (err) {
+      console.error('[NAV] Error sending navigation message to server:', err);
+      // Continue anyway - local navigation is more important
+    }
+  };
 
   // Handle category selection
   const handleCategorySelect = (category: CategoryType) => {
@@ -576,7 +582,7 @@ function App() {
   // Render the appropriate page
   const renderPage = () => {
     console.log('[RENDER] Frontend: Rendering page:', currentPage, 'with gameId:', gameId);
-  
+
     // Create pageProps without onNavigate property
     const commonProps = {
       userData,
@@ -590,18 +596,31 @@ function App() {
       recommendations,
       synonyms,
     };
-  
+
     switch (currentPage) {
       case 'landing':
         return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
       case 'category':
         return <CategoryPage onNavigate={setCurrentPage} onCategorySelect={handleCategorySelect} />;
       case 'create':
-        return <CreatePage context={undefined} {...commonProps} category={selectedCategory} onNavigate={handleNavigate} />;
+        return (
+          <CreatePage
+            context={undefined}
+            {...commonProps}
+            category={selectedCategory}
+            onNavigate={handleNavigate}
+          />
+        );
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
-        return <LeaderboardPage onNavigate={setCurrentPage} />;
+        return (
+          <LeaderboardPage
+            onNavigate={setCurrentPage}
+            username={userData?.username}
+            postMessage={sendMessageToDevvit}
+          />
+        );
       case 'game':
         // Safety check - should never happen due to our handleNavigate logic
         if (!gameId) {

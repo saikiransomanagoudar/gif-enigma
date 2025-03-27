@@ -113,10 +113,26 @@ export async function saveScore(
       score: timestamp,
     });
 
+    
+
     // Update user stats
     try {
       // Get existing user stats
-      const userStats = await context.redis.hGetAll(`userStats:${username}`);
+      let userStats: { gamesPlayed?: string; gamesWon?: string; totalScore?: string; bestScore?: string; averageScore?: string; lastPlayed?: string } = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
+      if (!userStats || typeof userStats !== 'object') {
+        console.error('Invalid user stats format, resetting');
+        await context.redis.del(`userStats:${username}`);
+      }
+      if (!userStats || Object.keys(userStats).length === 0) {
+        await context.redis.hSet(`userStats:${username}`, {
+          gamesPlayed: '0',
+          totalScore: '0',
+          bestScore: '0',
+          averageScore: '0'
+        });
+        userStats = await context.redis.hGetAll(`userStats:${username}`);
+      }
+      
 
       // Calculate new stats
       const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
@@ -136,10 +152,7 @@ export async function saveScore(
       });
 
       // Update cumulative leaderboard
-      await context.redis.zAdd('cumulativeLeaderboard', {
-        score: totalScore,
-        member: username,
-      });
+      await context.redis.zIncrBy('cumulativeLeaderboard', 'username', score);
 
       console.log(`✅ [DEBUG] Updated user stats for ${username}, total score: ${totalScore}`);
     } catch (statsError) {
@@ -196,11 +209,11 @@ export async function getGameLeaderboard(
         leaderboard.push({
           rank: i + 1,
           username: username,
-          score: Number(scoreData.score || item.score),
-          gifPenalty: Number(scoreData.gifPenalty || 0),
-          wordPenalty: Number(scoreData.wordPenalty || 0),
-          timeTaken: Number(scoreData.timeTaken || 0),
-          timestamp: Number(scoreData.timestamp || 0),
+          score: Number(scoreData?.score || item.score),
+          gifPenalty: Number(scoreData?.gifPenalty || 0),
+          wordPenalty: Number(scoreData?.wordPenalty || 0),
+          timeTaken: Number(scoreData?.timeTaken || 0),
+          timestamp: Number(scoreData?.timestamp || 0),
         });
       } catch (entryError) {
         console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
@@ -347,16 +360,21 @@ export async function getCumulativeLeaderboard(
 
       try {
         // Get user stats
-        const userStats = await context.redis.hGetAll(`userStats:${username}`);
+        const userStats = await context.redis.hGetAll(`userStats:${username}`) || {};
 
         if (!userStats || Object.keys(userStats).length === 0) {
           continue;
         }
 
+        if (!userStats || typeof userStats !== 'object') {
+          console.error('Invalid user stats format');
+          return { success: false, error: 'Invalid user data format' };
+        }
+
         leaderboard.push({
           rank: i + 1,
           username: username,
-          score: Number(userStats.totalScore || item.score),
+          score: Number(userStats.totalScore ?? item.score),
           gamesPlayed: Number(userStats.gamesPlayed || 0),
           gamesWon: Number(userStats.gamesWon || 0),
           bestScore: Number(userStats.bestScore || 0),

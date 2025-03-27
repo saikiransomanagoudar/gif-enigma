@@ -589,7 +589,7 @@ export async function hasUserCompletedGame(
 
     // Check if the game is in the user's completed games set
     const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-    const completed = score !== null;
+    const completed = !!(score && Number(score) > 0);
 
     console.log(
       `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}`

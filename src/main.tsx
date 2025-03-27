@@ -64,7 +64,7 @@ Devvit.addCustomPostType({
   name: 'GIF Enigma',
   height: 'tall',
   render: (context) => {
-    let persistentPage: Page | null = null;
+
     let isWebViewReadyFlag: boolean = false;
     const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
       useState(0);
@@ -440,6 +440,7 @@ Devvit.addCustomPostType({
                 success: result.success,
                 error: result.error || undefined,
               });
+              // refreshCumulativeLeaderboard();
             } catch (error) {
               console.error('Error saving score:', error);
               postMessage({
@@ -450,21 +451,22 @@ Devvit.addCustomPostType({
             }
             break;
 
-          case 'GET_GAME_LEADERBOARD':
+          case 'GET_GLOBAL_LEADERBOARD':
             try {
-              console.log('Getting game leaderboard for:', event.data.gameId);
-              const result = await getGameLeaderboard(event.data, context);
+              console.log('MainApp: Received GET_GLOBAL_LEADERBOARD request', event.data);
+              const result = await getGlobalLeaderboard(event.data || {}, context);
+              console.log('MainApp: Global leaderboard fetch result:', result.success);
 
               postMessage({
-                type: 'GET_GAME_LEADERBOARD_RESULT',
+                type: 'GET_GLOBAL_LEADERBOARD_RESULT',
                 success: result.success,
                 result: { leaderboard: result.leaderboard || [] },
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error getting game leaderboard:', error);
+              console.error('MainApp: Error getting global leaderboard:', error);
               postMessage({
-                type: 'GET_GAME_LEADERBOARD_RESULT',
+                type: 'GET_GLOBAL_LEADERBOARD_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -473,28 +475,10 @@ Devvit.addCustomPostType({
 
           case 'GET_CUMULATIVE_LEADERBOARD':
             try {
-              console.log('Getting cumulative leaderboard with limit:', event.data?.limit);
-
-              if (cumulativeLeaderboardData && !event.data?.forceRefresh) {
-                console.log('Using cached cumulative leaderboard data');
-                postMessage({
-                  type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
-                  success: true,
-                  result: {
-                    leaderboard: cumulativeLeaderboardData.leaderboard || [],
-                    isCached: true,
-                  },
-                });
-                return;
-              }
-
-              // Otherwise fetch fresh data
-              const result = await getCumulativeLeaderboard(event.data || {}, context);
-
-              // Force a refresh of our cached data for next time
-              if (event.data?.forceRefresh) {
-                refreshCumulativeLeaderboard();
-              }
+              console.log('MainApp: Received GET_CUMULATIVE_LEADERBOARD request', event.data);
+              const params = event.data ? event.data : {};
+              const result = await getCumulativeLeaderboard(params, context);
+              console.log('MainApp: Cumulative leaderboard fetch result:', result.success);
 
               postMessage({
                 type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
@@ -503,9 +487,68 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error getting cumulative leaderboard:', error);
+              console.error('MainApp: Error getting cumulative leaderboard:', error);
               postMessage({
                 type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_USER_STATS':
+            try {
+              console.log('Getting user stats for:', event.data?.username);
+
+              if (!event.data?.username) {
+                postMessage({
+                  type: 'GET_USER_STATS_RESULT',
+                  success: false,
+                  error: 'Username is required',
+                });
+                return;
+              }
+
+              // First get the user's rank in the cumulative leaderboard
+              const cumulativeResult = await getCumulativeLeaderboard({ limit: 100 }, context);
+
+              if (!cumulativeResult.success) {
+                postMessage({
+                  type: 'GET_USER_STATS_RESULT',
+                  success: false,
+                  error: cumulativeResult.error || 'Failed to fetch leaderboard data',
+                });
+                return;
+              }
+
+              // Find the user in the leaderboard to get their rank
+              const userRank = cumulativeResult.leaderboard?.findIndex(
+                (entry) => entry.username === event.data.username
+              );
+
+              // Get the user's entry if found
+              const userEntry =
+                userRank !== -1 && cumulativeResult?.leaderboard
+                  ? cumulativeResult.leaderboard?.[userRank as number]
+                  : null;
+
+              // If user was found, include their rank
+              if (userEntry) {
+                if (userRank !== undefined) {
+                  userEntry.rank = userRank + 1; // Convert from 0-based index to 1-based rank
+                }
+              }
+
+              postMessage({
+                type: 'GET_USER_STATS_RESULT',
+                success: true,
+                stats: userEntry || null,
+                rank: userRank !== undefined && userRank !== -1 ? userRank + 1 : undefined,
+              });
+            } catch (error) {
+              console.error('Error getting user stats:', error);
+              postMessage({
+                type: 'GET_USER_STATS_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -835,26 +878,26 @@ Devvit.addCustomPostType({
             }
             break;
 
-            case 'REFRESH_POST_PREVIEW':
-              try {
-                console.log('🔄 [DEBUG] Refreshing post preview');
-                
-                // Force a refresh of the GamePostPreview component
-                setPostPreviewRefreshTrigger(prev => prev + 1);
-                
-                postMessage({
-                  type: 'REFRESH_POST_PREVIEW_RESULT',
-                  success: true,
-                });
-              } catch (error) {
-                console.error('Error refreshing post preview:', error);
-                postMessage({
-                  type: 'REFRESH_POST_PREVIEW_RESULT',
-                  success: false,
-                  error: String(error),
-                });
-              }
-              break;
+          case 'REFRESH_POST_PREVIEW':
+            try {
+              console.log('🔄 [DEBUG] Refreshing post preview');
+
+              // Force a refresh of the GamePostPreview component
+              setPostPreviewRefreshTrigger((prev) => prev + 1);
+
+              postMessage({
+                type: 'REFRESH_POST_PREVIEW_RESULT',
+                success: true,
+              });
+            } catch (error) {
+              console.error('Error refreshing post preview:', error);
+              postMessage({
+                type: 'REFRESH_POST_PREVIEW_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
 
           case 'POST_COMPLETION_COMMENT':
             try {
@@ -932,18 +975,6 @@ Devvit.addCustomPostType({
                 completed: false,
               });
             }
-            break;
-
-          case 'NAVIGATION':
-            console.log('[DEBUG] main.tsx: NAVIGATION message received:', event);
-            persistentPage = event.page;
-            console.log('[DEBUG] main.tsx: persistentPage set to:', persistentPage);
-            postMessage({
-              type: 'NAVIGATION_RESULT',
-              success: true,
-              page: event.page,
-              ...(event.gameId ? { gameId: event.gameId } : {}),
-            });
             break;
 
           case 'NAVIGATE':

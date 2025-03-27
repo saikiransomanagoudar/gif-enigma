@@ -32,6 +32,7 @@ export const CustomPostPreview = ({
     page: Page;
     gameId?: string;
   } | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
 
   useAsync(
     async () => {
@@ -127,16 +128,19 @@ export const CustomPostPreview = ({
 
   // Handle the case when WebView becomes ready and we have pending navigation
   if (isWebViewReady && pendingNavigation) {
-    console.log('[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:', pendingNavigation.page);
-    
+    console.log(
+      '[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:',
+      pendingNavigation.page
+    );
+
     safePostMessage({
       type: 'NAVIGATE',
       data: {
         page: pendingNavigation.page,
-        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {}
-      }
+        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {},
+      },
     });
-    
+
     // Clear pending navigation to prevent duplicate sends
     setPendingNavigation(null);
   }
@@ -146,7 +150,7 @@ export const CustomPostPreview = ({
       if (context.postId) {
         console.log('[DEBUG-NAV] CustomPostPreview: Storing landing page in Redis');
         await context.redis.hSet(`navState:${context.postId}`, {
-          page: 'landing'
+          page: 'landing',
         });
       }
     } catch (error) {
@@ -156,47 +160,52 @@ export const CustomPostPreview = ({
 
   const handlePlayGame = () => {
     console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
-    
+
     storeLandingPage();
     // Mount the WebView
     onMount();
-    
+
     if (isWebViewReady) {
       console.log('[DEBUG-NAV] CustomPostPreview: WebView ready, sending navigation');
       safePostMessage({
         type: 'NAVIGATE',
         data: {
-          page: 'landing'
-        }
+          page: 'landing',
+        },
       });
     } else {
-      console.log('[DEBUG-NAV] CustomPostPreview: WebView not ready yet, storing pending navigation');
+      console.log(
+        '[DEBUG-NAV] CustomPostPreview: WebView not ready yet, storing pending navigation'
+      );
       setPendingNavigation({
-        page: 'landing'
+        page: 'landing',
       });
     }
   };
 
+  const isSmallScreen = (context.dimensions?.width ?? 0) < 300;
+
   return (
-    <vstack height="100%" width="100%" darkBackgroundColor='#0d1629' lightBackgroundColor='#E8E5DA'>
+    <vstack height="100%" width="100%" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA">
       <spacer size="large" />
 
       {/* title */}
       <vstack alignment="center middle" padding="medium">
         <ComicText size={0.7} color="#FF4500">
-          GIF  Enigma
+          GIF Enigma
         </ComicText>
       </vstack>
 
       {/* Intro text */}
-      <vstack alignment="middle" padding="xsmall">
+      <vstack alignment="center middle" padding="medium">
         <spacer size="large" />
-        <ComicText size={0.25} color="#7fcfff">
-          {`                                  Hi    ${username},    ready    to    unravel`}
-        </ComicText>
-        <ComicText size={0.25} color="#7fcfff">
-          {`                                  the    secret    word/phrase    from    GIFs?`}
-        </ComicText>
+        <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"}  weight="bold">
+          Hi {username}, ready to unravel the secret word/phrase
+        </text>
+        <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"} weight="bold">
+          from GIFs?
+        </text>
+        <spacer size="medium"/>
       </vstack>
 
       {/* Main buttons section */}
@@ -209,26 +218,23 @@ export const CustomPostPreview = ({
           onPress={handlePlayGame}
         >
           <vstack gap="medium" height={150} cornerRadius="small">
-            <image
-              url="eyebrows.gif"
-              imageWidth={200}
-              imageHeight={100}
-            />
+            <image url="eyebrows.gif" imageWidth={200} imageHeight={100} />
           </vstack>
-          <vstack
+          {/* <vstack
             backgroundColor="rgba(0,0,0,0.3)"
             cornerRadius="large"
             padding="xsmall"
             width="100%"
             alignment="center"
-          >
-            <hstack alignment="middle center">
-              <ComicText size={0.2} color="white">
-                S        tart    Playing
-              </ComicText>
-              <text> 👉</text>
-            </hstack>
-          </vstack>
+          > */}
+            {/* <hstack alignment="middle center"> */}
+            {/* <ComicText size={0.2} color="dark-green">
+                S       tart      Playing
+              </ComicText> */}
+            <button onPress={handlePlayGame}>Start Playing 👉</button>
+            {/* <text> 👉</text> */}
+            {/* </hstack> */}
+          {/* </vstack> */}
         </vstack>
       </hstack>
     </vstack>

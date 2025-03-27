@@ -144,11 +144,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   return (
     <PageTransition>
-      <div className={`${backgroundColor} mt-[-32px] h-full w-full rounded-lg p-5`}>
+      <div className={`${backgroundColor} mt-[-12px] p-5 select-none min-h-screen w-full pb-15 mb-0`}>
         <div className="relative flex flex-col items-center p-4 max-sm:mt-[20px]">
           {/* Leaderboard Button */}
           <motion.button
-            className={`absolute top-2 right-2 mt-5 cursor-pointer rounded-lg px-4 py-3 text-lg ${
+            className={`absolute top-2 right-2 mt-5 select-none cursor-pointer rounded-lg px-4 py-3 text-lg ${
               ifhover === 'btn1'
                 ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
                 : 'border-border border-1 bg-[#E8E5DA] text-black'
@@ -177,9 +177,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </motion.button>
 
           {/* Center Container for Icons and Title */}
-          <div className="mt-5 flex w-full flex-col items-center justify-center gap-2">
+          <div className="mt-5 flex w-full flex-col items-center justify-center gap-2 select-none cursor-default">
             {/* Icons */}
-            <div className="mt-[-21px] ml-10 flex gap-2 p-5">
+            <div className="mt-[-21px] ml-10 flex gap-2 p-5 mb-[21px]">
               <span className="text-3xl">🎬</span>
               <span className="text-3xl">❓</span>
             </div>
@@ -189,7 +189,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.6 }}
-              className="mt-[-15px]"
+              className="mt-[-35px] select-none cursor-default mb-[15px]"
             >
               <ComicText size={3} color={colors.primary}>
                 GIF Enigma
@@ -205,7 +205,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               {/* <ComicText
                 size={0.8}
                 color={textColor}
-                className={`mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
+                className={`select-none cursor-default mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
                 Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
                 secret word/phrase from GIFs?
@@ -215,7 +215,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </div>
 
         {/* Main Action Buttons */}
-        <div className="flex flex-row items-center justify-center gap-5 max-sm:mt-[20px]">
+        <div className="flex flex-row items-center justify-center gap-5 max-sm:mt-[20px] mb-[15px]">
           {/* Play GIF */}
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
@@ -266,9 +266,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           transition={{ duration: 0.5, delay: 1.6 }}
         >
           {/* Secondary Action Buttons */}
-          <div className="mt-6 flex w-full items-center justify-center">
+          <div className="mt-6 flex w-full items-center justify-center mb-[21px]">
             <button
-              className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
+              className={`hover:scale-105 relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
               onClick={() => onNavigate('howToPlay')}
               onMouseEnter={() => setHover('btn2')}
               onMouseLeave={() => setHover(null)}

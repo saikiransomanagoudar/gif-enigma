@@ -82,6 +82,7 @@ export interface LeaderboardEntry {
   gamesPlayed?: number;
   gamesWon?: number;
   bestScore?: number;
+  totalScore?: number;
   averageScore?: number;
 }
 
@@ -198,4 +199,9 @@ export function isGameData(obj: any): obj is GameData {
 
 export function isPreviewData(obj: any): obj is GamePreviewData {
   return obj && typeof obj === 'object' && 'maskedWord' in obj && 'gifUrls' in obj;
+}
+
+// In types.ts
+export function isLeaderboardEntry(obj: any): obj is LeaderboardEntry {
+  return obj && typeof obj === 'object' && 'username' in obj && 'score' in obj;
 }

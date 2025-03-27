@@ -44,18 +44,12 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
         >
           <motion.div
             onClick={() => onNavigate('landing')}
-            className={`flex cursor-pointer items-center space-x-2 text-[#FF4500] bg-[#FF4500] px-3 py-1.5 rounded-full shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105`}
+            className={`flex cursor-pointer items-center space-x-2 rounded-full bg-[#FF4500] px-3 py-1.5 text-[#FF4500] shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105`}
           >
-            {/* <button
-              onClick={() => onNavigate('landing')}
-              className="left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-              style={{ backgroundColor: colors.primary }}
-            > */}
-              <span className="mr-1 text-sm text-white">👈</span>
-              <ComicText size={0.5} color="white">
-                Back
-              </ComicText>
-            {/* </button> */}
+            <span className="mr-1 text-sm text-white">👈</span>
+            <ComicText size={0.5} color="white">
+              Back
+            </ComicText>
           </motion.div>
           <h2 className={`ml-[30px] text-center text-3xl font-bold ${textColor}`}>
             <ComicText size={1.75} className="text-[#E8E5DA]">
@@ -85,7 +79,15 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['🔍', '🎬', '👁️', '💡', '⌨️', '⏱️', '🏆'].map((icon, index) => (
+              {[
+                "Start by viewing the initial GIF clue that hints at a secret word or phrase.",
+                "Enter your guess into the input field.",
+                "If you're stuck, reveal extra GIF hints—up to 4 total.",
+                "GIF hints cost points: -10 after 2 hints, -20 after 3, and -40 after 4.",
+                "Alternatively, use word/phrase hints that reveal letters. Note: these incur a higher penalty based on answer length.",
+                "You begin with 100 points—using fewer hints earns you a higher score.",
+                "Decipher the enigma by balancing clues and your score!"
+              ].map((instruction, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
@@ -93,19 +95,11 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: 0.8 + index * 0.2 }}
                 >
-                  <span className="mr-4 text-3xl">{icon}</span>
+                  <span className="mr-4 text-3xl">
+                    {['🖼️', '⌨️', '💡', '⚖️', '🔠', '🏆', '🎯'][index]}
+                  </span>
                   <ComicText className="text-lg">
-                    {
-                      [
-                        "You'll be presented with 3 questions to solve.",
-                        'Each question has 4 hidden GIFs as clues.',
-                        'Initially, only the first GIF is shown.',
-                        'If you need help, reveal more GIFs as hints (-10 points each).',
-                        'Type your guess in the input field and submit.',
-                        'Answer before the timer runs out!',
-                        'Score points based on speed and minimal hint usage.',
-                      ][index]
-                    }
+                    {instruction}
                   </ComicText>
                 </motion.div>
               ))}
@@ -120,7 +114,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             transition={{ duration: 0.5, delay: 1.4 }}
           >
             <motion.h3
-              className="text-primary mb-4 text-center text-2xl font-bold"
+              className="text-[#E8E5DA] mb-4 text-center text-2xl font-bold"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1.6 }}
@@ -130,7 +124,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['✏️', '🔎', '🖼️', '💾', '🎮'].map((icon, index) => (
+              {['✏️', '🔎', '🖼️', '💾'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
@@ -142,11 +136,10 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Enter a secret word for others to guess.',
-                        'Search for GIFs using Tenor API.',
-                        'Select 4 GIFs that hint at your secret word.',
-                        'Submit your creation to the game library.',
-                        'Other players can now encounter your creation!',
+                        'Choose a secret word or phrase for others to guess.',
+                        'Search for GIFs that serve as creative clues.',
+                        'Select 4 GIFs that progressively hint your secret.',
+                        'Share your puzzle on the subreddit for community fun!'
                       ][index]
                     }
                   </ComicText>
@@ -169,7 +162,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 2.2 }}
           >
-            <ComicText>Think fast, guess smart, and crack the GIF enigma!</ComicText>
+            <ComicText>Decode the clues, manage your points, and crack the GIF enigma!</ComicText>
           </motion.h3>
           <motion.button
             onClick={() => onNavigate('landing')}
