@@ -158,7 +158,7 @@ export const CustomPostPreview = ({
       {/* Intro text */}
       <vstack alignment="middle" padding="xsmall">
         <spacer size="large" />
-        <ComicText size={0.25} color="#7fcfff">
+        <ComicText size={0.25} color={` bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent dark:bg-darkBackground`}>
           {`                                  Hi    ${username},    ready    to    unravel`}
         </ComicText>
         <ComicText size={0.25} color="#7fcfff">

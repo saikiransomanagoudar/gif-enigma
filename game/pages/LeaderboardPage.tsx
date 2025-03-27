@@ -1,22 +1,31 @@
-import React, { useState, useEffect } from "react";
-import { colors } from "../lib/styles";
+import React, { useState, useEffect, useRef } from "react";
 import { NavigationProps } from "../lib/types";
+import { ComicText } from "../lib/fonts";
 
 export interface LeaderboardPageProps extends NavigationProps {}
 
 export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) => {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener("change", handleThemeChange);
+    return () => darkModeQuery.removeEventListener("change", handleThemeChange);
+  }, []);
 
   const fetchLeaderboard = async () => {
     try {
-      // Replace this with an actual API call if needed.
       const mockLeaderboard = [
-        { username: "GIFmaster42", gamesWon: 32, bestScore: 95, averageScore: 78.5, bestGuessCount: 1 },
-        { username: "EnigmaExpert", gamesWon: 28, bestScore: 90, averageScore: 71.2, bestGuessCount: 2 },
-        { username: "PuzzleSolver", gamesWon: 25, bestScore: 85, averageScore: 73.7, bestGuessCount: 1 },
-        { username: "WordHunter", gamesWon: 22, bestScore: 88, averageScore: 69.1, bestGuessCount: 3 },
-        { username: "MysteryMaster", gamesWon: 18, bestScore: 82, averageScore: 65.4, bestGuessCount: 2 },
+        { username: "GIFmaster42", bestScore: 95 },
+        { username: "EnigmaExpert", bestScore: 90 },
+        { username: "PuzzleSolver", bestScore: 85 },
+        { username: "WordHunter", bestScore: 88 },
+        { username: "MysteryMaster", bestScore: 82 },
       ];
       setLeaderboard(mockLeaderboard);
       setIsLoading(false);
@@ -30,184 +39,115 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
     fetchLeaderboard();
   }, []);
 
+  const handleBackClick = () => {
+    onNavigate("landing");
+  };
+  
+
   return (
     <div
-      style={{
-        width: "100%",
-        padding: "16px",
-        // backgroundColor: colors.background,
-        borderRadius: "8px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "16px",
-      }}
+      className={`flex w-full flex-col gap-6 p-6 md:p-10 rounded-lg ${
+        isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"
+      }`}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "8px",
-        }}
-      >
-        <div
-          onClick={() => onNavigate('landing')}
-          style={{ display: "flex", flexDirection: "row", alignItems: "center", cursor: "pointer" }}
+      {/* Back Button */}
+      {/* Back Button */}
+      <div className="flex items-center justify-start mb-4 md:w-2/3">
+        <button
+          ref={backButtonRef}
+          onClick={handleBackClick}
+          className="flex items-center gap-2 rounded-full bg-[#FF4500] px-4 py-2 text-white transition-all  hover:scale-105"
         >
-          <span style={{ fontSize: "16px" }}>←</span>
-          <span style={{ fontSize: "16px", marginLeft: "4px" }}>Back</span>
-        </div>
-        <h2 style={{ fontSize: "24px", fontWeight: "bold", color: colors.primary, margin: 0 }}>
-          Leaderboard
+          👈 <ComicText size={0.5} className="text-white">Back</ComicText>
+        </button>
+      </div>
+
+
+      {/* Leaderboard Header */}
+      <div className="flex flex-col items-center py-4 mt-[-66px]">
+        <span className="text-4xl">🏆</span>
+        <h2 className="text-2xl font-bold text-[#FF4500]">
+          <ComicText>Top Players</ComicText>
         </h2>
-        <div style={{ flex: 1 }} />
       </div>
 
-      {/* Leaderboard Content */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px" }}>
-        {/* Trophy Icon */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "16px" }}>
-          <span style={{ fontSize: "32px" }}>🏆</span>
-          <h2 style={{ fontSize: "24px", fontWeight: "bold", color: colors.primary, margin: 0 }}>Top Players</h2>
+      {/* Leaderboard Table */}
+      {isLoading ? (
+        <div className="flex items-center justify-center p-4">
+          <ComicText>Loading Leaderboard Data...</ComicText>
         </div>
-
-        {/* Loading State */}
-        {isLoading ? (
-          <div style={{ padding: "16px", display: "flex", justifyContent: "center", alignItems: "center" }}>
-            <span style={{ fontSize: "16px" }}>Loading Leaderboard Data...</span>
+      ) : (
+        <div className="rounded-lg shadow-md overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-3 text-center font-bold  dark:bg-gray-800 py-4 mt-[-12px]">
+            <span><ComicText>Rank</ComicText></span>
+            <span><ComicText>Player</ComicText></span>
+            <span><ComicText>Best Score</ComicText></span>
           </div>
-        ) : (
-          <>
-            {/* Leaderboard Header */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                backgroundColor: colors.cardBackground,
-                borderRadius: "8px",
-                padding: "16px",
-                alignItems: "center",
-                border: `1px solid ${colors.border}`,
-              }}
-            >
-              <span style={{ fontSize: "16px", fontWeight: "bold", width: "25%" }}>Rank</span>
-              <span style={{ fontSize: "16px", fontWeight: "bold", width: "30%" }}>Player</span>
-              <span style={{ fontSize: "16px", fontWeight: "bold", width: "25%" }}>Wins</span>
-              <span style={{ fontSize: "16px", fontWeight: "bold", width: "20%" }}>Best Score</span>
-            </div>
 
-            {/* Leaderboard Entries */}
-            {leaderboard.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {leaderboard.map((entry, index) => (
-                  <div
-                    key={index.toString()}
-                    style={{
-                      display: "flex",
-                      flexDirection: "row",
-                      // backgroundColor: index === 0 ? colors.primary + "22" : colors.background,
-                      borderRadius: "8px",
-                      padding: "16px",
-                      alignItems: "center",
-                      border: `1px solid ${colors.border}`,
-                    }}
-                  >
-                    <div style={{ width: "25%", display: "flex", alignItems: "center" }}>
-                      <span style={{ fontSize: "16px", fontWeight: index < 3 ? "bold" : "normal" }}>
-                        {index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : ""}
-                        {index + 1}
-                      </span>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: "16px",
-                        width: "30%",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {entry.username}
-                    </span>
-                    <span style={{ fontSize: "16px", width: "25%" }}>{entry.gamesWon}</span>
-                    <span style={{ fontSize: "16px", width: "20%", color: colors.success }}>
-                      {entry.bestScore}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
+          {/* Leaderboard Entries */}
+          {leaderboard.length > 0 ? (
+            leaderboard.map((entry, index) => (
               <div
-                style={{
-                  padding: "16px",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  backgroundColor: colors.cardBackground,
-                  borderRadius: "8px",
-                }}
+                key={index}
+                className="grid grid-cols-3 text-center py-3 border-b dark:border-gray-700"
               >
-                <span style={{ fontSize: "16px", color: colors.textSecondary }}>
-                  No leaderboard data available yet
+                <span className="font-semibold">
+                  {index === 0
+                    ? "🥇"
+                    : index === 1
+                    ? "🥈"
+                    : index === 2
+                    ? "🥉"
+                    : index === 3
+                    ? "🏅"
+                    : index === 4
+                    ? "🎖️"
+                    : ""}
                 </span>
+                <span className="truncate">{entry.username}</span>
+                <span className="font-bold text-green-600">{entry.bestScore}</span>
               </div>
-            )}
-          </>
-        )}
-
-        {/* Player Stats Section */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "16px",
-            padding: "16px",
-            backgroundColor: colors.cardBackground,
-            borderRadius: "8px",
-            border: `1px solid ${colors.border}`,
-          }}
-        >
-          <span style={{ fontSize: "16px", fontWeight: "bold", color: colors.primary }}>Your Stats</span>
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px" }}>Games Won:</span>
-            <span style={{ fontSize: "14px", fontWeight: "bold" }}>12</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px" }}>Best Score:</span>
-            <span style={{ fontSize: "14px", fontWeight: "bold", color: colors.success }}>85</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px" }}>Average Score:</span>
-            <span style={{ fontSize: "14px", fontWeight: "bold" }}>67.5</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "14px" }}>Global Rank:</span>
-            <span style={{ fontSize: "14px", fontWeight: "bold" }}>#8</span>
-          </div>
+            ))
+          ) : (
+            <div className="p-4 text-center text-gray-500">
+              <ComicText>No leaderboard data available yet</ComicText>
+            </div>
+          )}
         </div>
+      )}
 
-        {/* Refresh Button */}
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "8px" }}>
-          <button
-            onClick={() => {
-              setIsLoading(true);
-              fetchLeaderboard();
-            }}
-            style={{
-              padding: "12px 24px",
-              backgroundColor: colors.secondary || "gray",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer",
-            }}
-          >
-            Refresh Leaderboard
-          </button>
+      {/* Your Stats Section */}
+      <div className="flex flex-col gap-4 rounded-lg p-4 shadow-md dark:bg-gray-800">
+        <span className="text-lg font-bold text-[#FF4500]"><ComicText>Your Stats</ComicText></span>
+        <div className="flex justify-between text-xs">
+          <span><ComicText>Best Score:</ComicText></span>
+          <span className="font-bold text-green-600"><ComicText>85</ComicText></span>
+        </div>
+        <div className="flex justify-between text-xs">
+          <span><ComicText>Average Score:</ComicText></span>
+          <span className="font-bold"><ComicText>67.5</ComicText></span>
+        </div>
+        <div className="flex justify-between text-xs">
+          <span><ComicText>Global Rank:</ComicText></span>
+          <span className="font-bold"><ComicText>#8</ComicText></span>
         </div>
       </div>
+
+      {/* Refresh Button */}
+      <ComicText>
+      <div className="flex justify-center p-2">
+        <button
+          onClick={() => {
+            setIsLoading(true);
+            fetchLeaderboard();
+          }}
+          className="rounded-lg bg-[#FF4500] px-6 py-3 text-white shadow-md transition hover:scale-105"
+        >
+          Refresh Leaderboard
+        </button>
+      </div>
+      </ComicText>
     </div>
   );
 };
