@@ -85,6 +85,12 @@ export interface LeaderboardEntry {
   averageScore?: number;
 }
 
+export interface PostCommentResponse {
+  success: boolean;
+  alreadyPosted?: boolean;
+  error?: string;
+}
+
 export interface CreatorData {
   word: string;
   maskedWord?: string | null;

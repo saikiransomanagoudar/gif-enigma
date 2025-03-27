@@ -5,6 +5,8 @@ import {
   cacheGifResults,
   getCachedGifResults,
   getUserGames,
+  postCompletionComment,
+  hasUserCompletedGame,
 } from './gameHandler';
 import {
   saveScore,
@@ -12,7 +14,7 @@ import {
   getGlobalLeaderboard,
   getUserScores,
   calculateScore,
-  getCumulativeLeaderboard
+  getCumulativeLeaderboard,
 } from './scoringService';
 
 export {
@@ -27,11 +29,13 @@ export {
   getGlobalLeaderboard,
   getUserScores,
   calculateScore,
-  getCumulativeLeaderboard
+  getCumulativeLeaderboard,
+  postCompletionComment,
+  hasUserCompletedGame,
 };
 
 export async function getRandomGame(
-  params: { excludeIds?: string[]; preferUserCreated?: boolean, username?: string; },
+  params: { excludeIds?: string[]; preferUserCreated?: boolean; username?: string },
   context: any
 ) {
   try {
@@ -41,7 +45,9 @@ export async function getRandomGame(
     // Get user's completed games from Redis if username is provided
     let completedGames: string[] = [];
     if (username) {
-      completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, { by: 'score' });
+      completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+        by: 'score',
+      });
       console.log('🔍 [DEBUG] User completed games:', completedGames);
     }
 
@@ -62,7 +68,7 @@ export async function getRandomGame(
 
     for (const item of gameMembers) {
       const gameId = typeof item === 'string' ? item : item.member;
-      
+
       // Skip excluded games
       if (allExcluded.includes(gameId)) {
         continue;
@@ -70,7 +76,7 @@ export async function getRandomGame(
 
       // Get game data
       const gameData = await context.redis.hGetAll(`game:${gameId}`);
-      
+
       // Check if game has valid GIFs
       let hasValidGifs = false;
       if (gameData?.gifs) {
@@ -81,11 +87,13 @@ export async function getRandomGame(
           console.error(`Error parsing gifs for game ${gameId}:`, e);
         }
       }
-      
+
       if (hasValidGifs) {
-        if (gameData.creatorId && 
-            gameData.creatorId !== 'anonymous' && 
-            gameData.creatorId !== 'system') {
+        if (
+          gameData.creatorId &&
+          gameData.creatorId !== 'anonymous' &&
+          gameData.creatorId !== 'system'
+        ) {
           userCreatedGameIds.push(gameId);
         } else {
           scheduledGameIds.push(gameId);
@@ -200,6 +208,29 @@ export async function saveGameState(
       lastPlayed: lastPlayed?.toString() || Date.now().toString(),
       isCompleted: isCompleted?.toString() || 'false',
     });
+
+    if (isCompleted) {
+      console.log(`🎮 [DEBUG] Game ${gameId} marked as completed in state for user ${username}`);
+
+      try {
+        // Add to user's completed games list
+        await context.redis.zAdd(`user:${username}:completedGames`, {
+          member: gameId,
+          score: Date.now(),
+        });
+
+        console.log(`✅ [DEBUG] Added ${gameId} to user ${username}'s completed games list`);
+
+        // Verify it was added (for debugging)
+        const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
+        console.log(
+          `✅ [DEBUG] Verification - Game in completed set with score: ${score !== null ? score : 'not found'}`
+        );
+      } catch (redisError) {
+        console.error(`❌ [DEBUG] Redis error when adding to completed games:`, redisError);
+        // Don't fail the operation if adding to completed games fails
+      }
+    }
 
     return { success: true };
   } catch (error) {

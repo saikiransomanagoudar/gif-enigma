@@ -53,11 +53,11 @@ export async function getRecommendations(
         ? `Generate ${count} DIVERSE single words that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
     ${
       category === 'Movies'
-        ? 'Include iconic film moments, expressive characters, memorable movie scenes, visual movie concepts, and action sequences that translate well to GIFs.'
+        ? 'Include a balanced mix of the following: (1) THEMATIC ELEMENTS from movies (like "revenge", "journey", "escape"), (2) CONCEPTS that appear in films (like "villain", "monsters", "rescue"), (3) EMOTIONS depicted in cinema (like "terrified", "heartbreak", "triumph"), (4) COMMON SETTINGS or OBJECTS from films (like "spaceship", "treasure", "castle"), and (5) some CHARACTER ARCHETYPES (like "heroes", "zombie", "cowboy"). Avoid using specific film titles that would make guessing too obvious when paired with related GIFs.'
         : category === 'Gaming'
-          ? 'Include game characters in action, victory/defeat moments, iconic gaming moves, game memes, and memorable gaming scenes that make great GIFs.'
+          ? 'Include a balanced mix of the following: (1) GAMING CONCEPTS (like "victory", "mission", "quest"), (2) GAME MECHANICS (like "puzzle", "stealth", "combat"), (3) COMMON GAME ELEMENTS (like "health", "treasure", "weapon"), (4) GAMING ENVIRONMENTS (like "dungeon", "fortress", "jungle"), and (5) some CHARACTER TYPES (like "wizard", "sniper", "zombie"). Avoid using specific game titles that would make guessing too obvious when paired with related GIFs.'
           : category === 'Books'
-            ? 'Include visually adaptable book characters, dramatic book scenes that have been filmed, book-to-movie moments, and expressive literary concepts.'
+            ? 'Include a balanced mix of the following: (1) LITERARY THEMES (like "journey", "mystery", "romance"), (2) LITERARY SETTINGS (like "castle", "island", "school"), (3) CHARACTER TYPES in literature (like "wizard", "detective", "monster"), (4) LITERARY DEVICES (like "tragedy", "suspense", "conflict"), and (5) GENRES (like "fantasy", "mystery", "western"). Avoid using specific book titles that would make guessing too obvious when paired with related GIFs.'
             : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
     } 
     All words must be at least 5 characters long and safe for all audiences (not NSFW).
@@ -75,11 +75,11 @@ export async function getRecommendations(
         : `Generate ${count} DIVERSE phrases (each with a minimum of two words) that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
     ${
       category === 'Movies'
-        ? 'Include iconic film quotes, character reactions, movie scene descriptions, and visual moments that are popular in GIF format.'
+        ? 'Include a balanced mix of the following: (1) MOVIE SCENARIOS (like "car chase", "plot twist", "epic battle"), (2) CINEMATIC TECHNIQUES (like "slow motion", "jump scare", "dream sequence"), (3) COMMON FILM MOMENTS (like "big reveal", "final boss", "sad ending"), (4) FILM REFERENCES that would create interesting GIF challenges (like "mind blown", "plot armor", "bad acting"). Avoid using direct movie titles and main character names that would make guessing too obvious when paired with related GIFs.'
         : category === 'Gaming'
-          ? 'Include gaming catchphrases, character actions, game moments, and gaming memes that are commonly found as GIFs.'
+          ? 'Include a balanced mix of the following: (1) GAMING ACTIONS (like "level up", "game over", "boss fight"), (2) PLAYER EXPERIENCES (like "rage quit", "epic win", "clutch save"), (3) GAMING MECHANICS (like "power move", "combo hit", "skill tree"), (4) GAMING SCENARIOS (like "secret level", "final form", "cut scene"). Avoid using direct game titles and specific character names that would make guessing too obvious when paired with related GIFs.'
           : category === 'Books'
-            ? 'Include book quotes that have been adapted to film, character moments, and dramatic scenes that would appear in GIF format.'
+            ? 'Include a balanced mix of the following: (1) READING THEMES (like "plot twist", "main quest", "epic tale"), (2) LITERARY TECHNIQUES (like "big reveal", "time jump", "dual narrative"), (3) STORY MOMENTS (like "dark secret", "true love", "final battle"), (4) BOOKISH CONCEPTS (like "plot armor", "red herring", "tragic hero"). Avoid using direct book titles and specific character names that would make guessing too obvious when paired with related GIFs.'
             : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
     } 
     Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).

@@ -4,7 +4,17 @@ import { CategoryType } from '../pages/CategoryPage';
 
 const RECS_CACHE_PREFIX = 'gemini:recs:';
 const SYN_CACHE_PREFIX = 'gemini:syn:';
-const CACHE_TTL = 60 * 60;
+const CACHE_TTL = 60 * 60; // Keep the 1-hour cache time
+
+// Function to shuffle array (Fisher-Yates algorithm)
+function shuffleArray<T>(array: T[]): T[] {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+}
 
 export async function fetchGeminiRecommendations(
   context: Context,
@@ -14,19 +24,29 @@ export async function fetchGeminiRecommendations(
 ): Promise<{ success: boolean; recommendations: string[]; error?: string; debug?: any }> {
   console.log(`[SERVER] Fetching recommendations for category: ${category}, type: ${inputType}, count: ${count}`);
   
-  const cacheKey = `${RECS_CACHE_PREFIX}${category}:${inputType}:${count}`.toLowerCase();
+  // Add randomization factor to cache keys to maintain multiple result sets
+  // We'll use day of week (0-6) to rotate through different cache sets
+  const dayOfWeek = new Date().getDay();
+  const cacheKey = `${RECS_CACHE_PREFIX}${category}:${inputType}:${count}:day${dayOfWeek}`.toLowerCase();
 
   try {
     console.log(`[SERVER] Checking Redis cache with key: ${cacheKey}`);
     const cachedData = await context.redis.get(cacheKey);
     if (cachedData) {
-      console.log('[SERVER] Cache hit! Returning cached recommendations');
+      console.log('[SERVER] Cache hit! Processing cached recommendations');
       try {
-        const parsed = JSON.parse(cachedData);
+        // Add proper type assertion for the parsed data
+        const parsed = JSON.parse(cachedData) as string[];
+        
+        // Even for cached results, we'll shuffle them for diversity
+        // and take slightly more items than requested to ensure variety
+        const shuffledResults = shuffleArray(parsed);
+        
+        // Return shuffled subset of our cached results
         return {
           success: true,
-          recommendations: parsed,
-          debug: { source: 'cache', cacheKey }
+          recommendations: shuffledResults.slice(0, count),
+          debug: { source: 'cache', cacheKey, originalCount: parsed.length }
         };
       } catch (parseError) {
         console.error('[SERVER] Error parsing cached data:', parseError);
@@ -40,7 +60,11 @@ export async function fetchGeminiRecommendations(
   }
 
   console.log('[SERVER] Making Gemini API call for recommendations');
-  const result = await getRecommendations({ category, inputType, count }, context);
+  
+  // Request more than we need so we can shuffle and have variety
+  const requestCount = Math.min(50, count * 2);
+  const result = await getRecommendations({ category, inputType, count: requestCount }, context);
+  
   console.log(`[SERVER] Gemini API response: success=${result.success}, recommendations count=${result.recommendations?.length}`);
 
   if (result.success && result.recommendations) {
@@ -49,6 +73,18 @@ export async function fetchGeminiRecommendations(
       await context.redis.set(cacheKey, JSON.stringify(result.recommendations));
       await context.redis.expire(cacheKey, CACHE_TTL);
       console.log('[SERVER] Successfully cached recommendations');
+      
+      // Shuffle and return a subset of results for diversity
+      const shuffledResults = shuffleArray(result.recommendations);
+      return {
+        success: true,
+        recommendations: shuffledResults.slice(0, count),
+        debug: {
+          source: 'api',
+          originalCount: result.recommendations.length,
+          returnedCount: count
+        }
+      };
     } catch (error) {
       console.error('[SERVER] Error writing to Redis cache:', error);
     }
@@ -58,7 +94,7 @@ export async function fetchGeminiRecommendations(
 
   return {
     success: result.success,
-    recommendations: result.recommendations ?? [],
+    recommendations: result.recommendations ? shuffleArray(result.recommendations).slice(0, count) : [],
     error: result.error,
     debug: result.debug || {}
   };
@@ -70,7 +106,9 @@ export async function fetchGeminiSynonyms(
 ): Promise<{ success: boolean; synonyms: string[][]; error?: string; debug?: any }> {
   console.log(`[SERVER] Fetching synonyms for word: ${word}`);
   
-  const cacheKey = `${SYN_CACHE_PREFIX}${word}`.toLowerCase();
+  // Add variety to cache key with a daily rotation
+  const dayOfWeek = new Date().getDay();
+  const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
 
   // 1) Check the cache
   try {
@@ -79,7 +117,11 @@ export async function fetchGeminiSynonyms(
     if (cachedData) {
       console.log('[SERVER] Cache hit for synonyms!');
       try {
-        const parsed = JSON.parse(cachedData);
+        // Add proper type assertion for the parsed data
+        const parsed = JSON.parse(cachedData) as string[][];
+        
+        // We don't shuffle synonym groups since they're structured as progressive hints
+        // (from abstract to specific)
         return {
           success: true,
           synonyms: parsed,
@@ -101,13 +143,20 @@ export async function fetchGeminiSynonyms(
   const result = await getSynonyms({ word }, context);
   console.log(`[SERVER] Gemini API synonyms response: success=${result.success}, synonym sets=${result.synonyms?.length}`);
 
-  // 3) Cache if successful
+        // 3) Cache if successful
   if (result.success && result.synonyms) {
     try {
       console.log('[SERVER] Caching successful synonyms response to Redis');
       await context.redis.set(cacheKey, JSON.stringify(result.synonyms));
       await context.redis.expire(cacheKey, CACHE_TTL);
       console.log('[SERVER] Successfully cached synonyms');
+      
+      // Don't shuffle synonyms as they're structured from abstract to specific
+      return {
+        success: true,
+        synonyms: result.synonyms,
+        debug: { source: 'api' }
+      };
     } catch (error) {
       console.error('[SERVER] Error writing synonyms to Redis cache:', error);
     }
@@ -122,88 +171,4 @@ export async function fetchGeminiSynonyms(
     error: result.error,
     debug: result.debug || {}
   };
-}
-
-// This is a test function that can be called directly to check if the Gemini API is working
-export async function testGeminiConnection(
-  context: Context
-): Promise<{ success: boolean; message: string; error?: string }> {
-  console.log('[SERVER] Testing Gemini API connection');
-  
-  try {
-    // Check if API key exists
-    const apiKey = await context.settings.get('gemini-api-key');
-    
-    if (!apiKey) {
-      console.error('[SERVER] Gemini API key not found in settings');
-      return {
-        success: false,
-        message: 'API key not configured in Devvit settings',
-        error: 'Missing API key'
-      };
-    }
-    
-    console.log('[SERVER] API key found, testing basic API call');
-    
-    // Make a simple API call
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: 'Respond with the word "success" as a JSON string.',
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 20,
-            topP: 0.95,
-          },
-        }),
-      }
-    );
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[SERVER] Gemini API test failed with status ${response.status}: ${errorText}`);
-      return {
-        success: false,
-        message: `API connection test failed with status: ${response.status}`,
-        error: errorText.substring(0, 200)
-      };
-    }
-    
-    const data = await response.json();
-    
-    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      console.log('[SERVER] Gemini API test successful!');
-      return {
-        success: true,
-        message: 'Successfully connected to Gemini API',
-      };
-    } else {
-      console.error('[SERVER] Unexpected response format from Gemini API test');
-      return {
-        success: false,
-        message: 'API responded but with unexpected format',
-        error: JSON.stringify(data)
-      };
-    }
-  } catch (error) {
-    console.error('[SERVER] Error testing Gemini API connection:', error);
-    return {
-      success: false,
-      message: 'Error connecting to Gemini API',
-      error: String(error)
-    };
-  }
 }

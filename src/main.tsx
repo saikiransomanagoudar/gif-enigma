@@ -8,6 +8,8 @@ import {
   getGameState,
   saveGameState,
   getRandomGame,
+  postCompletionComment,
+  hasUserCompletedGame,
 } from '../game/server/gameHandler.server.js';
 import { Page } from '../game/lib/types.js';
 import {
@@ -66,6 +68,7 @@ Devvit.addCustomPostType({
     let isWebViewReadyFlag: boolean = false;
     const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
       useState(0);
+    const [postPreviewRefreshTrigger, setPostPreviewRefreshTrigger] = useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
       try {
         // Store in Redis with the post ID as part of the key
@@ -751,15 +754,79 @@ Devvit.addCustomPostType({
 
           case 'MARK_GAME_COMPLETED':
             try {
-              await context.redis.zAdd(`user:${event.data.username}:completedGames`, {
-                member: event.data.gameId,
-                score: Date.now(),
-              });
+              console.log('🏁 [DEBUG] Marking game as completed:', event.data);
+
+              if (!event.data || !event.data.gameId || !event.data.username) {
+                postMessage({
+                  type: 'MARK_GAME_COMPLETED_RESULT',
+                  success: false,
+                  error: 'Missing required data',
+                });
+                return;
+              }
+
+              // Add the game to user's completed games list
+              try {
+                console.log(
+                  `🔍 [DEBUG-COMPLETION] Adding game ${event.data.gameId} to user ${event.data.username}'s completed games`
+                );
+                await context.redis.zAdd(`user:${event.data.username}:completedGames`, {
+                  member: event.data.gameId,
+                  score: Date.now(),
+                });
+
+                // Verify it was added
+                const score = await context.redis.zScore(
+                  `user:${event.data.username}:completedGames`,
+                  event.data.gameId
+                );
+                console.log(
+                  `🔍 [DEBUG-COMPLETION] Verification - Game in completed set: ${score !== null}`
+                );
+              } catch (redisError) {
+                console.error('Error adding to completed games:', redisError);
+                // Continue execution - don't fail the whole operation
+              }
+
+              // Get additional completion data for comment if available
+              const commentData = event.data.commentData;
+
+              // If we have comment data, post a completion comment
+              if (commentData) {
+                try {
+                  // Use the provided gameId to fetch the Reddit post ID
+                  const redditPostId = context.postId || null;
+
+                  // Call the function to post a comment
+                  await postCompletionComment(
+                    {
+                      gameId: event.data.gameId,
+                      username: event.data.username,
+                      numGuesses: commentData.numGuesses || 1,
+                      numHints: commentData.numHints || 0,
+                      otherGuesses: commentData.otherGuesses || [],
+                      redditPostId,
+                    },
+                    context
+                  );
+                } catch (commentError) {
+                  console.error('Error posting completion comment:', commentError);
+                  // Don't fail the whole operation if commenting fails
+                }
+              }
+
+              // Trigger a refresh of the GamePostPreview
+              setPostPreviewRefreshTrigger((prev) => prev + 1);
+              console.log(
+                `🔄 [DEBUG-COMPLETION] Triggered post preview refresh (${postPreviewRefreshTrigger + 1})`
+              );
+
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: true,
               });
             } catch (error) {
+              console.error('Error marking game completed:', error);
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: false,
@@ -767,6 +834,106 @@ Devvit.addCustomPostType({
               });
             }
             break;
+
+            case 'REFRESH_POST_PREVIEW':
+              try {
+                console.log('🔄 [DEBUG] Refreshing post preview');
+                
+                // Force a refresh of the GamePostPreview component
+                setPostPreviewRefreshTrigger(prev => prev + 1);
+                
+                postMessage({
+                  type: 'REFRESH_POST_PREVIEW_RESULT',
+                  success: true,
+                });
+              } catch (error) {
+                console.error('Error refreshing post preview:', error);
+                postMessage({
+                  type: 'REFRESH_POST_PREVIEW_RESULT',
+                  success: false,
+                  error: String(error),
+                });
+              }
+              break;
+
+          case 'POST_COMPLETION_COMMENT':
+            try {
+              console.log('🎉 [DEBUG] Posting completion comment:', event.data);
+
+              if (!event.data || !event.data.gameId || !event.data.username) {
+                postMessage({
+                  type: 'POST_COMPLETION_COMMENT_RESULT',
+                  success: false,
+                  error: 'Missing required data: gameId and username are required',
+                });
+                return;
+              }
+
+              // Use the current post ID if available
+              const redditPostId = context.postId || null;
+
+              // Call the function to post a comment
+              const result = await postCompletionComment(
+                {
+                  gameId: event.data.gameId,
+                  username: event.data.username,
+                  numGuesses: event.data.numGuesses || 1,
+                  numHints: event.data.numHints || 0,
+                  otherGuesses: event.data.otherGuesses || [],
+                  redditPostId,
+                },
+                context
+              );
+
+              postMessage({
+                type: 'POST_COMPLETION_COMMENT_RESULT',
+                success: result.success,
+                alreadyPosted: result.alreadyPosted,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('Error posting completion comment:', error);
+              postMessage({
+                type: 'POST_COMPLETION_COMMENT_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'HAS_USER_COMPLETED_GAME':
+            try {
+              console.log('🔍 [DEBUG] Checking if user has completed game:', event.data);
+
+              if (!event.data || !event.data.gameId || !event.data.username) {
+                postMessage({
+                  type: 'HAS_USER_COMPLETED_GAME_RESULT',
+                  success: false,
+                  error: 'Missing required data',
+                  completed: false,
+                });
+                return;
+              }
+
+              // Check if the user has completed the game
+              const result = await hasUserCompletedGame(event.data, context);
+
+              postMessage({
+                type: 'HAS_USER_COMPLETED_GAME_RESULT',
+                success: true,
+                completed: result.completed,
+              });
+            } catch (error) {
+              console.error('Error checking game completion status:', error);
+              postMessage({
+                type: 'HAS_USER_COMPLETED_GAME_RESULT',
+                success: false,
+                error: String(error),
+                completed: false,
+              });
+            }
+            break;
+
           case 'NAVIGATION':
             console.log('[DEBUG] main.tsx: NAVIGATION message received:', event);
             persistentPage = event.page;
@@ -857,6 +1024,7 @@ Devvit.addCustomPostType({
           onMount={mount}
           postMessage={postMessage}
           isWebViewReady={isWebViewReadyFlag}
+          refreshTrigger={postPreviewRefreshTrigger}
         />
       ) : (
         <CustomPostPreview

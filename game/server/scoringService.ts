@@ -27,31 +27,32 @@ export function calculateScore(params: {
   let gifPenalty = 0;
   let wordPenalty = 0;
 
-  // Calculate GIF hint penalty
   if (gifHintCount >= 2) {
-    gifPenalty += 10;
-  }
-  if (gifHintCount >= 3) {
-    gifPenalty += 10; // Total: 20
-  }
-  if (gifHintCount >= 4) {
-    gifPenalty += 20; // Total: 40
+    if (gifHintCount === 2) {
+      gifPenalty = 10;
+    } else if (gifHintCount === 3) {
+      gifPenalty = 20;
+    } else if (gifHintCount >= 4) {
+      gifPenalty = 40;
+    }
   }
 
-  // Calculate Word/Phrase hint penalty based on revealed letters
-  if (revealedLetterCount > 0) {
-    if (wordLength >= 5 && wordLength <= 7) {
-      // 50 points reduction per reveal (2 letters each)
-      wordPenalty = Math.min(50, Math.ceil(revealedLetterCount / 2) * 50);
-    } else if (wordLength >= 8 && wordLength <= 10) {
-      // 25 points reduction per reveal (2 letters each)
-      wordPenalty = Math.min(50, Math.ceil(revealedLetterCount / 2) * 25);
-    } else if (wordLength >= 11 && wordLength <= 15) {
-      // 15 points reduction per reveal (2 letters each)
-      wordPenalty = Math.min(45, Math.ceil(revealedLetterCount / 2) * 15);
-    } else if (wordLength >= 16) {
-      // 10 points reduction per reveal (3 letters each)
-      wordPenalty = Math.min(30, Math.ceil(revealedLetterCount / 3) * 10);
+  // Update the word penalty section in calculateScore
+  if (revealedLetterCount > 0 && wordLength >= 5) {
+    let hintsUsed = 0;
+
+    if (wordLength <= 7) {
+      hintsUsed = Math.ceil(revealedLetterCount / 2);
+      wordPenalty = hintsUsed * 50;
+    } else if (wordLength <= 10) {
+      hintsUsed = Math.ceil(revealedLetterCount / 2);
+      wordPenalty = hintsUsed * 25;
+    } else if (wordLength <= 15) {
+      hintsUsed = Math.ceil(revealedLetterCount / 2);
+      wordPenalty = hintsUsed * 15;
+    } else {
+      hintsUsed = Math.ceil(revealedLetterCount / 3);
+      wordPenalty = hintsUsed * 10;
     }
   }
 
@@ -77,7 +78,6 @@ export async function saveScore(
     console.log('🔍 [DEBUG] saveScore called with params:', params);
     const { username, gameId, score, gifPenalty, wordPenalty, timeTaken, timestamp } = params;
 
-    
     if (!username || !gameId) {
       return { success: false, error: 'Username and Game ID are required' };
     }
@@ -106,25 +106,25 @@ export async function saveScore(
     });
 
     // -------- Begin Cumulative Leaderboard Additions --------
-    
+
     // Track that this user completed this game
     await context.redis.zAdd(`user:${username}:completedGames`, {
       member: gameId,
       score: timestamp,
     });
-    
+
     // Update user stats
     try {
       // Get existing user stats
       const userStats = await context.redis.hGetAll(`userStats:${username}`);
-      
+
       // Calculate new stats
       const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
       const gamesWon = Number(userStats.gamesWon || 0) + 1; // Assuming a score means they won
       const totalScore = Number(userStats.totalScore || 0) + score;
       const bestScore = Math.max(Number(userStats.bestScore || 0), score);
       const averageScore = Math.round(totalScore / gamesPlayed);
-      
+
       // Save updated stats
       await context.redis.hSet(`userStats:${username}`, {
         gamesPlayed: gamesPlayed.toString(),
@@ -134,13 +134,13 @@ export async function saveScore(
         averageScore: averageScore.toString(),
         lastPlayed: timestamp.toString(),
       });
-      
+
       // Update cumulative leaderboard
       await context.redis.zAdd('cumulativeLeaderboard', {
         score: totalScore,
         member: username,
       });
-      
+
       console.log(`✅ [DEBUG] Updated user stats for ${username}, total score: ${totalScore}`);
     } catch (statsError) {
       console.error(`❌ [DEBUG] Error updating user stats for ${username}:`, statsError);
@@ -344,7 +344,7 @@ export async function getCumulativeLeaderboard(
     for (let i = 0; i < leaderboardItems.length; i++) {
       const item = leaderboardItems[i];
       const username = typeof item.member === 'string' ? item.member : '';
-      
+
       try {
         // Get user stats
         const userStats = await context.redis.hGetAll(`userStats:${username}`);
@@ -361,7 +361,7 @@ export async function getCumulativeLeaderboard(
           gamesWon: Number(userStats.gamesWon || 0),
           bestScore: Number(userStats.bestScore || 0),
           averageScore: Number(userStats.averageScore || 0),
-          timestamp: Number(userStats.lastPlayed || 0)
+          timestamp: Number(userStats.lastPlayed || 0),
         });
       } catch (entryError) {
         console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
@@ -374,4 +374,3 @@ export async function getCumulativeLeaderboard(
     return { success: false, error: String(error) };
   }
 }
-

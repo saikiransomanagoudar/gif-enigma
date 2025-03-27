@@ -178,13 +178,13 @@ export const CustomPostPreview = ({
   };
 
   return (
-    <vstack height="100%" width="100%" backgroundColor="#0d1629">
+    <vstack height="100%" width="100%" darkBackgroundColor='#0d1629' lightBackgroundColor='#E8E5DA'>
       <spacer size="large" />
 
       {/* title */}
       <vstack alignment="center middle" padding="medium">
         <ComicText size={0.7} color="#FF4500">
-          GIF Enigma
+          GIF  Enigma
         </ComicText>
       </vstack>
 

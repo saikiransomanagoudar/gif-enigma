@@ -459,7 +459,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     <div className="mb-4" ref={gifGridRef}>
       <div className="mb-2 flex items-center justify-between">
         <ComicText size={0.8} color={colors.primary}>
-          GIF Clues
+          GIF Hints
         </ComicText>
       </div>
       <div className="grid grid-cols-2 gap-5">

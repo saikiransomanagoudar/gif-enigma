@@ -1,4 +1,4 @@
-import { Devvit, Context, useState, useAsync } from '@devvit/public-api';
+import { Devvit, Context, useAsync, useState } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
 import { BlocksToWebviewMessage } from '../../game/shared.js';
 import { Page } from '../../game/lib/types.js';
@@ -8,6 +8,7 @@ interface GamePostPreviewProps {
   onMount: () => void;
   postMessage: (message: BlocksToWebviewMessage) => void;
   isWebViewReady: boolean;
+  refreshTrigger: number;
 }
 
 export const GamePostPreview = ({
@@ -26,6 +27,11 @@ export const GamePostPreview = ({
   const [gifLoaded, setGifLoaded] = useState(true); // Start with true since we can't track loading
   const [letterBoxes, setLetterBoxes] = useState<string[]>([]);
   const [pendingNavigation, setPendingNavigation] = useState<{ page: Page; gameId?: string } | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(
+    context.uiEnvironment?.colorScheme === "dark"
+  );
+  const [hasCompletedGame, setHasCompletedGame] = useState(false);
+  
 
   // Load game data for this post
   useAsync(
@@ -33,8 +39,9 @@ export const GamePostPreview = ({
       if (!context.postId) return null;
 
       // Try to get username
+      let currentUsername;
       try {
-        const currentUsername = await context.reddit.getCurrentUsername();
+        currentUsername = await context.reddit.getCurrentUsername();
         if (currentUsername) {
           setUsername(currentUsername);
         }
@@ -48,14 +55,39 @@ export const GamePostPreview = ({
 
       if (!gameId) return null;
 
+      if (currentUsername) {
+        try {
+          console.log(`🔍 [DEBUG-COMPLETION] Checking if ${currentUsername} has completed game ${gameId}`);
+          
+          // Method 1: Check user's completed games directly
+          const score = await context.redis.zScore(`user:${currentUsername}:completedGames`, gameId);
+          console.log(`🔍 [DEBUG-COMPLETION] zScore result:`, score);
+          
+          // Method 2: Check game state
+          const gameState = await context.redis.hGetAll(`gameState:${gameId}:${currentUsername}`);
+          console.log(`🔍 [DEBUG-COMPLETION] Game state:`, gameState);
+          const stateCompleted = gameState?.isCompleted === 'true';
+          
+          // Use either method to determine completion
+          const hasCompleted = score !== null || stateCompleted;
+          console.log(`🔍 [DEBUG-COMPLETION] Game completion status:`, hasCompleted);
+          setHasCompletedGame(hasCompleted);
+        } catch (error) {
+          console.error('Error checking game completion status:', error);
+        }
+      }
+
       // Try to get preview data first
       const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
+
+      const redditPostId = context.postId;
 
       if (previewData && previewData.maskedWord) {
         return {
           maskedWord: previewData.maskedWord || '',
           gifs: JSON.parse(previewData.gifs || '[]'),
           gameId: gameId,
+          redditPostId,
         };
       }
 
@@ -66,6 +98,7 @@ export const GamePostPreview = ({
           maskedWord: gameData.maskedWord || '',
           gifs: JSON.parse(gameData.gifs || '[]'),
           gameId: gameId,
+          redditPostId,
         };
       }
 
@@ -136,7 +169,6 @@ export const GamePostPreview = ({
   const handlePlayGame = () => {
     if (previewData.gameId) {
       console.log("[DEBUG-NAV] GamePostPreview: onPress handlePlayGame, gameId:", previewData.gameId);
-      context.ui.showToast('Loading game...');
       
       // Store the gameId in Redis for persistence
       storeGameId(previewData.gameId);
@@ -155,7 +187,6 @@ export const GamePostPreview = ({
         });
       } else {
         console.log('[DEBUG-NAV] GamePostPreview: WebView not ready yet, storing pending navigation');
-        // Store the navigation request to be sent when WebView is ready
         setPendingNavigation({
           page: 'game',
           gameId: previewData.gameId
@@ -178,6 +209,30 @@ export const GamePostPreview = ({
           page: 'howToPlay',
           params: {}
         }
+      });
+    } else {
+      setPendingNavigation({
+        page: 'howToPlay'
+      });
+    }
+  };
+
+  const handleShowResults = () => {
+    console.log('[DEBUG-NAV] GamePostPreview: handleShowResults pressed');
+    onMount();
+    
+    if (isWebViewReady) {
+      safePostMessage({
+        type: 'NAVIGATE',
+        data: {
+          page: 'leaderboard',
+          params: { gameId: previewData.gameId }
+        }
+      });
+    } else {
+      setPendingNavigation({
+        page: 'leaderboard',
+        gameId: previewData.gameId
       });
     }
   };
@@ -217,7 +272,7 @@ export const GamePostPreview = ({
   const firstGif = getFirstGif();
 
   return (
-    <vstack height="100%" width="100%" backgroundColor="#0d1629" padding="small">
+    <vstack height="100%" width="100%" backgroundColor="#0d1629" padding="small" darkBackgroundColor='#1A2740' lightBackgroundColor='#E8E5DA'>
       {/* Header */}
       <vstack alignment="center middle" padding="xsmall">
         <ComicText size={0.6} color="#FF4500">
@@ -233,12 +288,12 @@ export const GamePostPreview = ({
             backgroundColor="#1a2740"
             cornerRadius="large"
             padding="small"
-            width="95%"
+            width="60%"
             alignment="center middle"
           >
             <vstack
-              height={200}
-              width="95%"
+              height={100}
+              width="60%"
               backgroundColor="#0a1020"
               cornerRadius="medium"
               padding="xsmall"
@@ -247,9 +302,8 @@ export const GamePostPreview = ({
               <image
                 url={firstGif}
                 imageWidth={190}
-                imageHeight={190}
+                imageHeight={250}
                 resizeMode="fit"
-                description="First GIF clue"
               />
 
               {!gifLoaded && (
@@ -260,60 +314,56 @@ export const GamePostPreview = ({
             </vstack>
           </vstack>
         )}
+      </vstack>
 
-        {/* Word to guess with boxes */}
-        <vstack padding="small" alignment="center middle" gap="large">
-          <text size="medium" weight="bold" color="#ffffff">
-            Guess the word/phrase:
-          </text>
-
-          <hstack gap="large" alignment="center middle">
-            {letterBoxes.map((letter, index) => (
-              <vstack
-                key={index.toString()}
-                width={28}
-                height={36}
-                backgroundColor={letter ? '#2a3f66' : '#1a2740'}
-                cornerRadius="small"
-                border="thin"
-                borderColor="#3a4f76"
+      {/* Buttons based on game completion status */}
+      <vstack padding="medium" alignment="center middle" gap="medium">
+        {!hasCompletedGame ? (
+          // User hasn't completed the game - show Solve It button
+          <hstack
+            cornerRadius="full"
+            backgroundColor='#FF4500'
+            padding="medium"
+            onPress={handlePlayGame}
+            alignment="center middle"
+          >
+            <text color='#FFFFFF' weight="bold">
+              Solve It 🔍
+            </text>
+          </hstack>
+        ) : (
+          // User has completed the game - show How This Game Works and Show Results buttons
+          <vstack gap="medium" alignment="center middle">
+            <text color={isDarkMode ? '#FFFFFF' : '#0d1629'} weight="bold" alignment="center">
+              You've solved this enigma!
+            </text>
+            <hstack gap="medium" alignment="center middle">
+              <hstack
+                cornerRadius="full"
+                backgroundColor='#4267B2'
+                padding="medium"
+                onPress={handleHowToPlay}
                 alignment="center middle"
               >
-                <text color="#ffffff" weight="bold" size="large">
-                  {letter}
+                <text color='#FFFFFF' weight="bold">
+                  How This Game Works
                 </text>
-              </vstack>
-            ))}
-          </hstack>
-        </vstack>
+              </hstack>
+              <hstack
+                cornerRadius="full"
+                backgroundColor='#FF4500'
+                padding="medium"
+                onPress={handleShowResults}
+                alignment="center middle"
+              >
+                <text color='#FFFFFF' weight="bold">
+                  Show Results
+                </text>
+              </hstack>
+            </hstack>
+          </vstack>
+        )}
       </vstack>
-
-      {/* Play button */}
-      <vstack padding="medium" alignment="center middle">
-        <hstack
-          cornerRadius="full"
-          backgroundColor='#FF4500'
-          padding="medium"
-          onPress={handlePlayGame}
-          alignment="center middle"
-        >
-          <text color='#FFFFFF' weight="bold">
-            Solve It!
-          </text>
-        </hstack>
-
-      </vstack>
-
-      {/* Footer */}
-      <hstack alignment="center middle" padding="small" gap="medium">
-        <text color="#7fcfff" onPress={handleHowToPlay} size="small">
-          How to play
-        </text>
-
-        <text color="#7fcfff" onPress={handlePlayGame} size="small">
-          See all 4 clues
-        </text>
-      </hstack>
     </vstack>
   );
 };

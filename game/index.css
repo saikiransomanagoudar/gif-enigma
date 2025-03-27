@@ -7,6 +7,12 @@
   font-style: normal;
 }
 
+@layer utilities {
+  .font-comic-sans {
+    font-family: 'Comic Sans MS', cursive, sans-serif;
+  }
+}
+
 .comic-text {
   font-family: 'Comic Sans MS', cursive;
 }

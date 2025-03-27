@@ -6,6 +6,7 @@ import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
+  // @ts-ignore
   const [redditUsername, setRedditUsername] = useState<string>('');
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -140,9 +141,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
-  const textColor = isDarkMode
-    ? 'text-transparent bg-gradient-to-t from-[#E5E5E5] to-[#00BBFF] bg-clip-text'
-    : 'text-black';
 
   return (
     <PageTransition>
@@ -204,14 +202,14 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1 }}
             >
-              <ComicText
+              {/* <ComicText
                 size={0.8}
                 color={textColor}
                 className={`mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
                 Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
                 secret word/phrase from GIFs?
-              </ComicText>
+              </ComicText> */}
             </motion.h2>
           </div>
         </div>

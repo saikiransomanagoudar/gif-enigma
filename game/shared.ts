@@ -135,8 +135,34 @@ export type WebviewToBlockMessage =
     }
   | {
       type: 'MARK_GAME_COMPLETED';
-      success: boolean;
+      data: {
+        gameId: string;
+        username: string;
+        commentData?: {
+          numGuesses: number;
+          gifHints: number;
+          wordHints: number;
+          hintTypeLabel: string;
+        };
+      };
     }
+  | {
+      type: 'POST_COMPLETION_COMMENT';
+      data: {
+        gameId: string;
+        username: string;
+        numGuesses: number;
+        numHints: number;
+      };
+    }
+  | {
+      type: 'HAS_USER_COMPLETED_GAME';
+      data: {
+        gameId: string;
+        username: string;
+      };
+    }
+  | { type: 'REFRESH_POST_PREVIEW'; data?: { gameId?: string } }
   | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
   | { type: 'GET_INITIAL_DATA' };
 
@@ -386,6 +412,20 @@ export type BlocksToWebviewMessage =
           timestamp: number;
         }>;
       };
+      error?: string;
+    }
+  | { type: 'MARK_GAME_COMPLETED_RESULT'; success: boolean; error?: string }
+  | { type: 'REFRESH_POST_PREVIEW_RESULT'; success: boolean; error?: string }
+  | {
+      type: 'POST_COMPLETION_COMMENT_RESULT';
+      success: boolean;
+      alreadyPosted?: boolean;
+      error?: string;
+    }
+  | {
+      type: 'HAS_USER_COMPLETED_GAME_RESULT';
+      success: boolean;
+      completed: boolean;
       error?: string;
     };
 
