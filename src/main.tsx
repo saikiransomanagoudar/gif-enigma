@@ -1,4 +1,11 @@
-import { Devvit, Context, useWebView, useState, useAsync } from '@devvit/public-api';
+import {
+  Devvit,
+  Context,
+  useWebView,
+  useState,
+  useAsync,
+  RedditAPIClient,
+} from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
 import {
@@ -1080,58 +1087,288 @@ Devvit.addCustomPostType({
             }
             break;
 
-            case 'NAVIGATE':
-              console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
-            
-              // Extract navigation data
-              const targetPage = event.data?.page;
-              const targetGameId = event.data?.params?.gameId;
-            
-              console.log(
-                `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
-              );
-            
-              if (targetPage) {
-                // CRITICAL FIX: Force clear any existing navigation state first
-                try {
-                  const navStateKey = `navState:${context.postId || 'default'}`;
-                  await context.redis.del(navStateKey);
-                  console.log('[DEBUG-NAV] main.tsx: Cleared previous navigation state');
-                } catch (clearError) {
-                  console.error('[DEBUG-NAV] Error clearing previous navigation state:', clearError);
-                }
-            
-                // Store fresh navigation state
-                try {
-                  await storeNavigationState(targetPage, targetGameId);
-                  console.log('[DEBUG-NAV] main.tsx: Stored new navigation state:', targetPage, targetGameId);
-                } catch (storeError) {
-                  console.error('[DEBUG-NAV] Error storing navigation state:', storeError);
-                }
-            
-                // Send navigation response
-                const navResponse: BlocksToWebviewMessage = {
-                  type: 'SET_NAVIGATION_STATE',
-                  data: {
-                    page: targetPage,
-                    ...(targetGameId ? { gameId: targetGameId } : {})
-                  }
-                };
-            
-                console.log(
-                  '[DEBUG-NAV] main.tsx: Sending navigation response:',
-                  JSON.stringify(navResponse)
-                );
-                postMessage(navResponse);
-              } else {
-                console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
-                postMessage({
-                  type: 'NAVIGATION_RESULT',
-                  success: false,
-                  error: 'Missing page in navigation request',
-                } as BlocksToWebviewMessage);
+          case 'NAVIGATE':
+            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
+
+            // Extract navigation data
+            const targetPage = event.data?.page;
+            const targetGameId = event.data?.params?.gameId;
+
+            console.log(
+              `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
+            );
+
+            if (targetPage) {
+              // CRITICAL FIX: Force clear any existing navigation state first
+              try {
+                const navStateKey = `navState:${context.postId || 'default'}`;
+                await context.redis.del(navStateKey);
+                console.log('[DEBUG-NAV] main.tsx: Cleared previous navigation state');
+              } catch (clearError) {
+                console.error('[DEBUG-NAV] Error clearing previous navigation state:', clearError);
               }
-              break;
+
+              // Store fresh navigation state
+              try {
+                await storeNavigationState(targetPage, targetGameId);
+                console.log(
+                  '[DEBUG-NAV] main.tsx: Stored new navigation state:',
+                  targetPage,
+                  targetGameId
+                );
+              } catch (storeError) {
+                console.error('[DEBUG-NAV] Error storing navigation state:', storeError);
+              }
+
+              // Send navigation response
+              const navResponse: BlocksToWebviewMessage = {
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: targetPage,
+                  ...(targetGameId ? { gameId: targetGameId } : {}),
+                },
+              };
+
+              console.log(
+                '[DEBUG-NAV] main.tsx: Sending navigation response:',
+                JSON.stringify(navResponse)
+              );
+              postMessage(navResponse);
+            } else {
+              console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
+              postMessage({
+                type: 'NAVIGATION_RESULT',
+                success: false,
+                error: 'Missing page in navigation request',
+              } as BlocksToWebviewMessage);
+            }
+            break;
+
+          case 'NAVIGATE_TO_POST':
+            try {
+              console.log('📱 [DEBUG] Navigating to Reddit post:', event.data.postId);
+
+              if (!event.data.postId) {
+                console.error('❌ [DEBUG] No post ID provided for navigation');
+                return;
+              }
+
+              // Make sure the postId has the proper format (add t3_ prefix if missing)
+              const formattedPostId = event.data.postId.startsWith('t3_')
+                ? event.data.postId
+                : `t3_${event.data.postId}`;
+
+              console.log('🔍 [DEBUG] Using formatted post ID:', formattedPostId);
+
+              try {
+                // Method 1: Get the post object using Reddit API
+                const post = await context.reddit.getPostById(formattedPostId);
+
+                if (post) {
+                  // Log all post properties to help with debugging
+                  console.log('✅ [DEBUG] Got post object with properties:', Object.keys(post));
+
+                  if (post.url) {
+                    console.log('✅ [DEBUG] Got post URL:', post.url);
+                    context.ui.navigateTo(post.url);
+                  } else if (post.permalink) {
+                    // Fallback to permalink if url is not available
+                    const fullUrl = `https://www.reddit.com${post.permalink}`;
+                    console.log('✅ [DEBUG] Using permalink instead:', fullUrl);
+                    context.ui.navigateTo(fullUrl);
+                  } else {
+                    throw new Error('Post URL and permalink both missing');
+                  }
+
+                  console.log('✅ [DEBUG] Navigation request sent for post');
+                } else {
+                  throw new Error('Post not found');
+                }
+              } catch (error) {
+                console.error('❌ [DEBUG] Error with Method 1, trying fallback:', error);
+
+                // Fallback method: Construct the URL directly
+                try {
+                  // Clean the postId (remove t3_ prefix if present)
+                  const cleanPostId = event.data.postId.replace('t3_', '');
+
+                  // Get the current subreddit
+                  const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
+                  const subredditName = subreddit?.name || 'PlayGIFEnigma'; // Use your default subreddit
+
+                  const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
+                  console.log('✅ [DEBUG] Constructed fallback post URL:', postUrl);
+
+                  context.ui.navigateTo(postUrl);
+                  console.log('✅ [DEBUG] Navigation request sent with fallback URL');
+                } catch (fallbackError) {
+                  console.error('❌ [DEBUG] Fallback navigation also failed:', fallbackError);
+                }
+              }
+            } catch (error) {
+              console.error('❌ [DEBUG] Error in NAVIGATE_TO_POST handler:', error);
+            }
+            break;
+
+          case 'GET_RANDOM_POST':
+            try {
+              console.log('🔍 [DEBUG] Getting random post, with params:', event.data);
+
+              // Get username if provided
+              const username = event.data?.username || (await context.reddit.getCurrentUsername());
+
+              if (!username) {
+                console.warn('⚠️ [DEBUG] No username available, cannot filter completed games');
+              }
+
+              // Get user's completed games if username is available
+              let completedGameIds: string[] = [];
+              if (username) {
+                const rangeResult = await context.redis.zRange(
+                  `user:${username}:completedGames`,
+                  0,
+                  -1,
+                  {
+                    by: 'score',
+                  }
+                );
+                completedGameIds = rangeResult.map((item) =>
+                  typeof item === 'string' ? item : item.member
+                );
+                console.log('🔍 [DEBUG] User completed games:', completedGameIds);
+              }
+
+              // Get all active games from the sorted set
+              const gameItems = await context.redis.zRange('activeGames', 0, -1);
+              console.log(`🔍 [DEBUG] Found ${gameItems.length} active games`);
+
+              if (!gameItems || gameItems.length === 0) {
+                console.error('❌ [DEBUG] No active games found');
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'No active games found',
+                });
+                return;
+              }
+
+              // Convert to array of game IDs
+              const gameIds = gameItems.map((item) =>
+                typeof item === 'string' ? item : item.member
+              );
+
+              // Get the subreddit directly
+              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma'); // Replace with your actual subreddit name
+
+              // Get removed/spam posts to filter them out
+              const spamPosts = await subreddit.getSpam({ type: 'post' });
+              const removedPostIds = (await spamPosts.all()).map((post) => post.id);
+
+              console.log('🔍 [DEBUG] Removed post IDs:', removedPostIds);
+
+              // Get posts removed by Automoderator
+              const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
+              const automoderatorRemovedIds = zRangeResult.map((item) =>
+                typeof item === 'string' ? item : item.member
+              );
+              console.log('🔍 [DEBUG] Posts removed by Automoderator:', automoderatorRemovedIds);
+
+              // Get any additional exclude IDs from the request
+              const excludeIds = event.data?.excludeIds || [];
+
+              // Filter out games with no Reddit post ID, excluded posts, removed posts, and completed games
+              const availablePosts = [];
+
+              for (const gameId of gameIds) {
+                // Skip if this game is already completed by the user
+                if (completedGameIds.includes(gameId)) {
+                  console.log(`🔍 [DEBUG] Skipping completed game: ${gameId}`);
+                  continue;
+                }
+
+                // Get game data including redditPostId
+                const gameData = await context.redis.hGetAll(`game:${gameId}`);
+
+                if (gameData && gameData.redditPostId) {
+                  const postId = gameData.redditPostId;
+
+                  // Check if this post is in our exclude list or is a removed/spam post
+                  if (
+                    !excludeIds.includes(postId) &&
+                    !removedPostIds.some(
+                      (id) => id === postId || id === `t3_${postId.replace('t3_', '')}`
+                    ) &&
+                    !automoderatorRemovedIds.includes(postId)
+                  ) {
+                    // Check if user has a game state for this game
+                    let isCompleted = false;
+                    if (username) {
+                      try {
+                        const gameStateKey = `gameState:${gameId}:${username}`;
+                        const gameState = await context.redis.hGetAll(gameStateKey);
+                        if (gameState && gameState.playerState) {
+                          // Parse the player state
+                          const playerState = JSON.parse(gameState.playerState);
+                          isCompleted = playerState.isCompleted === true;
+
+                          if (isCompleted) {
+                            console.log(
+                              `🔍 [DEBUG] Skipping game ${gameId} - user has completed it`
+                            );
+                            continue;
+                          }
+                        }
+                      } catch (stateError) {
+                        console.error(`❌ [DEBUG] Error checking game state: ${stateError}`);
+                        // Continue anyway - assume not completed
+                      }
+                    }
+
+                    // If we get here, the game is valid and not completed
+                    availablePosts.push({
+                      gameId,
+                      postId: postId,
+                    });
+                  }
+                }
+              }
+
+              if (availablePosts.length === 0) {
+                console.error('❌ [DEBUG] No available posts found after filtering');
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'No available posts found after filtering',
+                });
+                return;
+              }
+
+              // Select a random post
+              const randomIndex = Math.floor(Math.random() * availablePosts.length);
+              const randomPost = availablePosts[randomIndex];
+
+              console.log(
+                '✅ [DEBUG] Selected random post:',
+                randomPost.postId,
+                'for game:',
+                randomPost.gameId
+              );
+
+              postMessage({
+                type: 'GET_RANDOM_POST_RESULT',
+                success: true,
+                postId: randomPost.postId,
+                gameId: randomPost.gameId,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error getting random post:', error);
+              postMessage({
+                type: 'GET_RANDOM_POST_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
         }
       },
     });

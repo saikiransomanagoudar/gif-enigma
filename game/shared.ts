@@ -163,6 +163,8 @@ export type WebviewToBlockMessage =
         limit?: number;
       };
     }
+  | { type: 'NAVIGATE_TO_POST'; data: { postId: string } }
+  | { type: 'GET_RANDOM_POST'; data?: { excludeIds?: string[] } }
   | {
       type: 'GET_USER_STATS';
       data: {
@@ -222,6 +224,7 @@ export type BlocksToWebviewMessage =
       user?: { username: string };
       error?: string;
     }
+    | { type: 'GET_RANDOM_POST_RESULT'; success: boolean; postId?: string; gameId?: string; error?: string }
   | {
       type: 'GET_USER_GAMES_RESULT';
       success: boolean;
