@@ -7,7 +7,11 @@ import {
   getUserGames,
   postCompletionComment,
   hasUserCompletedGame,
+  saveGameState,
+  getGameState,
+  getUnplayedGames
 } from './gameHandler';
+
 import {
   saveScore,
   getGameLeaderboard,
@@ -32,6 +36,9 @@ export {
   getCumulativeLeaderboard,
   postCompletionComment,
   hasUserCompletedGame,
+  saveGameState,
+  getGameState,
+  getUnplayedGames,
 };
 
 export async function getRandomGame(
@@ -110,6 +117,9 @@ export async function getRandomGame(
       candidatePool = userCreatedGameIds;
     } else if (scheduledGameIds.length > 0) {
       candidatePool = scheduledGameIds;
+    } else if (userCreatedGameIds.length > 0) {
+      // Fallback to user-created games if no scheduled games
+      candidatePool = userCreatedGameIds;
     }
 
     if (candidatePool.length === 0) {
@@ -154,101 +164,6 @@ function weightedRandomSelect(gameIds: string[]): string {
   }
 
   return gameIds[gameIds.length - 1]; // fallback
-}
-
-export async function saveGameState(
-  params: {
-    username: string;
-    gameId: string;
-    gifHintCount?: number;
-    revealedLetters?: number[];
-    guess?: string;
-    playerState?: {
-      gifHintCount: number;
-      revealedLetters: number[];
-      guess: string;
-      lastPlayed: number;
-      isCompleted: boolean;
-    };
-  },
-  context: any
-) {
-  try {
-    const { username, gameId, playerState } = params;
-
-    if (!username || !gameId) {
-      return { success: false, error: 'Missing required parameters' };
-    }
-
-    const gameStateKey = `gameState:${gameId}:${username}`;
-    let dataToStore: any = {};
-    
-    if (playerState) {
-      dataToStore = {
-        playerState: JSON.stringify(playerState),
-        lastUpdated: Date.now().toString()
-      };
-    } else {
-      const stateToStore: any = {
-        gifHintCount: params.gifHintCount ?? 0,
-        revealedLetters: params.revealedLetters ?? [],
-        guess: params.guess ?? '',
-        lastPlayed: Date.now(),
-        isCompleted: false
-      };
-      
-      dataToStore = {
-        playerState: JSON.stringify(stateToStore),
-        lastUpdated: Date.now().toString()
-      };
-    }
-
-    await context.redis.hSet(gameStateKey, dataToStore);
-    await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error saving game state:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function getGameState(
-  params: {
-    username: string;
-    gameId: string;
-  },
-  context: any
-) {
-  try {
-    const { username, gameId } = params;
-
-    if (!username || !gameId) {
-      return { success: false, error: 'Missing required parameters' };
-    }
-
-    const gameStateKey = `gameState:${gameId}:${username}`;
-    const gameState = await context.redis.hGetAll(gameStateKey);
-
-    if (!gameState || Object.keys(gameState).length === 0) {
-      return { success: false, error: 'Game state not found' };
-    }
-
-    const result: any = { ...gameState };
-    
-    if (result.playerState) {
-      try {
-        result.playerState = JSON.parse(result.playerState);
-      } catch (e) {
-        console.error('Error parsing playerState JSON:', e);
-      }
-    }
-
-    return { success: true, state: result };
-  } catch (error) {
-    console.error('Error getting game state:', error);
-    return { success: false, error: String(error) };
-  }
 }
 
 export async function fetchRequest(

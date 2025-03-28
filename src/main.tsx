@@ -5,6 +5,7 @@ import {
   saveGame,
   getUserGames,
   getGame,
+  getUnplayedGames,
   getGameState,
   saveGameState,
   getRandomGame,
@@ -254,40 +255,57 @@ Devvit.addCustomPostType({
           case 'requestNavigationState':
             console.log('[DEBUG] main.tsx: requestNavigationState received');
 
-            // Always use the navigation state from useAsync
-            if (navigationState) {
-              // Create a properly typed response object that matches BlocksToWebviewMessage
-              const navResponse: BlocksToWebviewMessage = {
-                type: 'SET_NAVIGATION_STATE',
-                data: {
-                  page: navigationState.page,
-                },
-              };
+            // CRITICAL FIX: Force retrieve the latest navigation state instead of using cached data
+            try {
+              const navStateKey = `navState:${context.postId || 'default'}`;
+              const freshState = await context.redis.hGetAll(navStateKey);
 
-              // Add gameId if it exists
-              if (navigationState.gameId) {
-                // Use a type assertion to add the gameId property
-                (navResponse.data as any).gameId = navigationState.gameId;
+              console.log('[DEBUG] main.tsx: Fresh navigation state retrieved:', freshState);
+
+              if (freshState && freshState.page) {
+                // Create a properly typed response object
+                const navResponse: BlocksToWebviewMessage = {
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: freshState.page as Page,
+                  },
+                };
+
+                // Add gameId if it exists
+                if (freshState.gameId) {
+                  // Use a type assertion to add the gameId property
+                  (navResponse.data as any).gameId = freshState.gameId;
+                  console.log(
+                    '[DEBUG] main.tsx: Including gameId in navigation state:',
+                    freshState.gameId
+                  );
+                }
+
                 console.log(
-                  '[DEBUG] main.tsx: Including gameId in navigation state:',
-                  navigationState.gameId
+                  '[DEBUG] main.tsx: Sending fresh navigation state:',
+                  JSON.stringify(navResponse)
                 );
+                postMessage(navResponse);
+              } else {
+                // Default to landing if navigation state isn't available
+                console.log('[DEBUG] main.tsx: No stored page found, defaulting to landing');
+                postMessage({
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: 'landing',
+                  },
+                  success: true, // Add the required success property
+                } as BlocksToWebviewMessage);
               }
-
-              console.log(
-                '[DEBUG] main.tsx: Sending navigation state from useAsync:',
-                JSON.stringify(navResponse)
-              );
-              postMessage(navResponse);
-            } else {
-              // Default to landing if navigation state isn't available
-              console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
+            } catch (error) {
+              console.error('[DEBUG] main.tsx: Error retrieving navigation state:', error);
+              // Default to landing on error
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
                 data: {
                   page: 'landing',
                 },
-                success: true, // Add the required success property
+                success: true,
               } as BlocksToWebviewMessage);
             }
             break;
@@ -407,11 +425,17 @@ Devvit.addCustomPostType({
 
           case 'GET_RANDOM_GAME':
             try {
-              console.log('Getting random game, excluding:', event.data.excludeIds);
-              // Import the getRandomGame function from gameHandler.server.js
-              const result = await getRandomGame(event.data || {}, context);
+              console.log('🔍 [DEBUG] Getting random game, with params:', event.data);
 
-              // Convert to serializable format if needed
+              // Make sure to include username if available to filter completed games
+              const params = {
+                excludeIds: event.data.excludeIds || [],
+                preferUserCreated: event.data.preferUserCreated !== false,
+                username: event.data.username || username,
+              };
+
+              const result = await getRandomGame(params, context);
+
               postMessage({
                 type: 'GET_RANDOM_GAME_RESULT',
                 success: result.success,
@@ -419,7 +443,7 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error getting random game:', error);
+              console.error('❌ [DEBUG] Error getting random game:', error);
               postMessage({
                 type: 'GET_RANDOM_GAME_RESULT',
                 success: false,
@@ -604,7 +628,22 @@ Devvit.addCustomPostType({
           //   break;
           case 'SAVE_GAME_STATE':
             try {
-              console.log('Saving game state:', event.data);
+              console.log('🎲 [DEBUG] Saving game state:', event.data);
+
+              if (
+                !event.data ||
+                !event.data.username ||
+                !event.data.gameId ||
+                !event.data.playerState
+              ) {
+                postMessage({
+                  type: 'SAVE_GAME_STATE_RESULT',
+                  success: false,
+                  error: 'Missing required data',
+                });
+                return;
+              }
+
               const result = await saveGameState(event.data, context);
 
               postMessage({
@@ -613,7 +652,7 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error saving game state:', error);
+              console.error('❌ [DEBUG] Error saving game state:', error);
               postMessage({
                 type: 'SAVE_GAME_STATE_RESULT',
                 success: false,
@@ -670,11 +709,13 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME_STATE':
             try {
-              if (!event.data || !event.data.gameId || !event.data.username) {
+              console.log('🎲 [DEBUG] Getting game state:', event.data);
+
+              if (!event.data || !event.data.username || !event.data.gameId) {
                 postMessage({
                   type: 'GET_GAME_STATE_RESULT',
                   success: false,
-                  error: 'Missing gameId or username',
+                  error: 'Missing required data',
                 });
                 return;
               }
@@ -685,12 +726,43 @@ Devvit.addCustomPostType({
                 type: 'GET_GAME_STATE_RESULT',
                 success: result.success,
                 state: result.state,
-                error: result.error,
+                error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error getting game state:', error);
+              console.error('❌ [DEBUG] Error getting game state:', error);
               postMessage({
                 type: 'GET_GAME_STATE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_UNPLAYED_GAMES':
+            try {
+              console.log('🔍 [DEBUG] Getting unplayed games for user:', event.data?.username);
+
+              if (!event.data || !event.data.username) {
+                postMessage({
+                  type: 'GET_UNPLAYED_GAMES_RESULT',
+                  success: false,
+                  error: 'Username is required',
+                });
+                return;
+              }
+
+              const result = await getUnplayedGames(event.data, context);
+
+              postMessage({
+                type: 'GET_UNPLAYED_GAMES_RESULT',
+                success: result.success,
+                games: result.games || [],
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error getting unplayed games:', error);
+              postMessage({
+                type: 'GET_UNPLAYED_GAMES_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -838,39 +910,43 @@ Devvit.addCustomPostType({
                 return;
               }
 
-              // Add the game to user's completed games list
-              try {
-                console.log(
-                  `🔍 [DEBUG-COMPLETION] Adding game ${event.data.gameId} to user ${event.data.username}'s completed games`
-                );
-                await context.redis.zAdd(`user:${event.data.username}:completedGames`, {
-                  member: event.data.gameId,
-                  score: Date.now(),
-                });
+              // Create a completed player state
+              const playerState = {
+                gifHintCount: event.data.gifHintCount || 0,
+                revealedLetters: event.data.revealedLetters || [],
+                guess: event.data.finalGuess || '',
+                lastPlayed: Date.now(),
+                isCompleted: true,
+              };
 
-                // Verify it was added
-                const score = await context.redis.zScore(
-                  `user:${event.data.username}:completedGames`,
-                  event.data.gameId
-                );
-                console.log(
-                  `🔍 [DEBUG-COMPLETION] Verification - Game in completed set: ${score !== null}`
-                );
-              } catch (redisError) {
-                console.error('Error adding to completed games:', redisError);
-                // Continue execution - don't fail the whole operation
+              // Save the game state as completed
+              const saveResult = await saveGameState(
+                {
+                  gameId: event.data.gameId,
+                  username: event.data.username,
+                  playerState,
+                },
+                context
+              );
+
+              if (!saveResult.success) {
+                postMessage({
+                  type: 'MARK_GAME_COMPLETED_RESULT',
+                  success: false,
+                  error: saveResult.error || 'Failed to save completed game state',
+                });
+                return;
               }
 
-              // Get additional completion data for comment if available
+              // Additional completion data
               const commentData = event.data.commentData;
 
               // If we have comment data, post a completion comment
               if (commentData) {
                 try {
-                  // Use the provided gameId to fetch the Reddit post ID
                   const redditPostId = context.postId || null;
 
-                  // Call the function to post a comment
+                  // Post a completion comment
                   await postCompletionComment(
                     {
                       gameId: event.data.gameId,
@@ -883,23 +959,20 @@ Devvit.addCustomPostType({
                     context
                   );
                 } catch (commentError) {
-                  console.error('Error posting completion comment:', commentError);
+                  console.error('❌ [DEBUG] Error posting completion comment:', commentError);
                   // Don't fail the whole operation if commenting fails
                 }
               }
 
-              // Trigger a refresh of the GamePostPreview
+              // Trigger a refresh of the UI
               setPostPreviewRefreshTrigger((prev) => prev + 1);
-              console.log(
-                `🔄 [DEBUG-COMPLETION] Triggered post preview refresh (${postPreviewRefreshTrigger + 1})`
-              );
 
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: true,
               });
             } catch (error) {
-              console.error('Error marking game completed:', error);
+              console.error('❌ [DEBUG] Error marking game completed:', error);
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: false,
@@ -997,7 +1070,7 @@ Devvit.addCustomPostType({
                 completed: result.completed,
               });
             } catch (error) {
-              console.error('Error checking game completion status:', error);
+              console.error('❌ [DEBUG] Error checking game completion status:', error);
               postMessage({
                 type: 'HAS_USER_COMPLETED_GAME_RESULT',
                 success: false,
@@ -1007,43 +1080,58 @@ Devvit.addCustomPostType({
             }
             break;
 
-          case 'NAVIGATE':
-            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
-
-            // Extract navigation data
-            const targetPage = event.data?.page;
-            const targetGameId = event.data?.params?.gameId;
-
-            console.log(
-              `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
-            );
-
-            if (targetPage) {
-              // Store in Redis using our helper function
-              await storeNavigationState(targetPage, targetGameId);
-
-              // Send navigation response
-              const navResponse: BlocksToWebviewMessage = {
-                type: 'NAVIGATION_RESULT',
-                success: true,
-                page: targetPage,
-                ...(targetGameId ? { gameId: targetGameId } : {}),
-              };
-
+            case 'NAVIGATE':
+              console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
+            
+              // Extract navigation data
+              const targetPage = event.data?.page;
+              const targetGameId = event.data?.params?.gameId;
+            
               console.log(
-                '[DEBUG-NAV] main.tsx: Sending navigation response:',
-                JSON.stringify(navResponse)
+                `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
               );
-              postMessage(navResponse);
-            } else {
-              console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
-              postMessage({
-                type: 'NAVIGATION_RESULT',
-                success: false,
-                error: 'Missing page in navigation request',
-              } as BlocksToWebviewMessage);
-            }
-            break;
+            
+              if (targetPage) {
+                // CRITICAL FIX: Force clear any existing navigation state first
+                try {
+                  const navStateKey = `navState:${context.postId || 'default'}`;
+                  await context.redis.del(navStateKey);
+                  console.log('[DEBUG-NAV] main.tsx: Cleared previous navigation state');
+                } catch (clearError) {
+                  console.error('[DEBUG-NAV] Error clearing previous navigation state:', clearError);
+                }
+            
+                // Store fresh navigation state
+                try {
+                  await storeNavigationState(targetPage, targetGameId);
+                  console.log('[DEBUG-NAV] main.tsx: Stored new navigation state:', targetPage, targetGameId);
+                } catch (storeError) {
+                  console.error('[DEBUG-NAV] Error storing navigation state:', storeError);
+                }
+            
+                // Send navigation response
+                const navResponse: BlocksToWebviewMessage = {
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: targetPage,
+                    ...(targetGameId ? { gameId: targetGameId } : {})
+                  }
+                };
+            
+                console.log(
+                  '[DEBUG-NAV] main.tsx: Sending navigation response:',
+                  JSON.stringify(navResponse)
+                );
+                postMessage(navResponse);
+              } else {
+                console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
+                postMessage({
+                  type: 'NAVIGATION_RESULT',
+                  success: false,
+                  error: 'Missing page in navigation request',
+                } as BlocksToWebviewMessage);
+              }
+              break;
         }
       },
     });

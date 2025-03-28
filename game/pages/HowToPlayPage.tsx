@@ -10,9 +10,19 @@ export interface HowToPlayPageProps extends NavigationProps {
 
 export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
+
+    setIsInitialLoading(true);
+
+    // Hide loading indicator after a small delay
+    const animationTimeout = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setIsInitialLoading(false);
+      });
+    });
 
     const handleThemeChange = (e: MediaQueryListEvent) => {
       setIsDarkMode(e.matches);
@@ -20,6 +30,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
 
     darkModeQuery.addEventListener('change', handleThemeChange);
     return () => {
+      cancelAnimationFrame(animationTimeout);
       darkModeQuery.removeEventListener('change', handleThemeChange);
     };
   }, []);
@@ -29,6 +40,11 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
 
   return (
     <PageTransition>
+      {isInitialLoading && (
+        <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black">
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+        </div>
+      )}
       <motion.div
         className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
         initial={{ opacity: 0 }}
@@ -114,11 +130,10 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             transition={{ duration: 0.5, delay: 1.4 }}
           >
             <motion.h3
-              className="text-[#E8E5DA] mb-4 text-center text-2xl font-bold"
+              className="mb-4 text-center text-2xl font-bold text-[#E8E5DA]"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1.6 }}
-              
             >
               <ComicText size={1.25} className="">
                 Create Mode

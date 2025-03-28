@@ -2,6 +2,8 @@ import { Devvit, Context, useAsync, useState } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../../game/shared.js';
 import { Page } from '../../game/lib/types.js';
+import { hasUserCompletedGame } from '../../game/server/gameHandler.js';
+import { preview } from 'vite';
 
 interface GamePostPreviewProps {
   context: Context;
@@ -33,74 +35,80 @@ export const GamePostPreview = ({
   } | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
   const [hasCompletedGame, setHasCompletedGame] = useState(false);
+  const [isWebViewMounted, setIsWebViewMounted] = useState(false);
+  const [usernameRetryCount, setUsernameRetryCount] = useState(0);
 
-  // Get the username
-  useAsync(async () => {
-    try {
-      const currentUsername = await context.reddit.getCurrentUsername();
-      if (currentUsername) {
-        setUsername(currentUsername);
-        return currentUsername;
+  useAsync(
+    async () => {
+      // Only retry if username is still default and we haven't tried too many times
+      if (username === 'there' && usernameRetryCount < 3) {
+        console.log(
+          `[DEBUG-USERNAME] Retrying username fetch (attempt ${usernameRetryCount + 1})...`
+        );
+        try {
+          const currentUsername = await context.reddit.getCurrentUsername();
+          if (currentUsername && currentUsername !== 'there') {
+            return currentUsername;
+          }
+        } catch (error) {
+          console.error(`[DEBUG-USERNAME] Retry ${usernameRetryCount + 1} failed:`, error);
+        }
+
+        // Increment retry count for next attempt
+        return null;
       }
       return null;
-    } catch (userError) {
-      console.error('Error getting username:', userError);
-      return null;
+    },
+    {
+      depends: [usernameRetryCount, username],
+      finally: (result) => {
+        if (result) {
+          console.log('[DEBUG-USERNAME] Retry succeeded, setting username to:', result);
+          setUsername(result);
+        } else if (username === 'there' && usernameRetryCount < 3) {
+          // Schedule another retry
+          console.log('[DEBUG-USERNAME] Scheduling another retry...');
+          setUsernameRetryCount((prev) => prev + 1);
+        }
+      },
     }
-  });
+  );
 
+  // Fix the completion check logic in your useAsync
   // Check completion status - runs when refreshTrigger changes
   useAsync(
     async () => {
-      // Only run this async function if we have the necessary data
-      if (!previewData.gameId || !username) {
-        console.log('🔍 [DEBUG-COMPLETION] Missing gameId or username, cannot check completion');
+      // Skip if no valid gameId or username
+      if (!previewData.gameId || !username || username === 'there') {
+        console.log('🔍 [DEBUG-COMPLETION] Missing valid data, cannot check completion');
         return false;
       }
 
       const gameId = previewData.gameId;
       console.log(
-        `🔄 [DEBUG] Checking completion for game: ${gameId}, user: ${username}, refresh: ${refreshTrigger}`
+        `🔄 [DEBUG-COMPLETION] Checking completion for game: ${gameId}, user: ${username}, refresh: ${refreshTrigger}`
       );
 
       try {
-        // First method: Check if game is in user's completed games set
-        // According to Redis zScore docs, this returns null if the member doesn't exist
-        const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-        console.log(`🔍 [DEBUG-COMPLETION] zScore result for ${gameId}:`, score, typeof score);
-
-        if (score && Number(score) > 0) {
-          console.log(
-            `✅ [DEBUG-COMPLETION] Game ${gameId} found in completed set with score: ${score}`
-          );
-          return true;
-        }
-
-        // Second method: Check game state's isCompleted flag
-        const gameState = await context.redis.hGetAll(`gameState:${gameId}:${username}`);
-        console.log(`🔍 [DEBUG-COMPLETION] Game state for ${gameId}:`, gameState);
-
-        if (gameState && gameState.isCompleted === 'true') {
-          console.log(`✅ [DEBUG-COMPLETION] Game ${gameId} marked as completed in state`);
-          return true;
-        }
-
-        console.log(`❌ [DEBUG-COMPLETION] Game ${gameId} is NOT completed`);
-        return false;
-      } catch (error) {
-        console.error(
-          `❌ [DEBUG-COMPLETION] Error checking completion status for game ${gameId}:`,
-          error
+        // Use the server-side function to check completion
+        const result = await hasUserCompletedGame(
+          { gameId: previewData.gameId, username: username },
+          context
         );
+
+        console.log(`[DEBUG-COMPLETION] Server response for completion check:`, result);
+        return result.completed;
+      } catch (error) {
+        console.error(`[DEBUG-COMPLETION] Error checking completion:`, error);
         return false;
       }
     },
     {
-      // This is the critical fix - use string values that will definitely change when refreshTrigger changes
-      depends: [`${refreshTrigger}`, previewData.gameId || '', username || ''],
+      depends: [refreshTrigger, previewData.gameId ?? null, username],
       finally: (result) => {
-        console.log(`🔄 [DEBUG-COMPLETION] Setting hasCompletedGame to: ${result}`);
-        setHasCompletedGame(!!result);
+        const isCompleted = result === true;
+        console.log(`🔄 [DEBUG-COMPLETION] Setting hasCompletedGame to: ${isCompleted}`);
+        setHasCompletedGame(isCompleted);
       },
     }
   );
@@ -179,30 +187,103 @@ export const GamePostPreview = ({
     }
   );
 
-  const safePostMessage = (message: BlocksToWebviewMessage | WebviewToBlockMessage) => {
-    console.log('[DEBUG-NAV] GamePostPreview: Sending message:', JSON.stringify(message));
-    // Use explicit casting to ensure type consistency
-    postMessage(message as BlocksToWebviewMessage);
-  };
+  const refreshCompletionStatus = async () => {
+    if (!previewData?.gameId || !username || username === 'there') {
+      console.log('[DEBUG-REFRESH] Cannot refresh completion status - missing data');
+      return;
+    }
 
-  // Handle the case when WebView becomes ready and we have pending navigation
-  if (isWebViewReady && pendingNavigation) {
     console.log(
-      '[DEBUG-NAV] GamePostPreview: WebView now ready, sending pending navigation to:',
-      pendingNavigation.page
+      `[DEBUG-REFRESH] Forcing refresh of completion status for game ${previewData.gameId}`
     );
 
-    safePostMessage({
+    try {
+      // First check: Look for game in completed games set
+      const completedMember = await context.redis.zScore(
+        `user:${username}:completedGames`,
+        previewData.gameId
+      );
+
+      if (completedMember !== null) {
+        console.log(`[DEBUG-REFRESH] Game found in completed set with score: ${completedMember}`);
+        setHasCompletedGame(true);
+        return;
+      }
+
+      // Second check: Check game state's isCompleted flag
+      const gameStateRaw = await context.redis.hGetAll(
+        `gameState:${previewData.gameId}:${username}`
+      );
+
+      if (gameStateRaw && gameStateRaw.playerState) {
+        try {
+          const playerState = JSON.parse(gameStateRaw.playerState);
+          if (playerState.isCompleted) {
+            console.log(`[DEBUG-REFRESH] Game marked as completed in playerState`);
+            setHasCompletedGame(true);
+            return;
+          }
+        } catch (parseError) {
+          console.error(`[DEBUG-REFRESH] Error parsing playerState: ${parseError}`);
+        }
+      }
+
+      // If we get here, the game is not completed
+      console.log(`[DEBUG-REFRESH] Game ${previewData.gameId} is NOT completed`);
+      setHasCompletedGame(false);
+    } catch (error) {
+      console.error(`[DEBUG-REFRESH] Error refreshing completion status: ${error}`);
+      // Default to not completed in case of error
+      setHasCompletedGame(false);
+    }
+  };
+
+  useAsync(
+    async () => {
+      if (previewData.gameId && username && username !== 'there') {
+        await refreshCompletionStatus();
+        return true;
+      }
+      return false;
+    },
+    {
+      depends: [previewData.gameId ?? null, username, refreshTrigger],
+    }
+  );
+
+  const sendNavigation = (page: Page, gameId?: string) => {
+    console.log('[DEBUG-NAV] GamePostPreview: Sending navigation message:', page, gameId);
+    
+    postMessage({
       type: 'NAVIGATE',
       data: {
-        page: pendingNavigation.page,
-        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {},
-      },
+        page: page,
+        params: gameId ? { gameId } : undefined
+      }
     });
+  };
 
-    // Clear pending navigation to prevent duplicate sends
-    setPendingNavigation(null);
-  }
+  useAsync(
+    async () => {
+      if (isWebViewReady && pendingNavigation) {
+        console.log(
+          '[DEBUG-NAV] GamePostPreview: WebView now ready, sending pending navigation to:',
+          pendingNavigation.page
+        );
+
+        // Send the navigation message
+        sendNavigation(pendingNavigation.page, pendingNavigation.gameId);
+
+        // Clear pending navigation to prevent duplicate sends
+        setPendingNavigation(null);
+        return true;
+      }
+      return false;
+    },
+    {
+      depends: [isWebViewReady, pendingNavigation],
+    }
+  );
 
   // Store game ID in Redis for persistence
   const storeGameId = async (gameId: string) => {
@@ -219,81 +300,93 @@ export const GamePostPreview = ({
     }
   };
 
-  const handlePlayGame = () => {
+  const handlePlayGame = async () => {
     if (previewData.gameId) {
       console.log(
-        '[DEBUG-NAV] GamePostPreview: onPress handlePlayGame, gameId:',
+        '[DEBUG-NAV] GamePostPreview: handlePlayGame pressed, navigating to game page with gameId:',
         previewData.gameId
       );
-
+      
       // Store the gameId in Redis for persistence
-      storeGameId(previewData.gameId);
-
-      // Mount the WebView
+      await storeGameId(previewData.gameId);
+  
       onMount();
-
-      if (isWebViewReady) {
-        console.log('[DEBUG-NAV] GamePostPreview: WebView ready, sending navigation');
-        safePostMessage({
-          type: 'NAVIGATE',
-          data: {
-            page: 'game',
-            params: { gameId: previewData.gameId },
-          },
-        });
-      } else {
-        console.log(
-          '[DEBUG-NAV] GamePostPreview: WebView not ready yet, storing pending navigation'
-        );
-        setPendingNavigation({
-          page: 'game',
-          gameId: previewData.gameId,
-        });
-      }
+      
+      // Send navigation message
+      sendNavigation('game', previewData.gameId);
     } else {
       console.log('[DEBUG-NAV] GamePostPreview: Game not found');
       context.ui.showToast('Game not found');
     }
   };
-
-  const handleHowToPlay = () => {
-    console.log('[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed');
-    onMount();
-
-    if (isWebViewReady) {
-      safePostMessage({
-        type: 'NAVIGATE',
-        data: {
-          page: 'howToPlay',
-          params: {}, // Empty params since howToPlay doesn't need gameId
-        },
-      });
-    } else {
-      // Store pending navigation for when WebView becomes ready
-      setPendingNavigation({
-        page: 'howToPlay',
-      });
+  
+  const handleHowToPlay = async () => {
+    console.log('[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed, navigating to howToPlay page');
+    
+    // CRITICAL FIX: Clear any stored navigation state for this post first
+    try {
+      if (context.postId) {
+        console.log('[DEBUG-NAV] GamePostPreview: Clearing previous navigation state');
+        await context.redis.hDel(`navState:${context.postId}`, ['page']);
+        await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+      }
+    } catch (error) {
+      console.error('[DEBUG-NAV] Error clearing navigation state:', error);
     }
-  };
-
-  const handleShowResults = () => {
-    console.log('[DEBUG-NAV] GamePostPreview: handleShowResults pressed');
+    
+    // Store new navigation state explicitly
+    try {
+      if (context.postId) {
+        console.log('[DEBUG-NAV] GamePostPreview: Storing howToPlay in navigation state');
+        await context.redis.hSet(`navState:${context.postId}`, {
+          page: 'howToPlay'
+        });
+      }
+    } catch (error) {
+      console.error('[DEBUG-NAV] Error storing navigation state:', error);
+    }
+    
     onMount();
-
-    if (isWebViewReady) {
-      safePostMessage({
-        type: 'NAVIGATE',
-        data: {
-          page: 'leaderboard', // Explicitly set to 'leaderboard'
-          params: previewData.gameId ? { gameId: previewData.gameId } : {},
-        },
-      });
+    
+    // Send the navigation message
+    sendNavigation('howToPlay');
+  };
+  
+  // Similarly update the handleShowResults function:
+  
+  const handleShowResults = async () => {
+    console.log('[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to leaderboard page');
+    
+    // CRITICAL FIX: Clear any stored navigation state for this post first
+    try {
+      if (context.postId) {
+        console.log('[DEBUG-NAV] GamePostPreview: Clearing previous navigation state');
+        await context.redis.hDel(`navState:${context.postId}`, ['page']);
+        await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+      }
+    } catch (error) {
+      console.error('[DEBUG-NAV] Error clearing navigation state:', error);
+    }
+    
+    // Store new navigation state explicitly
+    if (previewData.gameId) {
+      try {
+        if (context.postId) {
+          console.log('[DEBUG-NAV] GamePostPreview: Storing leaderboard in navigation state');
+          await context.redis.hSet(`navState:${context.postId}`, {
+            page: 'leaderboard',
+            gameId: previewData.gameId
+          });
+        }
+      } catch (error) {
+        console.error('[DEBUG-NAV] Error storing navigation state:', error);
+      }
+      
+      onMount();
+      sendNavigation('leaderboard', previewData.gameId);
     } else {
-      // Store pending navigation for when WebView becomes ready
-      setPendingNavigation({
-        page: 'leaderboard',
-        gameId: previewData.gameId,
-      });
+      console.log('[DEBUG-NAV] GamePostPreview: Game not found for leaderboard');
+      context.ui.showToast('Game not found');
     }
   };
 
@@ -329,7 +422,18 @@ export const GamePostPreview = ({
     );
   }
 
+  console.log('[DEBUG-CRITICAL] GamePostPreview rendering with:');
+  console.log(`- gameId: ${previewData.gameId}`);
+  console.log(`- username: ${username}`);
+  console.log(`- hasCompletedGame: ${hasCompletedGame}`);
+
+  console.log('[DEBUG-UI] GamePostPreview: Rendering with hasCompletedGame =', hasCompletedGame);
   const firstGif = getFirstGif();
+  
+  if (previewData.gameId && username) {
+    // Log the actual value from state
+    console.log(`[DEBUG-FORCE] Original hasCompletedGame: ${hasCompletedGame}`);
+  }
 
   return (
     <vstack
@@ -353,7 +457,7 @@ export const GamePostPreview = ({
         {firstGif && (
           <vstack
             height={100}
-            width="70%"
+            width="50%"
             backgroundColor="#0a1020"
             cornerRadius="large"
             padding="xsmall"
@@ -368,30 +472,40 @@ export const GamePostPreview = ({
             )}
           </vstack>
         )}
-
       </vstack>
 
       {/* Buttons based on game completion status */}
       <vstack padding="medium" alignment="center middle" gap="medium">
-        {!hasCompletedGame ? (
-          // User hasn't completed the game - show Decode the GIF button
-          <hstack
-            cornerRadius="full"
-            backgroundColor="#FF4500"
-            padding="medium"
-            onPress={handlePlayGame}
-            alignment="center middle"
-          >
-            <text color="#FFFFFF" weight="bold">
-              Decode the GIF 🔍
-            </text>
+        {/* CRITICAL FIX: Force explicit check of hasCompletedGame */}
+        {hasCompletedGame === false ? (
+          // User hasn't completed the game - show Decode the GIF and How This Game Works buttons
+          <hstack gap="medium" alignment="center middle">
+            <hstack
+              cornerRadius="full"
+              backgroundColor="#FF4500"
+              padding="medium"
+              onPress={handlePlayGame}
+              alignment="center middle"
+            >
+              <text color="#FFFFFF" weight="bold">
+                Decode the GIF 🔍
+              </text>
+            </hstack>
+            <hstack
+              cornerRadius="full"
+              backgroundColor="#4267B2"
+              padding="medium"
+              onPress={handleHowToPlay}
+              alignment="center middle"
+            >
+              <text color="#FFFFFF" weight="bold">
+                How This Game Works
+              </text>
+            </hstack>
           </hstack>
         ) : (
           // User has completed the game - show How This Game Works and Show Results buttons
           <vstack gap="medium" alignment="center middle">
-            <text color={isDarkMode ? '#FFFFFF' : '#0d1629'} weight="bold" alignment="center">
-              You've solved this enigma!
-            </text>
             <hstack gap="medium" alignment="center middle">
               <hstack
                 cornerRadius="full"
@@ -401,7 +515,7 @@ export const GamePostPreview = ({
                 alignment="center middle"
               >
                 <text color="#FFFFFF" weight="bold">
-                  How This Game Works
+                  How This Game Works 🤔
                 </text>
               </hstack>
               <hstack

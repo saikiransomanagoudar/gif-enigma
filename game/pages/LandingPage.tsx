@@ -13,6 +13,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [isboardOpen, setboardOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
     return () => {
@@ -50,22 +51,22 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   const handlePlayClick = () => {
     setIsLoading(true);
-  
+
     // Get list of previously played games from localStorage
-    let playedGameIds: string[] = [];
-    try {
-      const savedGameIds = localStorage.getItem('playedGameIds');
-      if (savedGameIds) {
-        playedGameIds = JSON.parse(savedGameIds);
-      }
-    } catch (e) {
-      console.error('Error parsing playedGameIds from localStorage:', e);
-    }
-  
+    // let playedGameIds: string[] = [];
+    // try {
+    //   const savedGameIds = localStorage.getItem('playedGameIds');
+    //   if (savedGameIds) {
+    //     playedGameIds = JSON.parse(savedGameIds);
+    //   }
+    // } catch (e) {
+    //   console.error('Error parsing playedGameIds from localStorage:', e);
+    // }
+
     // Create a new game response handler
     const handleGameResponse = (event: MessageEvent) => {
       console.log('Message event received:', event.data);
-      
+
       // Unwrap the message if needed
       let message = event.data;
       if (message && message.type === 'devvit-message' && message.data?.message) {
@@ -73,35 +74,40 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       } else if (message && message.type === 'devvit-message' && message.data) {
         message = message.data;
       }
-      
+
       // Only process if this is a random game result
       if (message.type === 'GET_RANDOM_GAME_RESULT') {
         // Clean up listener immediately
         window.removeEventListener('message', handleGameResponse);
         setIsLoading(false);
-        
+
         // Find the game ID
         let gameId = null;
         if (message.success && message.game && message.game.id) {
           gameId = message.game.id;
-        } else if (message.success && message.result && message.result.game && message.result.game.id) {
+        } else if (
+          message.success &&
+          message.result &&
+          message.result.game &&
+          message.result.game.id
+        ) {
           gameId = message.result.game.id;
         } else if (message.success && message.result && message.result.id) {
           gameId = message.result.id;
         }
-        
+
         // If we found a valid game ID, navigate to the game page
         if (gameId) {
           console.log('Navigating to game with ID:', gameId);
-          
+
           // Save to played games first
-          try {
-            const updatedGameIds = [...playedGameIds, gameId];
-            localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
-          } catch (e) {
-            console.error('Error updating playedGameIds:', e);
-          }
-          
+          // try {
+          //   const updatedGameIds = [...playedGameIds, gameId];
+          //   localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
+          // } catch (e) {
+          //   console.error('Error updating playedGameIds:', e);
+          // }
+
           // Direct navigation via React state
           onNavigate('game', { gameId });
         } else {
@@ -110,26 +116,26 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }
       }
     };
-  
+
     // Remove any existing listener first
     window.removeEventListener('message', handleGameResponse);
-    
+
     // Add the listener
     window.addEventListener('message', handleGameResponse);
-    
+
     // Request a random game from the backend
     console.log('Requesting random game...');
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
         data: {
-          excludeIds: playedGameIds,
+          username: redditUsername || 'anonymous',
           preferUserCreated: true,
         },
       },
       '*'
     );
-  
+
     // Clean up if we don't get a response in a reasonable time
     setTimeout(() => {
       if (isMounted.current) {
@@ -140,15 +146,32 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     }, 5000);
   };
 
+  useEffect(() => {
+    // Hide loading spinner after component is fully mounted
+    const timer = setTimeout(() => {
+      setIsInitialLoading(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
 
   return (
     <PageTransition>
-      <div className={`${backgroundColor} mt-[-12px] p-5 select-none min-h-screen w-full pb-15 mb-0`}>
+      {isInitialLoading && (
+        <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+          <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
+          {/* <img src="/landing-page/loading.gif" alt="Loading..." className="h-16 w-16 animate-spin" /> */}
+        </div>
+      )}
+      <div
+        className={`${backgroundColor} mt-[-12px] mb-0 min-h-screen w-full p-5 pb-15 select-none`}
+      >
         <div className="relative flex flex-col items-center p-4 max-sm:mt-[20px]">
           {/* Leaderboard Button */}
           <motion.button
-            className={`absolute top-2 right-2 mt-5 select-none cursor-pointer rounded-lg px-4 py-3 text-lg ${
+            className={`absolute top-2 right-2 mt-5 cursor-pointer rounded-lg px-4 py-3 text-lg select-none ${
               ifhover === 'btn1'
                 ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
                 : 'border-border border-1 bg-[#E8E5DA] text-black'
@@ -177,9 +200,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </motion.button>
 
           {/* Center Container for Icons and Title */}
-          <div className="mt-5 flex w-full flex-col items-center justify-center gap-2 select-none cursor-default">
+          <div className="mt-5 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none">
             {/* Icons */}
-            <div className="mt-[-21px] ml-10 flex gap-2 p-5 mb-[21px]">
+            <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
               <span className="text-3xl">🎬</span>
               <span className="text-3xl">❓</span>
             </div>
@@ -189,7 +212,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.6 }}
-              className="mt-[-35px] select-none cursor-default mb-[15px]"
+              className="mt-[-35px] mb-[15px] cursor-default select-none"
             >
               <ComicText size={3} color={colors.primary}>
                 GIF Enigma
@@ -215,7 +238,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </div>
 
         {/* Main Action Buttons */}
-        <div className="flex flex-row items-center justify-center gap-5 max-sm:mt-[20px] mb-[15px]">
+        <div className="mb-[15px] flex flex-row items-center justify-center gap-5 max-sm:mt-[20px]">
           {/* Play GIF */}
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
@@ -266,9 +289,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           transition={{ duration: 0.5, delay: 1.6 }}
         >
           {/* Secondary Action Buttons */}
-          <div className="mt-6 flex w-full items-center justify-center mb-[21px]">
+          <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
             <button
-              className={`hover:scale-105 relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
+              className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
               onClick={() => onNavigate('howToPlay')}
               onMouseEnter={() => setHover('btn2')}
               onMouseLeave={() => setHover(null)}

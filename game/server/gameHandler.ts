@@ -7,6 +7,7 @@ import {
   GifCacheResponse,
   CreatorData,
   PostCommentResponse,
+  PlayerGameState,
 } from '../lib/types';
 
 // Save a created game to Redis and create a Reddit post for it
@@ -589,10 +590,12 @@ export async function hasUserCompletedGame(
 
     // Check if the game is in the user's completed games set
     const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-    const completed = !!(score && Number(score) > 0);
+    
+    // FIXED: Only consider completed if score is not null and not undefined
+    const completed = score !== null && score !== undefined;
 
     console.log(
-      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}`
+      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}, score: ${score}`
     );
     return { completed };
   } catch (error) {
@@ -740,6 +743,170 @@ export async function getCachedGifResults(
     return { success: true, cached: true, results: JSON.parse(cachedResults) };
   } catch (error) {
     console.error('❌ [DEBUG] Error in getCachedGifResults:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function saveGameState(
+  params: {
+    username: string;
+    gameId: string;
+    playerState: PlayerGameState;
+  },
+  context: Context
+) {
+  try {
+    console.log('Saving game state:', params);
+    const { username, gameId, playerState } = params;
+
+    if (!username || !gameId || !playerState) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    // Create a key for this user's state for this specific game
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    
+    // Store the player state as a JSON string
+    await context.redis.hSet(gameStateKey, {
+      playerState: JSON.stringify(playerState),
+      lastUpdated: Date.now().toString()
+    });
+    
+    // Set an expiration on the game state (30 days)
+    await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
+
+    // If the game is completed, add it to the user's completed games set
+    if (playerState.isCompleted) {
+      console.log(`Adding game ${gameId} to ${username}'s completed games`);
+      await context.redis.zAdd(`user:${username}:completedGames`, {
+        member: gameId,
+        score: Date.now(), // Using timestamp as score for sorting
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving game state:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getGameState(
+  params: {
+    username: string;
+    gameId: string;
+  },
+  context: Context
+) {
+  try {
+    console.log('Getting game state for:', params);
+    const { username, gameId } = params;
+
+    if (!username || !gameId) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    const gameState = await context.redis.hGetAll(gameStateKey);
+
+    if (!gameState || Object.keys(gameState).length === 0) {
+      // No saved state found
+      return { 
+        success: false, 
+        error: 'Game state not found',
+        // Return default initial state
+        state: {
+          playerState: {
+            gifHintCount: 0,
+            revealedLetters: [],
+            guess: '',
+            lastPlayed: Date.now(),
+            isCompleted: false
+          },
+          lastUpdated: Date.now().toString()
+        }
+      };
+    }
+
+    // Parse the player state from JSON
+    try {
+      if (gameState.playerState) {
+        gameState.playerState = JSON.parse(gameState.playerState);
+      }
+    } catch (e) {
+      console.error('Error parsing playerState JSON:', e);
+      gameState.playerState = JSON.stringify({
+        gifHintCount: 0,
+        revealedLetters: [],
+        guess: '',
+        lastPlayed: Date.now(),
+        isCompleted: false
+      });
+    }
+
+    return { success: true, state: gameState };
+  } catch (error) {
+    console.error('Error getting game state:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getUnplayedGames(
+  params: {
+    username: string;
+    limit?: number;
+  },
+  context: Context
+) {
+  try {
+    const { username, limit = 10 } = params;
+
+    if (!username) {
+      return { success: false, error: 'Username is required' };
+    }
+
+    // Get the user's completed games
+    const completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+      by: 'score'
+    });
+    
+    const completedGameIds = completedGames.map(game => 
+      typeof game === 'string' ? game : game.member
+    );
+
+    // Get all active games
+    const allGames = await context.redis.zRange('activeGames', 0, -1, {
+      by: 'score',
+      reverse: true, // Get newest first
+    });
+
+    // Filter out games the user has already completed
+    const unplayedGames = [];
+    for (const game of allGames) {
+      const gameId = typeof game === 'string' ? game : game.member;
+      
+      if (!completedGameIds.includes(gameId)) {
+        const gameData = await context.redis.hGetAll(`game:${gameId}`);
+        
+        if (gameData && Object.keys(gameData).length > 0) {
+          // Parse the gifs JSON string back to an array
+          if (gameData.gifs) {
+            gameData.gifs = JSON.parse(gameData.gifs);
+          }
+          
+          unplayedGames.push({ id: gameId, ...gameData });
+          
+          // Stop if we've reached the limit
+          if (unplayedGames.length >= limit) {
+            break;
+          }
+        }
+      }
+    }
+
+    return { success: true, games: unplayedGames };
+  } catch (error) {
+    console.error('Error getting unplayed games:', error);
     return { success: false, error: String(error) };
   }
 }

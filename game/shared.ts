@@ -157,19 +157,26 @@ export type WebviewToBlockMessage =
     }
   | { type: 'REFRESH_POST_PREVIEW'; data?: { gameId?: string } }
   | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
-  | { 
-    type: 'GET_GLOBAL_LEADERBOARD', 
-    data?: { 
-      limit?: number 
-    } 
-  }
-  | { 
-    type: 'GET_USER_STATS', 
-    data: { 
-      username: string 
-    } 
-  }
-  | { type: 'GET_INITIAL_DATA' };
+  | {
+      type: 'GET_GLOBAL_LEADERBOARD';
+      data?: {
+        limit?: number;
+      };
+    }
+  | {
+      type: 'GET_USER_STATS';
+      data: {
+        username: string;
+      };
+    }
+  | { type: 'GET_INITIAL_DATA' }
+  | {
+      type: 'GET_UNPLAYED_GAMES';
+      data: {
+        username: string;
+        limit?: number;
+      };
+    };
 
 export type BlocksToWebviewMessage =
   | {
@@ -433,29 +440,45 @@ export type BlocksToWebviewMessage =
       completed: boolean;
       error?: string;
     }
-    | { 
-      type: 'GET_GLOBAL_LEADERBOARD_RESULT', 
-      success: boolean, 
-      result?: { 
-        leaderboard: LeaderboardEntry[] 
-      }, 
-      error?: string 
+  | {
+      type: 'GET_GLOBAL_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: LeaderboardEntry[];
+      };
+      error?: string;
     }
-  | { 
-      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT', 
-      success: boolean, 
-      result?: { 
-        leaderboard: LeaderboardEntry[],
-        isCached?: boolean
-      }, 
-      error?: string 
+  | {
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: LeaderboardEntry[];
+        isCached?: boolean;
+      };
+      error?: string;
     }
-  | { 
-      type: 'GET_USER_STATS_RESULT', 
-      success: boolean, 
-      stats?: any, 
-      rank?: number, 
-      error?: string 
+  | {
+      type: 'GET_USER_STATS_RESULT';
+      success: boolean;
+      stats?: any;
+      rank?: number;
+      error?: string;
+    }
+  | {
+      type: 'GET_UNPLAYED_GAMES_RESULT';
+      success: boolean;
+      games?: GameData[];
+      error?: string;
+    }
+  | {
+      type: 'NAVIGATE';
+      data: {
+        page: Page;
+        params?: {
+          gameId?: string;
+          [key: string]: any;
+        };
+      };
     };
 
 export type DevvitMessage = {

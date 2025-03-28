@@ -11,7 +11,6 @@ export type NavigationProps = {
   onNavigate: (path: string) => void;
 };
 
-
 type DevvitMessage =
   | { type: 'initialData'; data: { username: string; currentCounter: number } }
   | { type: 'updateCounter'; data: { currentCounter: number } }
@@ -171,6 +170,7 @@ function App() {
       setGameId(urlGameId);
       setCurrentPage('game');
     }
+
     // Notify Devvit that the web view is ready
     console.log('Frontend: WebView ready, sending webViewReady message');
     window.parent.postMessage({ type: 'webViewReady' }, '*');
@@ -181,6 +181,21 @@ function App() {
 
     console.log('Frontend: Requesting navigation state');
     window.parent.postMessage({ type: 'requestNavigationState' }, '*');
+
+    const lastPage = localStorage.getItem('lastPage');
+    const lastGameId = localStorage.getItem('lastGameId');
+
+    if (lastPage && lastGameId && lastPage === 'game') {
+      console.log('[DEBUG-CRITICAL] App.tsx: Recovering navigation state:', {
+        lastPage,
+        lastGameId,
+      });
+      setGameId(lastGameId);
+      setCurrentPage(lastPage as Page);
+    } else if (lastPage) {
+      console.log('[DEBUG-CRITICAL] App.tsx: Recovering page only:', lastPage);
+      setCurrentPage(lastPage as Page);
+    }
 
     // Helper to handle the *unwrapped* message
     function handleUnwrappedMessage(message: any) {
@@ -255,19 +270,80 @@ function App() {
           case 'SET_NAVIGATION_STATE':
             console.log('[DEBUG-CRITICAL] App.tsx: SET_NAVIGATION_STATE received:', typedMessage);
             if (typedMessage.data && typedMessage.data.page) {
-              // Handle gameId for game page
-              if (typedMessage.data.page === 'game' && typedMessage.data.gameId) {
+              // Store the navigation state for recovery on reload if needed
+              if (typedMessage.data.gameId) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Storing navigation state with gameId:',
+                  typedMessage.data.gameId
+                );
+                localStorage.setItem('lastPage', typedMessage.data.page);
+                localStorage.setItem('lastGameId', typedMessage.data.gameId);
+              } else {
+                // CRITICAL FIX: If no gameId provided, still store the page and clear gameId
+                localStorage.setItem('lastPage', typedMessage.data.page);
+                localStorage.removeItem('lastGameId');
+              }
+
+              // Check if this is a refresh navigation (gameId starts with 'refresh_')
+              const isRefreshNavigation =
+                typedMessage.data.gameId &&
+                typeof typedMessage.data.gameId === 'string' &&
+                typedMessage.data.gameId.startsWith('refresh_');
+
+              // Handle normal game page navigation
+              if (
+                typedMessage.data.page === 'game' &&
+                typedMessage.data.gameId &&
+                !isRefreshNavigation
+              ) {
                 console.log(
                   '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
                   typedMessage.data.gameId
                 );
                 setGameId(typedMessage.data.gameId);
               }
-              console.log(
-                '[DEBUG-CRITICAL] App.tsx: Updating currentPage to:',
-                typedMessage.data.page
-              );
-              setCurrentPage(typedMessage.data.page);
+
+              // CRITICAL FIX: When navigating to leaderboard, preserve the gameId
+              else if (typedMessage.data.page === 'leaderboard' && typedMessage.data.gameId) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Setting gameId for leaderboard page:',
+                  typedMessage.data.gameId
+                );
+                setGameId(typedMessage.data.gameId);
+              }
+
+              // Handle non-game, non-leaderboard pages by clearing gameId
+              else if (
+                typedMessage.data.page !== 'game' &&
+                typedMessage.data.page !== 'leaderboard'
+              ) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Clearing gameId for non-game page:',
+                  typedMessage.data.page
+                );
+                setGameId(null);
+              }
+
+              // If we're navigating to the current page and it's a refresh navigation
+              if (typedMessage.data.page === currentPage && isRefreshNavigation) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Forcing refresh of current page:',
+                  typedMessage.data.page
+                );
+                // Force React to re-render by briefly changing to a different page
+                setCurrentPage('landing'); // Temporary change to force refresh
+
+                // Use requestAnimationFrame to schedule the change back
+                requestAnimationFrame(() => {
+                  setCurrentPage(typedMessage.data.page);
+                });
+              } else {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Updating currentPage to:',
+                  typedMessage.data.page
+                );
+                setCurrentPage(typedMessage.data.page);
+              }
             }
             break;
 
@@ -391,6 +467,13 @@ function App() {
 
     // Main message handler that unwraps any "devvit-message" wrappers
     function handleMessage(event: MessageEvent) {
+      if (event.data && event.data.type === 'webViewReady') {
+        console.log('[DEBUG-CRITICAL] App.tsx: WebView is ready');
+
+        // Force a reset to landing page when the WebView is (re)mounted
+        console.log('[DEBUG-CRITICAL] App.tsx: Resetting to landing page');
+        setCurrentPage('landing');
+      }
       if (!event.data) {
         console.log('[DEBUG-WARN] App.tsx received empty message data');
         return;
@@ -539,25 +622,84 @@ function App() {
       return;
     }
 
-    // Set local state FIRST - this is the critical part
+    // CRITICAL FIX: Handle navigation to non-game pages properly
+    if (
+      page === 'howToPlay' ||
+      page === 'leaderboard' ||
+      page === 'landing' ||
+      page === 'category' ||
+      page === 'create'
+    ) {
+      console.log(`[NAV] Setting currentPage to: ${page}`);
+      setCurrentPage(page);
+
+      // Don't clear gameId for leaderboard page as it needs it
+      if (page !== 'leaderboard' && page !== ('game' as Page)) {
+        console.log('[NAV] Resetting gameId');
+        setGameId(null);
+      }
+
+      // Store page for navigation persistence
+      localStorage.setItem('lastPage', page);
+
+      // Only store gameId for game and leaderboard pages
+      if (page === ('game' as Page) || page === ('leaderboard' as Page)) {
+        if (params?.gameId) {
+          localStorage.setItem('lastGameId', params.gameId);
+        }
+      } else {
+        localStorage.removeItem('lastGameId');
+      }
+
+      // Notify server about navigation
+      try {
+        console.log(`[NAV] Notifying server about navigation:`, { page, params });
+        window.parent.postMessage(
+          {
+            type: 'NAVIGATE',
+            data: {
+              page,
+              params,
+            },
+          },
+          '*'
+        );
+      } catch (err) {
+        console.error('[NAV] Error sending navigation message to server:', err);
+      }
+
+      return; // Exit early - we've handled non-game navigation
+    }
+
+    // Handle game page navigation (original code)
     if (page === 'game' && params?.gameId) {
       console.log(`[NAV] Setting gameId to: ${params.gameId}`);
       setGameId(params.gameId);
+
+      // Store navigation state for recovery if needed
+      localStorage.setItem('lastPage', page);
+      localStorage.setItem('lastGameId', params.gameId);
+
       console.log(`[NAV] Setting currentPage to: ${page}`);
       setCurrentPage(page);
     } else {
       console.log(`[NAV] Setting currentPage to: ${page}`);
       setCurrentPage(page);
 
-      // Reset gameId if needed
-      if (currentPage === 'game') {
+      // Reset gameId if not needed
+      if (page !== 'game' && page !== 'leaderboard') {
         console.log('[NAV] Resetting gameId');
         setGameId(null);
+      }
+
+      // Store only the page for non-game navigations
+      localStorage.setItem('lastPage', page);
+      if (page !== 'game') {
+        localStorage.removeItem('lastGameId');
       }
     }
 
     // AFTER updating local state, tell the server about the change
-    // This is secondary - the UI should update even if this fails
     try {
       console.log(`[NAV] Notifying server about navigation:`, { page, params });
       window.parent.postMessage(
@@ -618,13 +760,7 @@ function App() {
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
-        return (
-          <LeaderboardPage
-            onNavigate={setCurrentPage}
-            username={userData?.username}
-            postMessage={sendMessageToDevvit}
-          />
-        );
+        return <LeaderboardPage onNavigate={setCurrentPage} username={userData?.username} />;
       case 'game':
         // Safety check - should never happen due to our handleNavigate logic
         if (!gameId) {
