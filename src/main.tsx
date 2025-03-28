@@ -69,7 +69,7 @@ Devvit.configure({
 });
 
 Devvit.addCustomPostType({
-  name: 'giftest01',
+  name: 'GIF Enigma',
   height: 'tall',
   render: (context) => {
     let isWebViewReadyFlag: boolean = false;
@@ -898,6 +898,41 @@ Devvit.addCustomPostType({
             } catch (error) {
               postMessage({
                 type: 'SAVE_GAME_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_TOP_SCORES':
+            try {
+              console.log('[DEBUG] Received GET_TOP_SCORES request');
+
+              const result = await getCumulativeLeaderboard({ limit: 10 }, context);
+
+              if (!result.success || !result.leaderboard) {
+                postMessage({
+                  type: 'GET_TOP_SCORES_RESULT',
+                  success: false,
+                  error: result.error || 'Failed to fetch scores',
+                });
+                return;
+              }
+
+              const scores = result.leaderboard.map((entry) => ({
+                username: entry.username,
+                bestScore: entry.score || 0,
+              }));
+
+              postMessage({
+                type: 'GET_TOP_SCORES_RESULT',
+                success: true,
+                scores,
+              });
+            } catch (error) {
+              console.error('[DEBUG] Error handling GET_TOP_SCORES:', error);
+              postMessage({
+                type: 'GET_TOP_SCORES_RESULT',
                 success: false,
                 error: String(error),
               });

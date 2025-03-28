@@ -526,7 +526,7 @@ export const GamePostPreview = ({
                 alignment="center middle"
               >
                 <text color="#FFFFFF" weight="bold">
-                  Show Results
+                  Show Results 📊
                 </text>
               </hstack>
             </hstack>

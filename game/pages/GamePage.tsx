@@ -7,7 +7,6 @@ import {
   ScoreData,
   LeaderboardEntry,
   GameFlowState,
-  PlayerGameState,
   NavigationProps,
   Page,
 } from '../lib/types';
@@ -318,7 +317,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               data: {
                 ...score,
                 username: score.username || username || 'anonymous',
-                gameId: gameData?.id,
+                gameId: gameId || gameData?.id || '',
                 timestamp: Date.now(),
               },
             },
@@ -753,21 +752,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       setTimeout(() => {
         window.alert('Congratulations! You guessed the secret word!');
       }, 100);
-    }
-  };
-
-  const fetchUnplayedGames = () => {
-    if (username) {
-      window.parent.postMessage(
-        {
-          type: 'GET_UNPLAYED_GAMES',
-          data: {
-            username: username || 'anonymous',
-            limit: 5, // Adjust as needed
-          },
-        },
-        '*'
-      );
     }
   };
 

@@ -46,6 +46,7 @@ export type WebviewToBlockMessage =
         media_filter?: string;
       };
     }
+  | { type: 'GET_TOP_SCORES' }
   | {
       type: 'SAVE_GAME';
       data: {
@@ -224,7 +225,13 @@ export type BlocksToWebviewMessage =
       user?: { username: string };
       error?: string;
     }
-    | { type: 'GET_RANDOM_POST_RESULT'; success: boolean; postId?: string; gameId?: string; error?: string }
+  | {
+      type: 'GET_RANDOM_POST_RESULT';
+      success: boolean;
+      postId?: string;
+      gameId?: string;
+      error?: string;
+    }
   | {
       type: 'GET_USER_GAMES_RESULT';
       success: boolean;
@@ -465,6 +472,15 @@ export type BlocksToWebviewMessage =
       success: boolean;
       stats?: any;
       rank?: number;
+      error?: string;
+    }
+  | {
+      type: 'GET_TOP_SCORES_RESULT';
+      success: boolean;
+      scores?: {
+        username: string;
+        bestScore: number;
+      }[];
       error?: string;
     }
   | {
