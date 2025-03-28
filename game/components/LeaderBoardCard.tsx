@@ -24,7 +24,7 @@ export const LeaderboardCard: React.FC<LeaderboardCardProps> = ({
 }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // Check for dark mode
+  // dark mode
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);

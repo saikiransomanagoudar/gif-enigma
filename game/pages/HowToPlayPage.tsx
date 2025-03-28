@@ -120,7 +120,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               transition={{ duration: 0.5, delay: 1.6 }}
             >
               <ComicText size={1.25} className="text-[#E8E5DA]">
-                Create Mode
+                Creator Mode
               </ComicText>
             </motion.h3>
             <div className="space-y-4">

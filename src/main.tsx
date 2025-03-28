@@ -64,7 +64,6 @@ Devvit.addCustomPostType({
   name: 'GIF Enigma',
   height: 'tall',
   render: (context) => {
-
     let isWebViewReadyFlag: boolean = false;
     const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
       useState(0);
@@ -648,14 +647,22 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME_STATE':
             try {
-              console.log('Getting game state:', event.data);
+              if (!event.data || !event.data.gameId || !event.data.username) {
+                postMessage({
+                  type: 'GET_GAME_STATE_RESULT',
+                  success: false,
+                  error: 'Missing gameId or username',
+                });
+                return;
+              }
+
               const result = await getGameState(event.data, context);
 
               postMessage({
                 type: 'GET_GAME_STATE_RESULT',
                 success: result.success,
                 state: result.state,
-                error: result.error || undefined,
+                error: result.error,
               });
             } catch (error) {
               console.error('Error getting game state:', error);
