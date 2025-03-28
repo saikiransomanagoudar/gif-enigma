@@ -710,7 +710,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20">
+        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:mt-[15px]">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-500 max-sm:mt-[15px]"

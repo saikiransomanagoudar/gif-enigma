@@ -66,30 +66,21 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
-
   const [isDarkMode, setIsDarkMode] = useState(false);
-  
+
   useEffect(() => {
-    // Detect dark mode
-    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDarkMode(darkModeQuery.matches);
-    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-    darkModeQuery.addEventListener('change', handleThemeChange);
-    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-  }, []);
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
-  useEffect(() => {
-    if (!gameId || !username) return;
-    window.parent.postMessage({
-      type: 'GET_GAME_STATE',
-      data: { gameId, username }
-    }, '*');
-  }, [gameId, username]);
-
-
+  // Set up initial game page load animations and event handlers
   useEffect(() => {
     console.log('GamePage mounted with propGameId:', propGameId);
     if (!propGameId) {

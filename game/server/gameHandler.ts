@@ -244,7 +244,7 @@ export async function postCompletionComment(
   context: Context
 ): Promise<PostCommentResponse> {
   try {
-    console.log('🎉 [DEBUG] postCompletionComment called with params:', JSON.stringify(params));
+    console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
     const { gameId, username, numGuesses, gifHints, wordHints, hintTypeLabel, redditPostId } =
       params;
 

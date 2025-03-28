@@ -374,7 +374,7 @@ export const GamePostPreview = ({
       {/* Buttons based on game completion status */}
       <vstack padding="medium" alignment="center middle" gap="medium">
         {!hasCompletedGame ? (
-          // User hasn't completed the game - show Solve It button
+          // User hasn't completed the game - show Decode the GIF button
           <hstack
             cornerRadius="full"
             backgroundColor="#FF4500"
@@ -383,7 +383,7 @@ export const GamePostPreview = ({
             alignment="center middle"
           >
             <text color="#FFFFFF" weight="bold">
-              Solve It 🔍
+              Decode the GIF 🔍
             </text>
           </hstack>
         ) : (

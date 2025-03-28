@@ -61,7 +61,7 @@ Devvit.configure({
 });
 
 Devvit.addCustomPostType({
-  name: 'GIF Enigma',
+  name: 'giftest01',
   height: 'tall',
   render: (context) => {
     let isWebViewReadyFlag: boolean = false;
@@ -111,31 +111,31 @@ Devvit.addCustomPostType({
       return (await context.reddit.getCurrentUsername()) ?? null;
     });
 
-    const {
-      data: randomGameData,
-      loading: randomGameLoading,
-      error: randomGameError,
-    } = useAsync(
-      async () => {
-        try {
-          const result = await getRandomGame(
-            {
-              excludeIds: [],
-              preferUserCreated: true,
-            },
-            context
-          );
+    // const {
+    //   data: randomGameData,
+    //   loading: randomGameLoading,
+    //   error: randomGameError,
+    // } = useAsync(
+    //   async () => {
+    //     try {
+    //       const result = await getRandomGame(
+    //         {
+    //           excludeIds: [],
+    //           preferUserCreated: true,
+    //         },
+    //         context
+    //       );
 
-          return result;
-        } catch (error) {
-          console.error('Error in randomGame useAsync:', error);
-          throw error;
-        }
-      },
-      {
-        depends: [context.postId || 'default'],
-      }
-    );
+    //       return result;
+    //     } catch (error) {
+    //       console.error('Error in randomGame useAsync:', error);
+    //       throw error;
+    //     }
+    //   },
+    //   {
+    //     depends: [context.postId || 'default'],
+    //   }
+    // );
 
     const { data: navigationState } = useAsync(
       async () => {
@@ -341,60 +341,83 @@ Devvit.addCustomPostType({
             }
             break;
 
+          // case 'GET_RANDOM_GAME':
+          //   try {
+          //     console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
+
+          //     if (randomGameLoading) {
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: 'Game data is still loading',
+          //       });
+          //       return;
+          //     }
+
+          //     if (randomGameError) {
+          //       // Send the error to the client
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: String(randomGameError),
+          //       });
+          //       return;
+          //     }
+
+          //     if (randomGameData && randomGameData.success && randomGameData.game) {
+          //       // Send the pre-loaded random game data
+          //       const gameToSend = {
+          //         id: randomGameData.game.id,
+          //         word: randomGameData.game.word,
+          //         maskedWord: randomGameData.game.maskedWord,
+          //         questionText: randomGameData.game.questionText,
+          //         gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
+          //         createdAt: randomGameData.game.createdAt,
+          //         username:
+          //           randomGameData.game.username ||
+          //           randomGameData.game.creatorUsername ||
+          //           'anonymous',
+          //       };
+          //       console.log('Sending game with ID:', gameToSend.id);
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: true,
+          //         result: {
+          //           success: true,
+          //           game: gameToSend,
+          //         },
+          //       });
+          //     } else {
+          //       // Send failure message
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: randomGameData?.error || 'No game found',
+          //       });
+          //     }
+          //   } catch (error) {
+          //     console.error('Error getting random game:', error);
+          //     postMessage({
+          //       type: 'GET_RANDOM_GAME_RESULT',
+          //       success: false,
+          //       error: String(error),
+          //     });
+          //   }
+          //   break;
+
           case 'GET_RANDOM_GAME':
             try {
-              console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
+              console.log('Getting random game, excluding:', event.data.excludeIds);
+              // Import the getRandomGame function from gameHandler.server.js
+              const result = await getRandomGame(event.data || {}, context);
 
-              if (randomGameLoading) {
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: 'Game data is still loading',
-                });
-                return;
-              }
-
-              if (randomGameError) {
-                // Send the error to the client
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: String(randomGameError),
-                });
-                return;
-              }
-
-              if (randomGameData && randomGameData.success && randomGameData.game) {
-                // Send the pre-loaded random game data
-                const gameToSend = {
-                  id: randomGameData.game.id,
-                  word: randomGameData.game.word,
-                  maskedWord: randomGameData.game.maskedWord,
-                  questionText: randomGameData.game.questionText,
-                  gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
-                  createdAt: randomGameData.game.createdAt,
-                  username:
-                    randomGameData.game.username ||
-                    randomGameData.game.creatorUsername ||
-                    'anonymous',
-                };
-                console.log('Sending game with ID:', gameToSend.id);
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: true,
-                  result: {
-                    success: true,
-                    game: gameToSend,
-                  },
-                });
-              } else {
-                // Send failure message
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: randomGameData?.error || 'No game found',
-                });
-              }
+              // Convert to serializable format if needed
+              postMessage({
+                type: 'GET_RANDOM_GAME_RESULT',
+                success: result.success,
+                result: result,
+                error: result.error || undefined,
+              });
             } catch (error) {
               console.error('Error getting random game:', error);
               postMessage({
@@ -555,30 +578,30 @@ Devvit.addCustomPostType({
             break;
 
           // Also add this case to pass back the preloaded data to the client when requested
-          case 'GET_INITIAL_DATA':
-            try {
-              console.log('Sending initial data to client');
+          // case 'GET_INITIAL_DATA':
+          //   try {
+          //     console.log('Sending initial data to client');
 
-              // Send all the preloaded data together
-              postMessage({
-                type: 'INITIAL_DATA_RESULT',
-                success: true,
-                data: {
-                  username: username || null,
-                  randomGame: randomGameData?.success ? randomGameData.game : null,
-                  cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
-                  // Include other cached data as needed
-                },
-              });
-            } catch (error) {
-              console.error('Error sending initial data:', error);
-              postMessage({
-                type: 'INITIAL_DATA_RESULT',
-                success: false,
-                error: String(error),
-              });
-            }
-            break;
+          //     // Send all the preloaded data together
+          //     postMessage({
+          //       type: 'INITIAL_DATA_RESULT',
+          //       success: true,
+          //       data: {
+          //         username: username || null,
+          //         randomGame: randomGameData?.success ? randomGameData.game : null,
+          //         cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
+          //         // Include other cached data as needed
+          //       },
+          //     });
+          //   } catch (error) {
+          //     console.error('Error sending initial data:', error);
+          //     postMessage({
+          //       type: 'INITIAL_DATA_RESULT',
+          //       success: false,
+          //       error: String(error),
+          //     });
+          //   }
+          //   break;
           case 'SAVE_GAME_STATE':
             try {
               console.log('Saving game state:', event.data);
