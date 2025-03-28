@@ -268,7 +268,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               data: {
                 ...score,
                 username: score.username || username || 'anonymous',
-                gameId: gameData?.id,
+                gameId: gameId || gameData?.id || '',
                 timestamp: Date.now(),
               },
             },
@@ -1350,13 +1350,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <div className="flex justify-center gap-4">
                   <button
                     onClick={() => {
-                      window.parent.postMessage(
-                        {
-                          type: 'GET_GAME_LEADERBOARD',
-                          data: { gameId: gameData?.id, limit: 10 },
-                        },
-                        '*'
-                      );
+                      onNavigate('leaderboard');
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
@@ -1367,12 +1361,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </button>
 
                   <button
-                    onClick={handleNewGame}
+                    onClick={handleBackClick}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
-                    <span>🎮</span>
+                    <span>🏠</span>
                     <ComicText size={0.7} color="white">
-                      Play Another
+                      Home
                     </ComicText>
                   </button>
                 </div>
