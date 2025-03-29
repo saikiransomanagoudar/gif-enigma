@@ -52,9 +52,12 @@ export async function getRandomGame(
     // Get user's completed games from Redis if username is provided
     let completedGames: string[] = [];
     if (username) {
-      completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+      const rangeResult = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
         by: 'score',
       });
+      completedGames = rangeResult.map((item: { member: any; }) =>
+        typeof item === 'string' ? item : item.member
+      );
       console.log('🔍 [DEBUG] User completed games:', completedGames);
     }
 
@@ -70,8 +73,8 @@ export async function getRandomGame(
 
     console.log('🔍 [DEBUG] Found games in activeGames:', gameMembers.length);
 
-    let userCreatedGameIds: string[] = [];
-    let scheduledGameIds: string[] = [];
+    // Store games with their creation dates for later sorting
+    const gamesWithDates: Array<{gameId: string, createdAt: number, isUserCreated: boolean}> = [];
 
     for (const item of gameMembers) {
       const gameId = typeof item === 'string' ? item : item.member;
@@ -83,6 +86,7 @@ export async function getRandomGame(
 
       // Get game data
       const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      const createdAt = parseInt(gameData.createdAt || '0');
 
       // Check if game has valid GIFs
       let hasValidGifs = false;
@@ -96,44 +100,49 @@ export async function getRandomGame(
       }
 
       if (hasValidGifs) {
-        if (
-          gameData.creatorId &&
-          gameData.creatorId !== 'anonymous' &&
-          gameData.creatorId !== 'system'
-        ) {
-          userCreatedGameIds.push(gameId);
-        } else {
-          scheduledGameIds.push(gameId);
-        }
+        const isUserCreated = gameData.creatorId && 
+                             gameData.creatorId !== 'anonymous' && 
+                             gameData.creatorId !== 'system';
+        
+        gamesWithDates.push({
+          gameId,
+          createdAt,
+          isUserCreated: !!isUserCreated
+        });
       }
     }
 
-    console.log('✅ [DEBUG] User-created games available:', userCreatedGameIds.length);
-    console.log('✅ [DEBUG] Scheduled games available:', scheduledGameIds.length);
+    // Sort by creation date (newest first)
+    gamesWithDates.sort((a, b) => b.createdAt - a.createdAt);
+    
+    // Get the 10 most recent games
+    const recentGames = gamesWithDates.slice(0, 10);
+    console.log('✅ [DEBUG] Filtered to 10 most recent games:', recentGames.length);
 
-    // Determine which pool to select from
-    let candidatePool: string[] = [];
-    if (preferUserCreated && userCreatedGameIds.length > 0) {
-      candidatePool = userCreatedGameIds;
-    } else if (scheduledGameIds.length > 0) {
-      candidatePool = scheduledGameIds;
-    } else if (userCreatedGameIds.length > 0) {
-      // Fallback to user-created games if no scheduled games
-      candidatePool = userCreatedGameIds;
-    }
-
-    if (candidatePool.length === 0) {
-      console.error('❌ [DEBUG] No valid games available');
+    if (recentGames.length === 0) {
+      console.error('❌ [DEBUG] No valid recent games available');
       return {
         success: false,
-        error: 'No valid games available',
+        error: 'No valid recent games available',
         requestedUserCreated: preferUserCreated,
       };
     }
 
-    // Weighted random selection - newer games have higher chance
-    const randomGameId = weightedRandomSelect(candidatePool);
-    console.log('✅ [DEBUG] Selected random game:', randomGameId);
+    // Filter by user preference if possible
+    let candidatePool = recentGames;
+    if (preferUserCreated) {
+      const userCreatedGames = recentGames.filter(game => game.isUserCreated);
+      if (userCreatedGames.length > 0) {
+        candidatePool = userCreatedGames;
+      }
+    }
+
+    // Select a random game from the candidates
+    const randomIndex = Math.floor(Math.random() * candidatePool.length);
+    const selectedGame = candidatePool[randomIndex];
+    const randomGameId = selectedGame.gameId;
+    
+    console.log('✅ [DEBUG] Selected random game:', randomGameId, 'created at:', new Date(selectedGame.createdAt).toISOString());
 
     // Get the full game data
     const gameResult = await getGame({ gameId: randomGameId }, context);
@@ -143,27 +152,6 @@ export async function getRandomGame(
     console.error('❌ [DEBUG] Error getting random game:', error);
     return { success: false, error: String(error) };
   }
-}
-
-// Helper function for weighted random selection (newer games have higher chance)
-function weightedRandomSelect(gameIds: string[]): string {
-  if (gameIds.length === 0) return '';
-  if (gameIds.length === 1) return gameIds[0];
-
-  // Simple linear weighting - earlier indices (newer games) have higher weight
-  const weights = gameIds.map((_, index) => gameIds.length - index);
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const random = Math.random() * totalWeight;
-
-  let weightSum = 0;
-  for (let i = 0; i < gameIds.length; i++) {
-    weightSum += weights[i];
-    if (random <= weightSum) {
-      return gameIds[i];
-    }
-  }
-
-  return gameIds[gameIds.length - 1]; // fallback
 }
 
 export async function fetchRequest(

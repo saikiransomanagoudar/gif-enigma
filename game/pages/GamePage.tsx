@@ -1463,7 +1463,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   >
                     <span>🏠</span>
                     <ComicText size={0.7} color="white">
-                      Home 
+                      Home
                     </ComicText>
                   </button>
                 </div>
@@ -1761,7 +1761,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
         `}
       </style>
-
       {/* Header */}
       <header
         ref={headerRef}
@@ -1783,7 +1782,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText>
         </div>
       </header>
-
       {/* Question */}
       {!isLoading && !error && gameData && (
         <div
@@ -1796,7 +1794,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText> */}
         </div>
       )}
-
       {/* GIF Content or Loading/Error */}
       <div
         ref={gifAreaRef}
@@ -1804,7 +1801,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       >
         {renderContent()}
       </div>
-
       {/* GIF Hint Button */}
       <div
         ref={hintButtonRef}
@@ -1826,14 +1822,29 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         </button>
       </div>
 
+      {gameData && gameData.category && (
+        <div className="mt-1 flex items-center justify-center">
+          <span className="mr-1">
+            {gameData.category === 'Movies'
+              ? '🎬'
+              : gameData.category === 'Gaming'
+                ? '🎮'
+                : gameData.category === 'Books'
+                  ? '📚'
+                  : '🌐'}
+          </span>
+          <ComicText size={0.6} color={colors.textSecondary}>
+            Category: <span style={{ fontWeight: 'bold' }}>{gameData.category}</span>
+          </ComicText>
+        </div>
+      )}
       {/* Answer Boxes */}
       <div
         ref={answerBoxesContainerRef}
-        className="mt-5 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
+        className="mt-2 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
       >
         {renderAnswerBoxes()}
       </div>
-
       {/* Bottom Bar */}
       <div
         ref={bottomBarRef}
@@ -1894,7 +1905,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </div>
         </div>
       )}
-
       {showLeaderboard && (
         <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black p-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-auto rounded-xl bg-white p-4 shadow-2xl">

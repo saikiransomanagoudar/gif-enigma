@@ -433,12 +433,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         throw new Error('One or more selected GIFs have invalid URLs');
       }
 
+      console.log('🔍 [DEBUG] Submitting game with category:', currentCategory);
+
       // Post message to parent
       window.parent.postMessage(
         {
           type: 'SAVE_GAME',
           data: {
             word: secretInput,
+            category: currentCategory,
             maskedWord,
             questionText,
             gifs: gifUrls,

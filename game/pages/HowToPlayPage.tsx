@@ -69,7 +69,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           </motion.div>
           <h2 className={`ml-[30px] text-center text-3xl font-bold ${textColor}`}>
             <ComicText size={1.75} className="text-[#E8E5DA]">
-              How to Play
+              How to Play?
             </ComicText>
           </h2>
           <div className="flex-1" />

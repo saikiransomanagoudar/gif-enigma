@@ -271,7 +271,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
                   size={0.8}
                   className={`text-lg max-sm:text-[1px] ${ifhover === 'btn2' ? '!text-white' : '!text-black'}`}
                 >
-                  &nbsp;How this game works? 🤔
+                  &nbsp;How to play? 🎮
                 </ComicText>
               </span>
             </button>

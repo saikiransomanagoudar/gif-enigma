@@ -57,6 +57,18 @@ Devvit.addSettings([
     isSecret: true,
     scope: 'app',
   },
+  {
+    name: 'allOriginalContent',
+    label: 'Require All Original Content',
+    type: 'boolean',
+    defaultValue: false,
+  },
+  {
+    name: 'allowChatPostCreation',
+    label: 'Allow Chat Post Creation',
+    type: 'boolean',
+    defaultValue: true,
+  },
 ]);
 
 Devvit.configure({
@@ -201,10 +213,7 @@ Devvit.addCustomPostType({
 
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
-      onMessage: async (
-        rawMessage: WebviewToBlockMessage,
-        { postMessage }: { postMessage: (message: BlocksToWebviewMessage) => void }
-      ) => {
+      onMessage: async (rawMessage: WebviewToBlockMessage) => {
         console.log('[DEBUG] main.tsx onMessage received:', rawMessage);
 
         // Unwrap the devvit-message wrapper(s) (using a cast to any)
@@ -994,8 +1003,9 @@ Devvit.addCustomPostType({
                       gameId: event.data.gameId,
                       username: event.data.username,
                       numGuesses: commentData.numGuesses || 1,
-                      numHints: commentData.numHints || 0,
-                      otherGuesses: commentData.otherGuesses || [],
+                      gifHints: commentData.gifHints || 0,
+                      wordHints: commentData.wordHints || 0,
+                      hintTypeLabel: commentData.hintTypeLabel || 'letter',
                       redditPostId,
                     },
                     context
@@ -1295,25 +1305,75 @@ Devvit.addCustomPostType({
               // Get the subreddit directly
               const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma'); // Replace with your actual subreddit name
 
-              // Get removed/spam posts to filter them out
-              const spamPosts = await subreddit.getSpam({ type: 'post' });
-              const removedPostIds = (await spamPosts.all()).map((post) => post.id);
+              // Get comprehensive list of posts using multiple methods
+              console.log('🔍 [DEBUG] Getting comprehensive list of posts');
 
-              console.log('🔍 [DEBUG] Removed post IDs:', removedPostIds);
+              // Create a set to store removed post IDs
+              const removedPostIds = new Set<string>();
 
-              // Get posts removed by Automoderator
-              const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
-              const automoderatorRemovedIds = zRangeResult.map((item) =>
-                typeof item === 'string' ? item : item.member
-              );
-              console.log('🔍 [DEBUG] Posts removed by Automoderator:', automoderatorRemovedIds);
+              // Get posts from various listings
+              try {
+                // Get posts from top posts
+                const topPosts = await subreddit.getTopPosts();
+                const allTopPosts = await topPosts.all();
+                console.log('🔍 [DEBUG] Top posts count:', allTopPosts.length);
+
+                // Get edited posts
+                const editedListing = await subreddit.getEdited({ type: 'post' });
+                const editedPosts = await editedListing.all();
+                console.log('🔍 [DEBUG] Edited posts count:', editedPosts.length);
+
+                // Get unmoderated posts
+                const unmoderatedListing = await subreddit.getUnmoderated({ type: 'post' });
+                const unmoderatedPosts = await unmoderatedListing.all();
+                console.log('🔍 [DEBUG] Unmoderated posts count:', unmoderatedPosts.length);
+
+                // Get mod queue posts
+                const modQueueListing = await subreddit.getModQueue({ type: 'post' });
+                const modQueuePosts = await modQueueListing.all();
+                console.log('🔍 [DEBUG] Mod queue posts count:', modQueuePosts.length);
+
+                // Combine all posts and check isRemoved status
+                const allPosts = [
+                  ...allTopPosts,
+                  ...editedPosts,
+                  ...unmoderatedPosts,
+                  ...modQueuePosts,
+                ];
+
+                // Filter out removed posts
+                for (const post of allPosts) {
+                  // Check if the post is removed
+                  if (post.isRemoved && post.isRemoved()) {
+                    removedPostIds.add(post.id);
+                    console.log(`🔍 [DEBUG] Post ${post.id} is marked as removed`);
+                  }
+                }
+
+                console.log('🔍 [DEBUG] Total removed posts identified:', removedPostIds.size);
+              } catch (error) {
+                console.error('❌ [DEBUG] Error getting posts:', error);
+              }
+
+              // Get posts removed by Automoderator from Redis
+              let automoderatorRemovedIds: string[] = [];
+              try {
+                const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
+                automoderatorRemovedIds = zRangeResult.map((item) =>
+                  typeof item === 'string' ? item : item.member
+                );
+                console.log('🔍 [DEBUG] Posts removed by Automoderator:', automoderatorRemovedIds);
+              } catch (error) {
+                console.error('❌ [DEBUG] Error getting automod removed posts:', error);
+              }
 
               // Get any additional exclude IDs from the request
               const excludeIds = event.data?.excludeIds || [];
 
-              // Filter out games with no Reddit post ID, excluded posts, removed posts, and completed games
-              const availablePosts = [];
+              // Store available posts with their creation dates
+              const availablePostsWithDates = [];
 
+              // Filter out games with no Reddit post ID, excluded posts, removed posts, and completed games
               for (const gameId of gameIds) {
                 // Skip if this game is already completed by the user
                 if (completedGameIds.includes(gameId)) {
@@ -1321,20 +1381,43 @@ Devvit.addCustomPostType({
                   continue;
                 }
 
-                // Get game data including redditPostId
+                // Get game data including redditPostId and createdAt
                 const gameData = await context.redis.hGetAll(`game:${gameId}`);
 
                 if (gameData && gameData.redditPostId) {
                   const postId = gameData.redditPostId;
+                  const createdAt = parseInt(gameData.createdAt || '0');
+                  const cleanPostId = postId.replace('t3_', '');
+                  const fullPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
 
-                  // Check if this post is in our exclude list or is a removed/spam post
-                  if (
-                    !excludeIds.includes(postId) &&
-                    !removedPostIds.some(
-                      (id) => id === postId || id === `t3_${postId.replace('t3_', '')}`
-                    ) &&
-                    !automoderatorRemovedIds.includes(postId)
-                  ) {
+                  console.log(
+                    `🔍 [DEBUG] Checking post ${postId} (clean: ${cleanPostId}, full: ${fullPostId})`
+                  );
+
+                  // Check exclusions with different ID formats
+                  const isInExcludeList =
+                    excludeIds.includes(postId) ||
+                    excludeIds.includes(cleanPostId) ||
+                    excludeIds.includes(fullPostId);
+
+                  // Check if post is in the removed list with different ID formats
+                  const isRemoved =
+                    removedPostIds.has(postId) ||
+                    removedPostIds.has(cleanPostId) ||
+                    removedPostIds.has(fullPostId);
+
+                  // Check if removed by automod with different ID formats
+                  const isRemovedByAutomod = automoderatorRemovedIds.some((id) => {
+                    const cleanId = id.replace('t3_', '');
+                    return cleanId === cleanPostId || id === postId || id === fullPostId;
+                  });
+
+                  console.log(
+                    `🔍 [DEBUG] Post ${postId} status - Excluded: ${isInExcludeList}, Removed: ${isRemoved}, Automod: ${isRemovedByAutomod}`
+                  );
+
+                  // Only proceed if the post is not excluded or removed
+                  if (!isInExcludeList && !isRemoved && !isRemovedByAutomod) {
                     // Check if user has a game state for this game
                     let isCompleted = false;
                     if (username) {
@@ -1360,15 +1443,23 @@ Devvit.addCustomPostType({
                     }
 
                     // If we get here, the game is valid and not completed
-                    availablePosts.push({
+                    availablePostsWithDates.push({
                       gameId,
                       postId: postId,
+                      createdAt: createdAt,
                     });
+                    console.log(
+                      `✅ [DEBUG] Added post ${postId} for game ${gameId} to available posts (created at: ${new Date(createdAt).toISOString()})`
+                    );
+                  } else {
+                    console.log(
+                      `🚫 [DEBUG] Skipping post ${postId} - ${isInExcludeList ? 'excluded ' : ''}${isRemoved ? 'removed ' : ''}${isRemovedByAutomod ? 'automod removed' : ''}`
+                    );
                   }
                 }
               }
 
-              if (availablePosts.length === 0) {
+              if (availablePostsWithDates.length === 0) {
                 console.error('❌ [DEBUG] No available posts found after filtering');
                 postMessage({
                   type: 'GET_RANDOM_POST_RESULT',
@@ -1378,16 +1469,58 @@ Devvit.addCustomPostType({
                 return;
               }
 
-              // Select a random post
-              const randomIndex = Math.floor(Math.random() * availablePosts.length);
-              const randomPost = availablePosts[randomIndex];
+              // Sort by creation date (newest first)
+              availablePostsWithDates.sort((a, b) => b.createdAt - a.createdAt);
+
+              // Take only the 10 most recent posts (or fewer if there aren't 10)
+              const recentPosts = availablePostsWithDates.slice(
+                0,
+                Math.min(10, availablePostsWithDates.length)
+              );
+              console.log(`✅ [DEBUG] Using ${recentPosts.length} most recent posts for selection`);
+
+              // Select a random post from these recent posts
+              const randomIndex = Math.floor(Math.random() * recentPosts.length);
+              const randomPost = recentPosts[randomIndex];
 
               console.log(
                 '✅ [DEBUG] Selected random post:',
                 randomPost.postId,
                 'for game:',
-                randomPost.gameId
+                randomPost.gameId,
+                'created at:',
+                new Date(randomPost.createdAt).toISOString()
               );
+
+              // Final check to ensure post hasn't been removed since our filtering
+              try {
+                const finalCheck = await context.reddit.getPostById(
+                  randomPost.postId.startsWith('t3_')
+                    ? randomPost.postId
+                    : `t3_${randomPost.postId}`
+                );
+
+                if (finalCheck && finalCheck.isRemoved && finalCheck.isRemoved()) {
+                  console.error(
+                    `❌ [DEBUG] Final check found post ${randomPost.postId} is removed!`
+                  );
+                  postMessage({
+                    type: 'GET_RANDOM_POST_RESULT',
+                    success: false,
+                    error: 'Selected post was found to be removed in final check',
+                  });
+                  return;
+                }
+              } catch (finalCheckError) {
+                console.error(`❌ [DEBUG] Error in final post check:`, finalCheckError);
+                // If we can't fetch the post, it might be removed/deleted
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'Could not verify post in final check - it may be unavailable',
+                });
+                return;
+              }
 
               postMessage({
                 type: 'GET_RANDOM_POST_RESULT',
@@ -1399,6 +1532,36 @@ Devvit.addCustomPostType({
               console.error('❌ [DEBUG] Error getting random post:', error);
               postMessage({
                 type: 'GET_RANDOM_POST_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_SUBREDDIT_SETTINGS':
+            try {
+              console.log('Getting subreddit settings');
+
+              // Get the current subreddit
+              const subreddit = await context.reddit.getCurrentSubreddit();
+
+              // Get the settings
+              const allOriginalContent = await context.settings.get('allOriginalContent');
+
+              const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
+
+              postMessage({
+                type: 'GET_SUBREDDIT_SETTINGS_RESULT',
+                success: true,
+                settings: {
+                  allOriginalContent: allOriginalContent === true,
+                  allowChatPostCreation: allowChatPostCreation !== false, // Default to true if not set
+                },
+              });
+            } catch (error) {
+              console.error('Error getting subreddit settings:', error);
+              postMessage({
+                type: 'GET_SUBREDDIT_SETTINGS_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -1431,7 +1594,7 @@ Devvit.addCustomPostType({
         },
         {
           depends: [context.postId ?? ''],
-          finally: (result, error) => {
+          finally: (result) => {
             setIsGame(!!result);
             setIsLoading(false);
             console.log('Post preview component - isGame:', !!result);
@@ -1466,10 +1629,11 @@ Devvit.addCustomPostType({
 });
 
 Devvit.addMenuItem({
-  label: 'Create GIF Enigma Game',
+  label: 'Create GIF Enigma',
   location: 'subreddit',
-  forUserType: 'moderator',
   onPress: async (_, context) => {
+    const allOriginalContent = await context.settings.get('allOriginalContent');
+    const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
 

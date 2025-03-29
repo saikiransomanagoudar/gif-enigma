@@ -29,6 +29,7 @@ export type WebviewToBlockMessage =
   //     page: Page;
   //     gameId?: string;
   //   }
+  | { type: 'GET_SUBREDDIT_SETTINGS' }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
   | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
@@ -52,6 +53,7 @@ export type WebviewToBlockMessage =
       data: {
         word: string;
         maskedWord: string;
+        category: string;
         questionText: string;
         gifs: string[];
         postToSubreddit?: boolean;
@@ -498,6 +500,22 @@ export type BlocksToWebviewMessage =
           [key: string]: any;
         };
       };
+    }
+    | {
+      type: 'SUBREDDIT_SETTINGS';
+      data: {
+        allOriginalContent: boolean;
+        allowChatPostCreation: boolean;
+      };
+    }
+    | {
+      type: 'GET_SUBREDDIT_SETTINGS_RESULT';
+      success: boolean;
+      settings?: {
+        allOriginalContent: boolean;
+        allowChatPostCreation: boolean;
+      };
+      error?: string;
     };
 
 export type DevvitMessage = {
