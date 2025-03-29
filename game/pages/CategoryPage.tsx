@@ -173,6 +173,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   return (
     <div
       className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       {/* Header section */}
@@ -184,8 +185,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
           ref={backButtonRef}
           onClick={handleBackClick}
           className={`${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
-          
-         
+          style={{ backgroundColor: colors.primary }}
         >
           <span className="mr-1 text-sm text-white">👈</span>
           <ComicText size={0.5} color="white">

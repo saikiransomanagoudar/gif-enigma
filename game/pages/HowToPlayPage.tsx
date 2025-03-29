@@ -44,18 +44,12 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
         >
           <motion.div
             onClick={() => onNavigate('landing')}
-            className={`flex cursor-pointer items-center space-x-2 text-[#FF4500] bg-[#FF4500] px-3 py-1.5 rounded-full shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105`}
+            className={`flex cursor-pointer items-center space-x-2 rounded-full bg-[#FF4500] px-3 py-1.5 text-[#FF4500] shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105`}
           >
-            {/* <button
-              onClick={() => onNavigate('landing')}
-              className="left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-              style={{ backgroundColor: colors.primary }}
-            > */}
-              <span className="mr-1 text-sm text-white">👈</span>
-              <ComicText size={0.5} color="white">
-                Back
-              </ComicText>
-            {/* </button> */}
+            <span className="mr-1 text-sm text-white">👈</span>
+            <ComicText size={0.5} color="white">
+              Back
+            </ComicText>
           </motion.div>
           <h2 className={`ml-[30px] text-center text-3xl font-bold ${textColor}`}>
             <ComicText size={1.75} className="text-[#E8E5DA]">
@@ -93,7 +87,9 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: 0.8 + index * 0.2 }}
                 >
-                  <span className="mr-4 text-3xl">{icon}</span>
+                  <span className="mr-4 text-3xl">
+                    {['🖼️', '⌨️', '💡', '⚖️', '🔠', '🏆', '🎯'][index]}
+                  </span>
                   <ComicText className="text-lg">
                     {
                       [
@@ -167,7 +163,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 2.2 }}
           >
-            <ComicText>Think fast, guess smart, and crack the GIF enigma!</ComicText>
+            <ComicText>Decode the clues, manage your points, and crack the GIF enigma!</ComicText>
           </motion.h3>
           <motion.button
             onClick={() => onNavigate('landing')}

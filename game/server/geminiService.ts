@@ -23,10 +23,12 @@ export async function getRecommendations(
   context: Context
 ): Promise<{ success: boolean; recommendations?: string[]; error?: string; debug?: any }> {
   try {
-    const { category, inputType, count = 10 } = params;
+    const { category, inputType, count = 20 } = params;
 
     // Add debug log
-    console.log(`[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`);
+    console.log(
+      `[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`
+    );
 
     const apiKey = await context.settings.get('gemini-api-key');
 
@@ -43,28 +45,55 @@ export async function getRecommendations(
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
+    const timestamp = Date.now();
+    const randomSeed = Math.floor(Math.random() * 1000);
+
     const prompt =
-    inputType === 'word'
-    ? `Generate ${count} single words related to ${category}. ${
-        category === 'Movies'
-          ? 'Include film titles, characters, and quotes, and inspirational movie quotes.'
-          : category === 'Gaming'
-          ? 'Include games, characters, and gaming terms, and inspirational gaming quotes.'
+      inputType === 'word'
+        ? `Generate ${count} DIVERSE single words that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
+    ${
+      category === 'Movies'
+        ? 'Include a balanced mix of the following: (1) THEMATIC ELEMENTS from movies (like "revenge", "journey", "escape"), (2) CONCEPTS that appear in films (like "villain", "monsters", "rescue"), (3) EMOTIONS depicted in cinema (like "terrified", "heartbreak", "triumph"), (4) COMMON SETTINGS or OBJECTS from films (like "spaceship", "treasure", "castle"), and (5) some CHARACTER ARCHETYPES (like "heroes", "zombie", "cowboy"). Avoid using specific film titles that would make guessing too obvious when paired with related GIFs.'
+        : category === 'Gaming'
+          ? 'Include a balanced mix of the following: (1) GAMING CONCEPTS (like "victory", "mission", "quest"), (2) GAME MECHANICS (like "puzzle", "stealth", "combat"), (3) COMMON GAME ELEMENTS (like "health", "treasure", "weapon"), (4) GAMING ENVIRONMENTS (like "dungeon", "fortress", "jungle"), and (5) some CHARACTER TYPES (like "wizard", "sniper", "zombie"). Avoid using specific game titles that would make guessing too obvious when paired with related GIFs.'
           : category === 'Books'
-          ? 'Include titles, authors, characters, and quotes, and inspirational quotes.'
-          : 'Topics include anything and everything, and also inspirational..'
-      } All words must be at least 5 characters long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`
-    : `Generate ${count} phrases (each with a minimum of two words) related to ${category}. ${
-        category === 'Movies'
-          ? 'Include film titles, characters, and quotes, and also inspirational movie quotes.'
-          : category === 'Gaming'
-          ? 'Include games, characters, and gaming terms, and also inspirational gaming quotes.'
+            ? 'Include a balanced mix of the following: (1) LITERARY THEMES (like "journey", "mystery", "romance"), (2) LITERARY SETTINGS (like "castle", "island", "school"), (3) CHARACTER TYPES in literature (like "wizard", "detective", "monster"), (4) LITERARY DEVICES (like "tragedy", "suspense", "conflict"), and (5) GENRES (like "fantasy", "mystery", "western"). Avoid using specific book titles that would make guessing too obvious when paired with related GIFs.'
+            : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
+    } 
+    All words must be at least 5 characters long and safe for all audiences (not NSFW).
+    
+    IMPORTANT GIF SEARCH OPTIMIZATION:
+    - Choose words that have VISUAL APPEAL when animated
+    - Include terms commonly found in popular GIFs and memes
+    - Focus on ACTIONS, REACTIONS, and EMOTIONS that animate well
+    - Select words that have clear visual representations
+    - Include pop culture references that appear frequently in GIFs
+    - Avoid abstract concepts that don't translate well to visual media
+    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
+    
+    Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["word1", "word2", "word3"]`
+        : `Generate ${count} DIVERSE phrases (each with a minimum of two words) that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
+    ${
+      category === 'Movies'
+        ? 'Include a balanced mix of the following: (1) MOVIE SCENARIOS (like "car chase", "plot twist", "epic battle"), (2) CINEMATIC TECHNIQUES (like "slow motion", "jump scare", "dream sequence"), (3) COMMON FILM MOMENTS (like "big reveal", "final boss", "sad ending"), (4) FILM REFERENCES that would create interesting GIF challenges (like "mind blown", "plot armor", "bad acting"). Avoid using direct movie titles and main character names that would make guessing too obvious when paired with related GIFs.'
+        : category === 'Gaming'
+          ? 'Include a balanced mix of the following: (1) GAMING ACTIONS (like "level up", "game over", "boss fight"), (2) PLAYER EXPERIENCES (like "rage quit", "epic win", "clutch save"), (3) GAMING MECHANICS (like "power move", "combo hit", "skill tree"), (4) GAMING SCENARIOS (like "secret level", "final form", "cut scene"). Avoid using direct game titles and specific character names that would make guessing too obvious when paired with related GIFs.'
           : category === 'Books'
-          ? 'Include titles, authors, characters, quotes, inspirational quotes.'
-          : 'Topics include anything and everything, and also inspirational.'
-      } Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW). Return only as a JSON array of strings with no explanation.`;
-  
-    console.log(`[DEBUG] Prompt: ${prompt.substring(0, 100)}...`);
+            ? 'Include a balanced mix of the following: (1) READING THEMES (like "plot twist", "main quest", "epic tale"), (2) LITERARY TECHNIQUES (like "big reveal", "time jump", "dual narrative"), (3) STORY MOMENTS (like "dark secret", "true love", "final battle"), (4) BOOKISH CONCEPTS (like "plot armor", "red herring", "tragic hero"). Avoid using direct book titles and specific character names that would make guessing too obvious when paired with related GIFs.'
+            : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
+    } 
+    Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).
+    
+    IMPORTANT GIF SEARCH OPTIMIZATION:
+    - Focus on phrases that describe ACTIONS or REACTIONS (like "mind blown" or "happy dance")
+    - Include popular meme phrases that are frequently made into GIFs
+    - Choose phrases that have clear visual representations
+    - Include phrases from viral videos, TV shows, or movies that became GIFs
+    - Focus on dynamic content rather than static concepts
+    - Consider what phrases people actually search for when looking for reaction GIFs
+    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
+    
+    Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["phrase1", "phrase2", "phrase3"]`;
 
     const requestBody = {
       contents: [
@@ -77,15 +106,16 @@ export async function getRecommendations(
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.88,
         maxOutputTokens: 200,
-        topP: 0.95,
+        topP: 0.93,
+        topK: 45,
         responseMimeType: 'application/json',
       },
     };
 
     console.log('[DEBUG] Sending request to Gemini API');
-    
+
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -120,35 +150,69 @@ export async function getRecommendations(
         textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
         hasError: !!data.error,
       };
-      
+
       console.log('[DEBUG] Response structure:', JSON.stringify(responseStructure));
 
       // Attempt to parse the text from data.candidates[0].content.parts[0].text
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
+        console.log('[DEBUG] Raw API response text:', text); // Added logging
+
+        let sanitizedText = text;
+
+        let recommendations = [];
+        let parseSuccessful = false;
+
+        // First parse attempt
         try {
-          console.log(`[DEBUG] Attempting to parse response text: ${text.substring(0, 100)}...`);
-          const recommendations = JSON.parse(text);
-          
-          if (Array.isArray(recommendations) && recommendations.length > 0) {
-            console.log(`[DEBUG] Successfully parsed ${recommendations.length} recommendations`);
-            return { 
-              success: true, 
-              recommendations,
-              debug: { responseStructure } 
-            };
-          } else {
-            console.error('[ERROR] Parsed response is not a valid array or is empty');
+          console.log('[DEBUG] Attempting to parse sanitized text:', sanitizedText);
+          recommendations = JSON.parse(sanitizedText);
+          parseSuccessful = Array.isArray(recommendations);
+        } catch (primaryError) {
+          console.log('[DEBUG] Primary parse failed, attempting fallback');
+        }
+
+        if (!parseSuccessful) {
+          // Look for anything that looks like a JSON array
+          const arrayMatch = text.match(/\[\s*(['"][^'"]*['"](\s*,\s*['"][^'"]*['"])*)\s*\]/s);
+          if (arrayMatch) {
+            try {
+              const extractedArray = `[${arrayMatch[1]}]`;
+              console.log('[DEBUG] Extracted array text:', extractedArray);
+              recommendations = JSON.parse(extractedArray);
+              parseSuccessful = Array.isArray(recommendations);
+            } catch (fallbackError) {
+              console.error('[ERROR] Fallback parse failed:', fallbackError);
+            }
           }
-        } catch (parseError) {
-          console.error('[ERROR] Error parsing Gemini response:', parseError);
-          console.log('[DEBUG] Raw text that failed to parse:', text);
+
+          // One more fallback - try to manually build the array
+          if (!parseSuccessful) {
+            try {
+              // Extract anything that looks like a quoted string
+              const itemMatches = text.match(/['"]([^'"]+)['"]/g);
+              if (itemMatches && itemMatches.length > 0) {
+                recommendations = itemMatches.map((m) => m.replace(/['"]/g, ''));
+                parseSuccessful = true;
+                console.log('[DEBUG] Manual array extraction successful:', recommendations);
+              }
+            } catch (manualError) {
+              console.error('[ERROR] Manual extraction failed:', manualError);
+            }
+          }
+        }
+
+        if (parseSuccessful && recommendations.length > 0) {
+          // Validate array contents
+          const validItems = recommendations.filter((item: any) => typeof item === 'string');
+          console.log(`[DEBUG] Found ${validItems.length} valid recommendations`);
           return {
-            success: false,
-            error: `Parse error: ${String(parseError)}`,
-            recommendations: getDefaultRecommendations(category, inputType),
-            debug: { parseError: String(parseError), rawText: text },
+            success: true,
+            recommendations: validItems,
+            debug: { responseStructure },
           };
+        } else {
+          console.error('[ERROR] Final parsed array invalid');
         }
       } else {
         console.error('[ERROR] No text found in Gemini response');
@@ -189,7 +253,7 @@ export async function getSynonyms(
 
   try {
     console.log(`[DEBUG] Getting synonyms for word: ${word}`);
-    
+
     // Get the API key from Devvit settings
     const apiKey = await context.settings.get('gemini-api-key');
 
@@ -206,14 +270,28 @@ export async function getSynonyms(
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
-    const prompt = `For the word "${word}", generate four sets of search terms that could be used to find related GIFs, arranged from abstract/indirect to very specific:
-1. First set: Extremely abstract or conceptual terms (3 terms)
-2. Second set: Somewhat related but still indirect terms (3 terms)
-3. Third set: More direct and closer to the word (3 terms)
-4. Fourth set: Very specific and direct terms (3 terms)
-Return only as a JSON array of arrays with no explanation.`;
+    const timestamp = Date.now();
+    const randomSeed = Math.floor(Math.random() * 1000);
 
-    console.log(`[DEBUG] Synonyms prompt: ${prompt.substring(0, 100)}...`);
+    const prompt = `For the word "${word}", generate four sets of HIGHLY EFFECTIVE Tenor GIF search terms, arranged from abstract to specific:
+
+1. First set: Abstract/conceptual terms that would yield interesting GIFs indirectly related to "${word}" (3 terms)
+2. Second set: Popular expressions, reactions, or emotions that relate to "${word}" and work well as GIF searches (3 terms)
+3. Third set: Visual scenarios or popular media references relating to "${word}" that would make great GIFs (3 terms)
+4. Fourth set: Direct and specific search terms for "${word}" that would yield the most relevant GIFs (3 terms)
+
+IMPORTANT GUIDELINES FOR EFFECTIVE GIF SEARCH TERMS:
+- Focus on VISUAL and ACTION-ORIENTED terms that would appear in GIFs
+- Include popular memes, movie scenes, TV moments related to the concept
+- Use terms that capture EMOTIONS and REACTIONS people express in GIFs
+- Include terms that would yield animated content (not just static images)
+- Consider what content creators would tag their GIFs with
+- Use a mix of specific character names, show titles, and descriptive actions
+- Favor concise, popular search terms that Tenor users would likely use
+- Use timestamp ${timestamp} and seed ${randomSeed} to ensure variety
+
+Return ONLY a valid JSON array of arrays with no additional text, formatting, or explanations.
+Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","term8","term9"],["term10","term11","term12"]]`;
 
     const requestBody = {
       contents: [
@@ -226,15 +304,16 @@ Return only as a JSON array of arrays with no explanation.`;
         },
       ],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.85,
         maxOutputTokens: 200,
-        topP: 0.95,
+        topP: 0.92,
+        topK: 50,
         responseMimeType: 'application/json',
       },
     };
 
     console.log('[DEBUG] Sending synonyms request to Gemini API');
-    
+
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -269,7 +348,7 @@ Return only as a JSON array of arrays with no explanation.`;
         textPreview: data.candidates?.[0]?.content?.parts?.[0]?.text?.substring(0, 100),
         hasError: !!data.error,
       };
-      
+
       console.log('[DEBUG] Synonyms response structure:', JSON.stringify(responseStructure));
 
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -277,13 +356,13 @@ Return only as a JSON array of arrays with no explanation.`;
         try {
           console.log(`[DEBUG] Attempting to parse synonyms text: ${text.substring(0, 100)}...`);
           const synonyms = JSON.parse(text);
-          
+
           if (Array.isArray(synonyms) && synonyms.length > 0) {
             console.log(`[DEBUG] Successfully parsed ${synonyms.length} synonym groups`);
-            return { 
-              success: true, 
+            return {
+              success: true,
               synonyms,
-              debug: { responseStructure } 
+              debug: { responseStructure },
             };
           } else {
             console.error('[ERROR] Parsed synonyms response is not a valid array or is empty');
@@ -476,7 +555,7 @@ function getDefaultSynonyms(word: string): string[][] {
       ['identity', 'persona', 'character'],
       ['blue', 'alien', 'pandora'],
       ['james cameron', 'science fiction', 'movie'],
-      ['film character', 'blue avatar', 'na\'vi'],
+      ['film character', 'blue avatar', "na'vi"],
     ],
     'titanic': [
       ['large', 'massive', 'enormous'],

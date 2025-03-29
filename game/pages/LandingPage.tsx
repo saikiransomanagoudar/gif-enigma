@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
 import { ComicText } from '../lib/fonts';
 import { NavigationProps } from '../lib/types';
@@ -6,11 +6,19 @@ import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
+  // @ts-ignore
   const [redditUsername, setRedditUsername] = useState<string>('');
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isboardOpen, setboardOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     // Detect dark mode
@@ -21,6 +29,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
+  // In your LandingPage component
   useEffect(() => {
     // Request Reddit username
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
@@ -30,6 +39,8 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           setRedditUsername(event.data.user?.username || '');
         } else {
           console.error('Error fetching user:', event.data.error);
+          // Set a default or anonymous username
+          setRedditUsername('');
         }
       }
     };
@@ -39,7 +50,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   const handlePlayClick = () => {
     setIsLoading(true);
-    
+  
     // Get list of previously played games from localStorage
     let playedGameIds: string[] = [];
     try {
@@ -50,56 +61,90 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     } catch (e) {
       console.error('Error parsing playedGameIds from localStorage:', e);
     }
-
-    // Request a random game, preferring user-created ones
-    window.parent.postMessage(
-      { 
-        type: 'GET_RANDOM_GAME',
-        data: { 
-          excludeIds: playedGameIds,
-          preferUserCreated: true 
-        }
-      }, 
-      '*'
-    );
-
-    // Listen for the game response
+  
+    // Create a new game response handler
     const handleGameResponse = (event: MessageEvent) => {
-      let message = event.data;
+      console.log('Message event received:', event.data);
       
-      // Unwrap if message is in a devvit envelope
+      // Unwrap the message if needed
+      let message = event.data;
       if (message && message.type === 'devvit-message' && message.data?.message) {
         message = message.data.message;
+      } else if (message && message.type === 'devvit-message' && message.data) {
+        message = message.data;
       }
       
+      // Only process if this is a random game result
       if (message.type === 'GET_RANDOM_GAME_RESULT') {
-        setIsLoading(false);
+        // Clean up listener immediately
         window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
         
-        if (message.success && message.game) {
-          console.log('Random game loaded:', message.game.id);
-          // Navigate to game page with the loaded game
-          onNavigate('game', { gameId: message.game.id });
+        // Find the game ID
+        let gameId = null;
+        if (message.success && message.game && message.game.id) {
+          gameId = message.game.id;
+        } else if (message.success && message.result && message.result.game && message.result.game.id) {
+          gameId = message.result.game.id;
+        } else if (message.success && message.result && message.result.id) {
+          gameId = message.result.id;
+        }
+        
+        // If we found a valid game ID, navigate to the game page
+        if (gameId) {
+          console.log('Navigating to game with ID:', gameId);
+          
+          // Save to played games first
+          try {
+            const updatedGameIds = [...playedGameIds, gameId];
+            localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
+          } catch (e) {
+            console.error('Error updating playedGameIds:', e);
+          }
+          
+          // Direct navigation via React state
+          onNavigate('game', { gameId });
         } else {
-          console.error('Failed to load random game:', message.error);
-          // Navigate to game page anyway, the GamePage will handle the error
-          onNavigate('game');
+          console.error('No valid game ID found in response');
+          alert('Could not find a game to play. Please try again later.');
         }
       }
     };
+  
+    // Remove any existing listener first
+    window.removeEventListener('message', handleGameResponse);
     
+    // Add the listener
     window.addEventListener('message', handleGameResponse);
+    
+    // Request a random game from the backend
+    console.log('Requesting random game...');
+    window.parent.postMessage(
+      {
+        type: 'GET_RANDOM_GAME',
+        data: {
+          excludeIds: playedGameIds,
+          preferUserCreated: true,
+        },
+      },
+      '*'
+    );
+  
+    // Clean up if we don't get a response in a reasonable time
+    setTimeout(() => {
+      if (isMounted.current) {
+        window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
+        console.log('Game loading timed out');
+      }
+    }, 5000);
   };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
-  const textColor = isDarkMode
-    ? 'text-transparent bg-gradient-to-t from-[#E5E5E5] to-[#00BBFF] bg-clip-text'
-    : 'text-black';
 
   return (
     <PageTransition>
-      
-      <div className={`${backgroundColor} mt-[-12px] p-5 select-none `}>
+      <div className={`${backgroundColor} mt-[-12px] p-5 select-none min-h-screen w-full pb-15 mb-0`}>
         <div className="relative flex flex-col items-center p-4 max-sm:mt-[20px]">
           {/* Leaderboard Button */}
           <motion.button
@@ -157,13 +202,14 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1 }}
             >
-              <ComicText
+              {/* <ComicText
                 size={0.8}
                 color={textColor}
                 className={`select-none cursor-default mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
-                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the secret word/phrase from GIFs?
-              </ComicText>
+                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
+                secret word/phrase from GIFs?
+              </ComicText> */}
             </motion.h2>
           </div>
         </div>
@@ -186,11 +232,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
               {isLoading ? 'Loading...' : 'Tap to Play →'}
             </div>
-            {isLoading && (
+            {/* {isLoading && (
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-blue-500"></div>
               </div>
-            )}
+            )} */}
           </motion.div>
 
           {/* Create GIF */}

@@ -11,7 +11,6 @@ export type NavigationProps = {
   onNavigate: (path: string) => void;
 };
 
-
 type DevvitMessage =
   | { type: 'initialData'; data: { username: string; currentCounter: number } }
   | { type: 'updateCounter'; data: { currentCounter: number } }
@@ -28,11 +27,11 @@ type DevvitMessage =
       gameId?: string;
       error?: string;
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | {
       type: 'GET_GEMINI_RECOMMENDATIONS_RESULT';
       success: boolean;
@@ -50,6 +49,26 @@ type DevvitMessage =
       data: {
         postId: string;
         desiredPage?: Page;
+      };
+    }
+  | {
+      type: 'SET_NAVIGATION_STATE';
+      data: {
+        page: Page;
+        gameId?: string;
+      };
+    }
+  | {
+      type: 'GET_RANDOM_GAME_RESULT';
+      success: boolean;
+      game?: any;
+      result?: any;
+      error?: string;
+    }
+  | {
+      type: 'devvit-message';
+      data: {
+        message: DevvitMessage;
       };
     };
 
@@ -78,11 +97,12 @@ type WebViewMessage =
       data: { word: string };
     }
   | { type: 'INIT' }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    };
+  | { type: 'requestNavigationState' };
+// | {
+//     type: 'NAVIGATION';
+//     page: Page;
+//     gameId?: string;
+//   };
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
@@ -103,10 +123,53 @@ function App() {
 
   // Log whenever currentPage changes
   useEffect(() => {
-    console.log("[DEBUG] App.tsx: currentPage updated:", currentPage);
+    console.log('[DEBUG-CRITICAL] App.tsx: currentPage updated:', currentPage);
   }, [currentPage]);
 
+  // Log whenever gameId changes
   useEffect(() => {
+    console.log('[DEBUG-CRITICAL] App.tsx: gameId updated:', gameId);
+  }, [gameId]);
+
+  // Load game data when navigating to a game page
+  useEffect(() => {
+    if (currentPage === 'game' && gameId) {
+      console.log('[DEBUG-CRITICAL] App.tsx: Loading game data for gameId:', gameId);
+
+      // Fetch game data
+      window.parent.postMessage(
+        {
+          type: 'GET_GAME',
+          data: { gameId: gameId },
+        },
+        '*'
+      );
+
+      // Check if user has state for this game
+      if (userData && userData.username) {
+        window.parent.postMessage(
+          {
+            type: 'GET_GAME_STATE',
+            data: {
+              userId: userData.username,
+              gameId: gameId,
+            },
+          },
+          '*'
+        );
+      }
+    }
+  }, [currentPage, gameId, userData]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlGameId = urlParams.get('gameId');
+
+    if (urlGameId) {
+      console.log('[DEBUG-CRITICAL] App.tsx: Found gameId in URL params:', urlGameId);
+      setGameId(urlGameId);
+      setCurrentPage('game');
+    }
     // Notify Devvit that the web view is ready
     console.log('Frontend: WebView ready, sending webViewReady message');
     window.parent.postMessage({ type: 'webViewReady' }, '*');
@@ -115,130 +178,297 @@ function App() {
     console.log('Frontend: Sending INIT message');
     window.parent.postMessage({ type: 'INIT' }, '*');
 
+    console.log('Frontend: Requesting navigation state');
+    window.parent.postMessage({ type: 'requestNavigationState' }, '*');
+
     // Helper to handle the *unwrapped* message
-    function handleUnwrappedMessage(message: DevvitMessage) {
-      console.log('[DEBUG] App.tsx handleUnwrappedMessage:', message.type, message);
+    function handleUnwrappedMessage(message: any) {
+      // Safety check to ensure we have a message with a type
+      if (!message || typeof message !== 'object' || message === null) {
+        console.error('Invalid message structure');
+        return;
+      }
 
-      switch (message.type) {
-        case 'initialData':
-          setUserData(message.data);
-          break;
+      const messageType = message.type || message?.data?.type;
+      if (!messageType) {
+        console.error('Message missing type property');
+        return;
+      }
 
-        case 'updateCounter':
-          setUserData((prev) =>
-            prev ? { ...prev, currentCounter: message.data.currentCounter } : null
-          );
-          break;
+      console.log('[DEBUG-DETAIL] App.tsx handleUnwrappedMessage:', message.type, message);
 
-        case 'SEARCH_TENOR_GIFS_RESULT':
-          setIsLoading((prev) => ({ ...prev, search: false }));
-          if (message.success) {
-            console.log('Frontend: Search results received:', message.results?.length);
-            setSearchResults(message.results || []);
-            setSearchError(null);
-          } else {
-            console.error('Frontend: Search error:', message.error);
-            setSearchResults([]);
-            setSearchError(message.error || 'Unknown error occurred');
+      try {
+        // Use type assertion to treat as DevvitMessage
+        const typedMessage = message as DevvitMessage;
+
+        // Handle random game result specifically
+        if (typedMessage.type === 'GET_RANDOM_GAME_RESULT') {
+          console.log('[DEBUG-CRITICAL] App.tsx: GET_RANDOM_GAME_RESULT received:', typedMessage);
+
+          // Extract game data from different possible formats
+          let gameData = null;
+
+          if (typedMessage.success && typedMessage.result && typedMessage.result.game) {
+            // Format: {success: true, result: {success: true, game: {...}}}
+            gameData = typedMessage.result.game;
+          } else if (typedMessage.success && typedMessage.game) {
+            // Format: {success: true, game: {...}}
+            gameData = typedMessage.game;
+          } else if (typedMessage.success && typedMessage.result) {
+            // Format: {success: true, result: {...}}
+            gameData = typedMessage.result;
           }
-          break;
 
-          case 'NAVIGATION':
-            console.log('[DEBUG] App.tsx: Direct NAVIGATION message received:', message);
-            // Handle gameId for game page
-            if (message.page === 'game' && message.gameId) {
-              console.log('[DEBUG] App.tsx: Setting gameId for game page:', message.gameId);
-              setGameId(message.gameId);
-            }
-            console.log('[DEBUG] App.tsx: Updating currentPage to:', message.page);
-            setCurrentPage(message.page);
+          if (gameData && gameData.id) {
+            console.log('[DEBUG-CRITICAL] App.tsx: Extracted game ID:', gameData.id);
+            setGameId(gameData.id);
+            setCurrentPage('game');
+          }
+          return;
+        }
+
+        switch (typedMessage.type) {
+          case 'initialData':
+            setUserData(typedMessage.data);
             break;
-            
-          case 'NAVIGATION_RESULT':
-            console.log('[DEBUG] App.tsx: NAVIGATION_RESULT received:', message);
-            if (message.success && message.page) {
-              // Handle gameId for game page
-              if (message.page === 'game' && message.gameId) {
-                console.log('[DEBUG] App.tsx: Setting gameId for game page:', message.gameId);
-                setGameId(message.gameId);
-              }
-              console.log('[DEBUG] App.tsx: Updating currentPage to:', message.page);
-              setCurrentPage(message.page);
-            }
-            break;
 
-        case 'GET_GEMINI_RECOMMENDATIONS_RESULT':
-          setIsLoading((prev) => ({ ...prev, recommendations: false }));
-          if (message.success) {
-            console.log('Frontend: Recommendations received:', message.result?.length);
-            setRecommendations(message.result || []);
-          } else {
-            console.error('Frontend: Recommendations error:', message.error);
-          }
-          break;
-
-        case 'GET_GEMINI_SYNONYMS_RESULT':
-          setIsLoading((prev) => ({ ...prev, synonyms: false }));
-          if (message.success) {
-            console.log('Frontend: Synonyms received:', message.result?.length);
-            setSynonyms(message.result || []);
-          } else {
-            console.error('Frontend: Synonyms error:', message.error);
-          }
-          break;
-
-        case 'INIT_RESPONSE':
-          console.log('[DEBUG] App.tsx: INIT_RESPONSE data:', message.data);
-          console.log('Frontend: Init response received with postId:', message.data.postId);
-          if (message.data.desiredPage) {
-            console.log(
-              '[DEBUG] App.tsx: Setting currentPage to desiredPage:',
-              message.data.desiredPage
+          case 'updateCounter':
+            setUserData((prev) =>
+              prev ? { ...prev, currentCounter: typedMessage.data.currentCounter } : null
             );
-            setCurrentPage(message.data.desiredPage);
-          }
-          break;
+            break;
 
-        default:
-          console.error('[DEBUG] App.tsx: Unknown message type:', message);
-          break;
+          case 'SEARCH_TENOR_GIFS_RESULT':
+            setIsLoading((prev) => ({ ...prev, search: false }));
+            if (typedMessage.success) {
+              console.log('Frontend: Search results received:', typedMessage.results?.length);
+              setSearchResults(typedMessage.results || []);
+              setSearchError(null);
+            } else {
+              console.error('Frontend: Search error:', typedMessage.error);
+              setSearchResults([]);
+              setSearchError(typedMessage.error || 'Unknown error occurred');
+            }
+            break;
+
+          case 'SET_NAVIGATION_STATE':
+            console.log('[DEBUG-CRITICAL] App.tsx: SET_NAVIGATION_STATE received:', typedMessage);
+            if (typedMessage.data && typedMessage.data.page) {
+              // Handle gameId for game page
+              if (typedMessage.data.page === 'game' && typedMessage.data.gameId) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
+                  typedMessage.data.gameId
+                );
+                setGameId(typedMessage.data.gameId);
+              }
+              console.log(
+                '[DEBUG-CRITICAL] App.tsx: Updating currentPage to:',
+                typedMessage.data.page
+              );
+              setCurrentPage(typedMessage.data.page);
+            }
+            break;
+
+          // case 'NAVIGATION':
+          //   console.log(
+          //     '[DEBUG-CRITICAL] App.tsx: Direct NAVIGATION message received:',
+          //     typedMessage
+          //   );
+          //   // Handle gameId for game page
+          //   if (typedMessage.page === 'game' && typedMessage.gameId) {
+          //     console.log(
+          //       '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
+          //       typedMessage.gameId
+          //     );
+          //     setGameId(typedMessage.gameId);
+          //   }
+          //   console.log('[DEBUG-CRITICAL] App.tsx: Updating currentPage to:', typedMessage.page);
+          //   setCurrentPage(typedMessage.page);
+          //   break;
+
+          case 'NAVIGATION_RESULT':
+            console.log('[DEBUG-CRITICAL] App.tsx: NAVIGATION_RESULT received:', typedMessage);
+            if (typedMessage.success && typedMessage.page) {
+              // Handle gameId for game page
+              if (typedMessage.page === 'game' && typedMessage.gameId) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
+                  typedMessage.gameId
+                );
+                setGameId(typedMessage.gameId);
+              }
+              console.log('[DEBUG-CRITICAL] App.tsx: Updating currentPage to:', typedMessage.page);
+              setCurrentPage(typedMessage.page);
+            }
+            break;
+
+          case 'GET_GEMINI_RECOMMENDATIONS_RESULT':
+            setIsLoading((prev) => ({ ...prev, recommendations: false }));
+            if (typedMessage.success) {
+              console.log('Frontend: Recommendations received:', typedMessage.result?.length);
+              setRecommendations(typedMessage.result || []);
+            } else {
+              console.error('Frontend: Recommendations error:', typedMessage.error);
+            }
+            break;
+
+          case 'GET_GEMINI_SYNONYMS_RESULT':
+            setIsLoading((prev) => ({ ...prev, synonyms: false }));
+            if (typedMessage.success) {
+              console.log('Frontend: Synonyms received:', typedMessage.result?.length);
+              setSynonyms(typedMessage.result || []);
+            } else {
+              console.error('Frontend: Synonyms error:', typedMessage.error);
+            }
+            break;
+
+          case 'INIT_RESPONSE':
+            console.log('[DEBUG-CRITICAL] App.tsx: INIT_RESPONSE received:', typedMessage);
+            if (typedMessage.data && typedMessage.data.desiredPage) {
+              console.log(
+                '[DEBUG-CRITICAL] App.tsx: Setting currentPage to desiredPage:',
+                typedMessage.data.desiredPage
+              );
+              setCurrentPage(typedMessage.data.desiredPage);
+            }
+            break;
+
+          case 'devvit-message':
+            console.log('[DEBUG-DETAIL] App.tsx: Found nested devvit-message:', message);
+
+            // Check if there's a message property inside the data
+            if (message.data && message.data.message) {
+              console.log(
+                '[DEBUG-DETAIL] App.tsx: Found nested message inside data:',
+                message.data.message
+              );
+
+              // Check for a game command specifically in the nested message
+              if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
+                console.log(
+                  '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
+                  message.data.message.game
+                );
+                if (message.data.message.game && message.data.message.game.id) {
+                  console.log(
+                    '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
+                    message.data.message.game.id
+                  );
+                  setGameId(message.data.message.game.id);
+                  setCurrentPage('game'); // MOVE THIS INSIDE THE IF BLOCK
+                }
+              }
+
+              // Process the nested message
+              handleUnwrappedMessage(message.data.message);
+            }
+            // Also check for direct navigation data in the message
+            else if (message.data && message.data.page && message.data.gameId) {
+              console.log(
+                '[DEBUG-CRITICAL] App.tsx: Found page and gameId in devvit-message data:',
+                message.data.page,
+                message.data.gameId
+              );
+              setGameId(message.data.gameId);
+              // Only set to the specific page mentioned in the message
+              setCurrentPage(message.data.page);
+            }
+            break;
+
+          default:
+            console.log(
+              '[DEBUG-WARN] App.tsx: Unhandled message type:',
+              (typedMessage as DevvitMessage).type
+            );
+            break;
+        }
+      } catch (error) {
+        console.error('[DEBUG-ERROR] App.tsx: Error processing message:', error, message);
       }
     }
 
     // Main message handler that unwraps any "devvit-message" wrappers
     function handleMessage(event: MessageEvent) {
-      const outer = event.data;
-      console.log('[DEBUG] App.tsx received raw:', outer);
-    
-      // Check for direct NAVIGATION message
-      if (outer?.type === 'NAVIGATION') {
-        console.log('[DEBUG] App.tsx: Direct NAVIGATION message detected');
-        handleUnwrappedMessage(outer);
+      if (!event.data) {
+        console.log('[DEBUG-WARN] App.tsx received empty message data');
         return;
       }
-    
-      // Handle wrapped messages
-      if (outer?.type === 'devvit-message') {
-        // Handle doubly-wrapped message
-        if (outer.data?.type === 'devvit-message' && outer.data?.message) {
-          const actualMsg = outer.data.message;
-          console.log('[DEBUG] App.tsx unwrapped second layer:', actualMsg);
-          handleUnwrappedMessage(actualMsg);
-        } 
-        // Handle singly-wrapped message
-        else if (outer.data) {
-          const single = outer.data;
-          console.log('[DEBUG] App.tsx unwrapped single layer:', single);
-          handleUnwrappedMessage(single);
+
+      const outer = event.data;
+      console.log(
+        '[DEBUG-DETAIL] App.tsx received raw message of type:',
+        typeof outer,
+        outer?.type
+      );
+
+      try {
+        // Extract gameId from message if present
+        if (outer && typeof outer === 'object') {
+          // Look for direct gameId in the outer message
+          if (outer.gameId && typeof outer.gameId === 'string') {
+            console.log('[DEBUG-CRITICAL] App.tsx: Found gameId in raw message:', outer.gameId);
+            setGameId(outer.gameId);
+          }
+
+          // Look for gameId in nested structures
+          if (outer.data && outer.data.gameId && typeof outer.data.gameId === 'string') {
+            console.log(
+              '[DEBUG-CRITICAL] App.tsx: Found gameId in message.data:',
+              outer.data.gameId
+            );
+            setGameId(outer.data.gameId);
+          }
+
+          // Look for gameId in params
+          if (outer.data && outer.data.params && outer.data.params.gameId) {
+            console.log(
+              '[DEBUG-CRITICAL] App.tsx: Found gameId in message.data.params:',
+              outer.data.params.gameId
+            );
+            setGameId(outer.data.params.gameId);
+          }
+
+          // Look for gameId in game result
+          if (outer.game && outer.game.id) {
+            console.log('[DEBUG-CRITICAL] App.tsx: Found gameId in game result:', outer.game.id);
+            setGameId(outer.game.id);
+          }
         }
-      } 
-      // Fall back to processing the raw message
-      else if (outer && typeof outer === 'object') {
-        console.log('[DEBUG] App.tsx: Processing raw message:', outer);
-        handleUnwrappedMessage(outer);
-      }
-      else {
-        console.log('[DEBUG] App.tsx: Unknown message format:', outer);
+        // Direct message handling - check if it's a plain object with a type
+        if (outer && typeof outer === 'object' && outer.type) {
+          console.log('[DEBUG-DETAIL] App.tsx: Processing direct message with type:', outer.type);
+          handleUnwrappedMessage(outer);
+          return;
+        }
+
+        // Handle devvit-message wrapper
+        if (outer && outer.type === 'devvit-message') {
+          console.log('[DEBUG-DETAIL] App.tsx: Found devvit-message wrapper');
+
+          // Double-wrapped scenario
+          if (outer.data && outer.data.type === 'devvit-message' && outer.data.message) {
+            console.log('[DEBUG-DETAIL] App.tsx: Unwrapping double-wrapped message');
+            handleUnwrappedMessage(outer.data.message);
+          }
+          // Handle message inside data property
+          else if (outer.data && outer.data.message) {
+            console.log('[DEBUG-DETAIL] App.tsx: Found message inside data property');
+            handleUnwrappedMessage(outer.data.message);
+          }
+          // Single-wrapped scenario
+          else if (outer.data) {
+            console.log('[DEBUG-DETAIL] App.tsx: Unwrapping single-wrapped message');
+            handleUnwrappedMessage(outer.data);
+          }
+        }
+        // Fall back to trying the raw message
+        else if (outer && typeof outer === 'object') {
+          console.log('[DEBUG-DETAIL] App.tsx: Trying raw message object');
+          handleUnwrappedMessage(outer);
+        }
+      } catch (error) {
+        console.error('[DEBUG-ERROR] App.tsx: Error in message handler:', error);
       }
     }
 
@@ -299,6 +529,52 @@ function App() {
     });
   };
 
+  const handleNavigate = (page: Page, params?: { gameId?: string }) => {
+    console.log(`[NAV] App.tsx handleNavigate called:`, { page, params });
+
+    // Block invalid game navigation
+    if (page === 'game' && !params?.gameId) {
+      console.error('[NAV] Cannot navigate to game without gameId');
+      return;
+    }
+
+    // Set local state FIRST - this is the critical part
+    if (page === 'game' && params?.gameId) {
+      console.log(`[NAV] Setting gameId to: ${params.gameId}`);
+      setGameId(params.gameId);
+      console.log(`[NAV] Setting currentPage to: ${page}`);
+      setCurrentPage(page);
+    } else {
+      console.log(`[NAV] Setting currentPage to: ${page}`);
+      setCurrentPage(page);
+
+      // Reset gameId if needed
+      if (currentPage === 'game') {
+        console.log('[NAV] Resetting gameId');
+        setGameId(null);
+      }
+    }
+
+    // AFTER updating local state, tell the server about the change
+    // This is secondary - the UI should update even if this fails
+    try {
+      console.log(`[NAV] Notifying server about navigation:`, { page, params });
+      window.parent.postMessage(
+        {
+          type: 'NAVIGATE',
+          data: {
+            page,
+            params,
+          },
+        },
+        '*'
+      );
+    } catch (err) {
+      console.error('[NAV] Error sending navigation message to server:', err);
+      // Continue anyway - local navigation is more important
+    }
+  };
+
   // Handle category selection
   const handleCategorySelect = (category: CategoryType) => {
     console.log('Frontend: Category selected:', category);
@@ -308,8 +584,10 @@ function App() {
 
   // Render the appropriate page
   const renderPage = () => {
-    const pageProps = {
-      onNavigate: setCurrentPage,
+    console.log('[RENDER] Frontend: Rendering page:', currentPage, 'with gameId:', gameId);
+
+    // Create pageProps without onNavigate property
+    const commonProps = {
       userData,
       sendMessageToDevvit,
       searchTenorGifs,
@@ -322,25 +600,45 @@ function App() {
       synonyms,
     };
 
-    console.log('Frontend: Rendering page:', currentPage);
-
     switch (currentPage) {
       case 'landing':
-        return <LandingPage {...pageProps} />;
+        return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
       case 'category':
         return <CategoryPage onNavigate={setCurrentPage} onCategorySelect={handleCategorySelect} />;
       case 'create':
-        return <CreatePage context={undefined} {...pageProps} category={selectedCategory} />;
+        return (
+          <CreatePage
+            context={undefined}
+            {...commonProps}
+            category={selectedCategory}
+            onNavigate={handleNavigate}
+          />
+        );
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
-        return <LeaderboardPage onNavigate={setCurrentPage} />;
+        return (
+          <LeaderboardPage
+            onNavigate={setCurrentPage}
+            username={userData?.username}
+            postMessage={sendMessageToDevvit}
+          />
+        );
       case 'game':
-        console.log('Frontend: Rendering GamePage with gameId:', gameId);
-        return <GamePage onNavigate={setCurrentPage} gameId={gameId || ''} />;
+        // Safety check - should never happen due to our handleNavigate logic
+        if (!gameId) {
+          console.error('[RENDER] Attempting to render GamePage without gameId!');
+          setTimeout(() => setCurrentPage('landing'), 0);
+          return (
+            <div className="flex h-screen items-center justify-center">
+              <p className="text-lg">Error: Missing game data. Redirecting...</p>
+            </div>
+          );
+        }
+        return <GamePage onNavigate={handleNavigate} gameId={gameId} />;
       default:
-        // Fallback to landing if currentPage is unrecognized
-        return <LandingPage {...pageProps} />;
+        console.log('[RENDER] Unrecognized currentPage:', currentPage);
+        return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
     }
   };
 

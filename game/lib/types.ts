@@ -67,6 +67,7 @@ export interface UserStats {
   averageScore: number;
   totalScore: number;
   hintsUsed: number;
+  lastPlayed?: number;
   [key: string]: any;
 }
 
@@ -78,6 +79,17 @@ export interface LeaderboardEntry {
   wordPenalty?: number;
   timeTaken?: number;
   timestamp: number;
+  gamesPlayed?: number;
+  gamesWon?: number;
+  bestScore?: number;
+  totalScore?: number;
+  averageScore?: number;
+}
+
+export interface PostCommentResponse {
+  success: boolean;
+  alreadyPosted?: boolean;
+  error?: string;
 }
 
 export interface CreatorData {
@@ -187,4 +199,9 @@ export function isGameData(obj: any): obj is GameData {
 
 export function isPreviewData(obj: any): obj is GamePreviewData {
   return obj && typeof obj === 'object' && 'maskedWord' in obj && 'gifUrls' in obj;
+}
+
+// In types.ts
+export function isLeaderboardEntry(obj: any): obj is LeaderboardEntry {
+  return obj && typeof obj === 'object' && 'username' in obj && 'score' in obj;
 }

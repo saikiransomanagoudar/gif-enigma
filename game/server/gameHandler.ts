@@ -6,6 +6,7 @@ import {
   SaveGameResponse,
   GifCacheResponse,
   CreatorData,
+  PostCommentResponse,
 } from '../lib/types';
 
 // Save a created game to Redis and create a Reddit post for it
@@ -49,7 +50,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
         // Create post title
         // const wordDisplay = maskedWord ? maskedWord.replace(/_/g, ' _') : '';
-        const postTitle = `Can you guess the word/phrase from GIFs?`;
+        const postTitle = `Can you decode the word or phrase hidden in this GIF?`;
 
         // Store game preview data for faster access (do this BEFORE creating post)
         await context.redis.hSet(`gamePreview:${gameId}`, {
@@ -76,117 +77,117 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
                 resizeMode: 'fit',
                 description: 'Loading game...',
               }),
-              // Title
-              Devvit.createElement(
-                'vstack',
-                {
-                  alignment: 'center middle',
-                  padding: 'medium',
-                },
-                [
-                  Devvit.createElement(
-                    'text',
-                    {
-                      color: '#FF4500',
-                      size: 'xlarge',
-                      weight: 'bold',
-                    },
-                    'GIF Enigma'
-                  ),
-                ]
-              ),
+              // // Title
+              // Devvit.createElement(
+              //   'vstack',
+              //   {
+              //     alignment: 'center middle',
+              //     padding: 'medium',
+              //   },
+              //   [
+              //     Devvit.createElement(
+              //       'text',
+              //       {
+              //         color: '#FF4500',
+              //         size: 'xlarge',
+              //         weight: 'bold',
+              //       },
+              //       'GIF Enigma'
+              //     ),
+              //   ]
+              // ),
 
-              // Masked word display
-              Devvit.createElement(
-                'vstack',
-                {
-                  padding: 'medium',
-                  alignment: 'center middle',
-                },
-                [
-                  Devvit.createElement(
-                    'text',
-                    {
-                      color: '#FFFFFF',
-                      size: 'large',
-                      weight: 'bold',
-                    },
-                    'Word to guess:'
-                  ),
+              // // Masked word display
+              // Devvit.createElement(
+              //   'vstack',
+              //   {
+              //     padding: 'medium',
+              //     alignment: 'center middle',
+              //   },
+              //   [
+              //     Devvit.createElement(
+              //       'text',
+              //       {
+              //         color: '#FFFFFF',
+              //         size: 'large',
+              //         weight: 'bold',
+              //       },
+              //       'Word to guess:'
+              //     ),
 
-                  Devvit.createElement(
-                    'text',
-                    {
-                      color: '#7fcfff',
-                      size: 'xlarge',
-                      weight: 'bold',
-                    },
-                    maskedWord || ''
-                  ),
-                ]
-              ),
+              //     Devvit.createElement(
+              //       'text',
+              //       {
+              //         color: '#7fcfff',
+              //         size: 'xlarge',
+              //         weight: 'bold',
+              //       },
+              //       maskedWord || ''
+              //     ),
+              //   ]
+              // ),
 
-              // First GIF preview
-              Devvit.createElement(
-                'vstack',
-                {
-                  backgroundColor: '#1a2740',
-                  cornerRadius: 'large',
-                  padding: 'medium',
-                  alignment: 'center middle',
-                  width: '80%',
-                },
-                [
-                  gifs && gifs.length > 0
-                    ? Devvit.createElement('image', {
-                        url: gifs[0],
-                        imageWidth: 180,
-                        imageHeight: 180,
-                        resizeMode: 'fit',
-                        description: 'First GIF clue',
-                      })
-                    : null,
+              // // First GIF preview
+              // Devvit.createElement(
+              //   'vstack',
+              //   {
+              //     backgroundColor: '#1a2740',
+              //     cornerRadius: 'large',
+              //     padding: 'medium',
+              //     alignment: 'center middle',
+              //     width: '80%',
+              //   },
+              //   [
+              //     gifs && gifs.length > 0
+              //       ? Devvit.createElement('image', {
+              //           url: gifs[0],
+              //           imageWidth: 180,
+              //           imageHeight: 180,
+              //           resizeMode: 'fit',
+              //           description: 'First GIF clue',
+              //         })
+              //       : null,
 
-                  Devvit.createElement(
-                    'text',
-                    {
-                      color: '#FFFFFF',
-                      size: 'xsmall',
-                    },
-                    '3 more clues await in the full game!'
-                  ),
-                ]
-              ),
+              //     Devvit.createElement(
+              //       'text',
+              //       {
+              //         color: '#FFFFFF',
+              //         size: 'xsmall',
+              //       },
+              //       '3 more clues await in the full game!'
+              //     ),
+              //   ]
+              // ),
 
-              // Play button
-              Devvit.createElement(
-                'vstack',
-                {
-                  padding: 'medium',
-                  alignment: 'center middle',
-                },
-                [
-                  Devvit.createElement(
-                    'hstack',
-                    {
-                      backgroundColor: '#FF4500',
-                      cornerRadius: 'full',
-                      padding: 'medium',
-                      alignment: 'center middle',
-                    },
-                    [
-                      Devvit.createElement(
-                        'text',
-                        {
-                          color: '#FFFFFF',
-                          weight: 'bold',
-                        },
-                        'Solve It!'
-                      ),
-                    ]
-                  ),
-                ]
-              ),
+              // // Play button
+              // Devvit.createElement(
+              //   'vstack',
+              //   {
+              //     padding: 'medium',
+              //     alignment: 'center middle',
+              //   },
+              //   [
+              //     Devvit.createElement(
+              //       'hstack',
+              //       {
+              //         backgroundColor: '#FF4500',
+              //         cornerRadius: 'full',
+              //         padding: 'medium',
+              //         alignment: 'center middle',
+              //       },
+              //       [
+              //         Devvit.createElement(
+              //           'text',
+              //           {
+              //             color: '#FFFFFF',
+              //             weight: 'bold',
+              //           },
+              //           'Solve It!'
+              //         ),
+              //       ]
+              //     ),
+              //   ]
+              // ),
             ]
           ),
         });
@@ -204,134 +205,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           });
 
           // Update gamePreview with postId
-          await context.redis.hSet(`gamePreview:${gameId}`, { postId });
-
-          // Set the custom post preview (this is a separate method call)
-          // This ensures the interactive preview is used when user views the post
-          await post.setCustomPostPreview(() =>
-            Devvit.createElement(
-              'vstack',
-              {
-                alignment: 'center middle',
-                height: '100%',
-                width: '100%',
-                backgroundColor: '#0d1629',
-              },
-              [
-                // Title
-                Devvit.createElement(
-                  'text',
-                  {
-                    style: 'heading',
-                    size: 'large',
-                    color: '#FF4500',
-                  },
-                  'GIF Enigma'
-                ),
-
-                // Masked word with letter boxes
-                Devvit.createElement(
-                  'vstack',
-                  {
-                    padding: 'medium',
-                    alignment: 'center middle',
-                  },
-                  [
-                    Devvit.createElement(
-                      'text',
-                      {
-                        color: '#FFFFFF',
-                        weight: 'bold',
-                      },
-                      'Word to guess:'
-                    ),
-
-                    Devvit.createElement(
-                      'text',
-                      {
-                        color: '#7fcfff',
-                        size: 'xlarge',
-                        weight: 'bold',
-                      },
-                      maskedWord || ''
-                    ),
-                  ]
-                ),
-
-                // First GIF display
-                gifs && gifs.length > 0
-                  ? Devvit.createElement(
-                      'vstack',
-                      {
-                        backgroundColor: '#1a2740',
-                        padding: 'medium',
-                        cornerRadius: 'large',
-                        width: '80%',
-                        alignment: 'center middle',
-                      },
-                      [
-                        Devvit.createElement(
-                          'text',
-                          {
-                            color: '#7fcfff',
-                            size: 'small',
-                            weight: 'bold',
-                          },
-                          'FIRST CLUE'
-                        ),
-
-                        Devvit.createElement('image', {
-                          url: gifs[0],
-                          imageWidth: 180,
-                          imageHeight: 180,
-                          resizeMode: 'fit',
-                          description: 'First GIF clue',
-                        }),
-
-                        Devvit.createElement(
-                          'text',
-                          {
-                            color: '#FFFFFF',
-                            size: 'xsmall',
-                          },
-                          'Tap to see all 4 clues!'
-                        ),
-                      ]
-                    )
-                  : null,
-
-                // Call to action
-                Devvit.createElement(
-                  'vstack',
-                  {
-                    padding: 'medium',
-                    alignment: 'center middle',
-                  },
-                  [
-                    Devvit.createElement(
-                      'hstack',
-                      {
-                        backgroundColor: '#FF4500',
-                        cornerRadius: 'full',
-                        padding: 'medium',
-                        alignment: 'center middle',
-                      },
-                      [
-                        Devvit.createElement(
-                          'text',
-                          {
-                            color: '#FFFFFF',
-                            weight: 'bold',
-                          },
-                          'Play Now!'
-                        ),
-                      ]
-                    ),
-                  ]
-                ),
-              ]
-            )
-          );
+          // await context.redis.hSet(`gamePreview:${gameId}`, { postId });
 
           console.log(
             `Successfully posted game ${gameId} to r/${subredditName} with post ID: ${postId}`
@@ -351,6 +225,101 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     };
   } catch (error) {
     console.error('Error saving game:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// Fix for the postCompletionComment function in gameHandler.ts
+
+export async function postCompletionComment(
+  params: {
+    gameId: string;
+    username: string;
+    numGuesses: number;
+    gifHints: number;
+    wordHints: number;
+    hintTypeLabel: string;
+    redditPostId?: string;
+  },
+  context: Context
+): Promise<PostCommentResponse> {
+  try {
+    console.log('🎉 [DEBUG] postCompletionComment called with params:', JSON.stringify(params));
+    const { gameId, username, numGuesses, gifHints, wordHints, hintTypeLabel, redditPostId } =
+      params;
+
+    // First, check if a comment has already been posted for this user on this game
+    const commentKey = `comment:${gameId}:${username}`;
+    const existingComment = await context.redis.get(commentKey);
+
+    if (existingComment) {
+      console.log(`🔁 [DEBUG] Comment already posted for ${username} on game ${gameId}`);
+      return { success: true, alreadyPosted: true };
+    }
+
+    // Get the Reddit post ID if not provided
+    let postId = redditPostId;
+    if (!postId) {
+      const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      postId = gameData.redditPostId;
+    }
+
+    if (!postId) {
+      console.error(`❌ [DEBUG] No Reddit post ID found for game ${gameId}`);
+      return { success: false, error: 'No Reddit post ID found for this game' };
+    }
+
+    // Create the completion message with improved hint text formatting
+    let hintsDescription = "no hints";
+    
+    // Only override the default text if there are actual hints
+    if (gifHints > 0 || wordHints > 0) {
+      const hintParts = [];
+      
+      if (gifHints > 0) {
+        hintParts.push(`${gifHints} GIF hint${gifHints !== 1 ? 's' : ''}`);
+      }
+      
+      if (wordHints > 0) {
+        hintParts.push(`${wordHints} ${hintTypeLabel} hint${wordHints !== 1 ? 's' : ''}`);
+      }
+      
+      hintsDescription = hintParts.join(' and ');
+    }
+    
+    // Build the final comment text
+    let completionText = '';
+    
+    if (numGuesses === 1) {
+      completionText = `I solved it on my **first attempt** with **${hintsDescription}**!`;
+    } else {
+      completionText = `I solved it in **${numGuesses} attempts** with **${hintsDescription}**!`;
+    }
+    
+    console.log(`📝 [DEBUG] Comment to post: "${completionText}"`);
+
+    try {
+      // Post the comment
+      const comment = await context.reddit.submitComment({
+        id: postId,
+        text: completionText,
+      });
+      
+      console.log(`✅ [DEBUG] Comment posted successfully:`, comment);
+
+      // Store the comment record to prevent duplicates
+      await context.redis.set(commentKey, 'posted', {
+        expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiry
+      });
+
+      console.log(`✅ [DEBUG] Successfully posted completion comment for ${username} on game ${gameId}`);
+      return { success: true };
+    } catch (commentError) {
+      console.error(`❌ [DEBUG] Error posting comment: ${commentError}`);
+      return { success: false, error: String(commentError) };
+    }
+  } catch (error) {
+    console.error(`❌ [DEBUG] Error in postCompletionComment: ${error}`);
     return { success: false, error: String(error) };
   }
 }
@@ -602,6 +571,33 @@ export async function getGame(
   } catch (error) {
     console.error('❌ [DEBUG] Error in getGame:', error);
     return { success: false, error: String(error) };
+  }
+}
+
+// Check if a user has completed a game
+export async function hasUserCompletedGame(
+  params: { gameId: string; username: string },
+  context: Context
+): Promise<{ completed: boolean }> {
+  try {
+    const { gameId, username } = params;
+    console.log(`🔍 [DEBUG] Checking if user ${username} has completed game ${gameId}`);
+
+    if (!username || !gameId) {
+      return { completed: false };
+    }
+
+    // Check if the game is in the user's completed games set
+    const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
+    const completed = !!(score && Number(score) > 0);
+
+    console.log(
+      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}`
+    );
+    return { completed };
+  } catch (error) {
+    console.error(`❌ [DEBUG] Error checking game completion status: ${error}`);
+    return { completed: false };
   }
 }
 

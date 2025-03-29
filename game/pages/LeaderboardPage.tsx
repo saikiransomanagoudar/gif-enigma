@@ -35,8 +35,26 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
     }
   };
 
+  // Animation variants for items
+  // const itemVariants = {
+  //   hidden: { opacity: 0, y: 20 },
+  //   visible: (i: number) => ({
+  //     opacity: 1,
+  //     y: 0,
+  //     transition: {
+  //       delay: i * 0.05,
+  //       duration: 0.3,
+  //     },
+  //   }),
+  // };
+
+  // Check for dark mode
   useEffect(() => {
-    fetchLeaderboard();
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
   const handleBackClick = () => {

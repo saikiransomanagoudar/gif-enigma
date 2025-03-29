@@ -1,16 +1,10 @@
 import { GameData, Page } from './lib/types';
-
-// export interface GetRecentGamesResultMessage {
-//   type: 'GET_RECENT_GAMES_RESULT';
-//   success: boolean;
-//   result?: any;
-//   error?: string;
-//   games?: any[];
-// }
+import { LeaderboardEntry } from './lib/types';
 
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
   | { type: 'webViewReady' }
+  | { type: 'requestNavigationState' }
   | {
       type: 'setCounter';
       data: { newCounter: number };
@@ -30,11 +24,11 @@ export type WebviewToBlockMessage =
         guess: string;
       };
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
   | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
@@ -112,13 +106,6 @@ export type WebviewToBlockMessage =
       };
     }
   | {
-      type: 'GAME_DATA';
-      data: {
-        maskedWord: string;
-        gifs: string[];
-      };
-    }
-  | {
       type: 'UPDATE_POST_PREVIEW';
       data: {
         postId: string;
@@ -140,9 +127,49 @@ export type WebviewToBlockMessage =
       type: 'GET_GAME_PREVIEW';
     }
   | {
-    type: 'MARK_GAME_COMPLETED';
-    success: boolean;
-  };
+      type: 'MARK_GAME_COMPLETED';
+      data: {
+        gameId: string;
+        username: string;
+        commentData?: {
+          numGuesses: number;
+          gifHints: number;
+          wordHints: number;
+          hintTypeLabel: string;
+        };
+      };
+    }
+  | {
+      type: 'POST_COMPLETION_COMMENT';
+      data: {
+        gameId: string;
+        username: string;
+        numGuesses: number;
+        numHints: number;
+      };
+    }
+  | {
+      type: 'HAS_USER_COMPLETED_GAME';
+      data: {
+        gameId: string;
+        username: string;
+      };
+    }
+  | { type: 'REFRESH_POST_PREVIEW'; data?: { gameId?: string } }
+  | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
+  | { 
+    type: 'GET_GLOBAL_LEADERBOARD', 
+    data?: { 
+      limit?: number 
+    } 
+  }
+  | { 
+    type: 'GET_USER_STATS', 
+    data: { 
+      username: string 
+    } 
+  }
+  | { type: 'GET_INITIAL_DATA' };
 
 export type BlocksToWebviewMessage =
   | {
@@ -150,6 +177,13 @@ export type BlocksToWebviewMessage =
       data: {
         postId: string;
         desiredPage?: Page;
+      };
+    }
+  | {
+      type: 'SET_NAVIGATION_STATE';
+      data: {
+        page: Page;
+        gameId?: string;
       };
     }
   | {
@@ -316,25 +350,16 @@ export type BlocksToWebviewMessage =
       error?: string;
     }
   | {
-      type: 'GAME_DATA_RESULT';
-      success: boolean;
-      data?: {
-        maskedWord: string;
-        gifs: string[];
-      };
-      error?: string;
-    }
-  | {
       type: 'POST_PREVIEW_UPDATED';
       success: boolean;
       postId?: string;
       error?: string;
     }
-  | {
-      type: 'NAVIGATION';
-      page: Page;
-      gameId?: string;
-    }
+  // | {
+  //     type: 'NAVIGATION';
+  //     page: Page;
+  //     gameId?: string;
+  //   }
   | {
       type: 'NAVIGATION_RESULT';
       success: boolean;
@@ -356,6 +381,81 @@ export type BlocksToWebviewMessage =
       type: 'MARK_GAME_COMPLETED_RESULT';
       success: boolean;
       error?: string;
+    }
+  | {
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: Array<{
+          rank?: number;
+          username: string;
+          score: number;
+          gamesPlayed?: number;
+          gamesWon?: number;
+          bestScore?: number;
+          averageScore?: number;
+          timestamp: number;
+        }>;
+        isCached?: boolean;
+      };
+      error?: string;
+    }
+  | {
+      type: 'INITIAL_DATA_RESULT';
+      success: boolean;
+      data?: {
+        username: string | null;
+        randomGame: GameData | null;
+        cumulativeLeaderboard: Array<{
+          rank?: number;
+          username: string;
+          score: number;
+          gamesPlayed?: number;
+          gamesWon?: number;
+          bestScore?: number;
+          averageScore?: number;
+          timestamp: number;
+        }>;
+      };
+      error?: string;
+    }
+  | { type: 'MARK_GAME_COMPLETED_RESULT'; success: boolean; error?: string }
+  | { type: 'REFRESH_POST_PREVIEW_RESULT'; success: boolean; error?: string }
+  | {
+      type: 'POST_COMPLETION_COMMENT_RESULT';
+      success: boolean;
+      alreadyPosted?: boolean;
+      error?: string;
+    }
+  | {
+      type: 'HAS_USER_COMPLETED_GAME_RESULT';
+      success: boolean;
+      completed: boolean;
+      error?: string;
+    }
+    | { 
+      type: 'GET_GLOBAL_LEADERBOARD_RESULT', 
+      success: boolean, 
+      result?: { 
+        leaderboard: LeaderboardEntry[] 
+      }, 
+      error?: string 
+    }
+  | { 
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT', 
+      success: boolean, 
+      result?: { 
+        leaderboard: LeaderboardEntry[],
+        isCached?: boolean
+      }, 
+      error?: string 
+    }
+  | { 
+      type: 'GET_USER_STATS_RESULT', 
+      success: boolean, 
+      stats?: any, 
+      rank?: number, 
+      error?: string 
     };
 
 export type DevvitMessage = {

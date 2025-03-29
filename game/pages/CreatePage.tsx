@@ -121,7 +121,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         data: {
           category: currentCategory,
           inputType: inputType,
-          count: 10,
+          count: 20,
         },
       },
       '*'
@@ -320,7 +320,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       window.parent.postMessage(
         {
           type: 'SEARCH_TENOR_GIFS',
-          data: { query: term, limit: 26 },
+          data: { query: term, limit: 16 },
         },
         '*'
       );
@@ -466,12 +466,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }, []);
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black' ;
-
   const renderGifGrid = () => (
     <div className="mb-4" ref={gifGridRef}>
       <div className="mb-2 flex items-center justify-between">
         <ComicText size={0.8} color={colors.primary}>
-          GIF Clues
+          GIF Hints
         </ComicText>
       </div>
       <div className="grid grid-cols-2 gap-5">
@@ -528,7 +527,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     <ComicText size={0.6} color={colors.textSecondary}>
                       {defaultSynonym ? (
                         <span className="hint-text transition-all duration-300 ease-in-out">
-                          Hint: <span className={`${categoryColor}`}>{defaultSynonym}</span>
+                          Hint: <span className={`text-yellow-400 ${categoryColor}`}>{defaultSynonym}</span>
                         </span>
                       ) : (
                         `Add GIF #${index + 1}`
@@ -714,7 +713,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:mt-[15px]">
           <div
             ref={titleRef}
-            className="translate-y-4 transform opacity-0 transition-all duration-500"
+            className="translate-y-4 transform opacity-0 transition-all duration-500 max-sm:mt-[15px]"
           >
             <ComicText size={1.2} color={colors.primary}>
               Create GIF Enigma
