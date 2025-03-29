@@ -27,12 +27,14 @@ export interface GameData {
   id: string;
   word: string;
   maskedWord: string;
+  category?: string;
   questionText: string;
   gifs: string[];
   createdAt?: string;
   username?: string;
   redditPostId?: string;
   preview?: GamePreviewData;
+  isChatPost?: boolean;
 }
 
 export interface GamePreviewData {
@@ -95,10 +97,17 @@ export interface PostCommentResponse {
 export interface CreatorData {
   word: string;
   maskedWord?: string | null;
+  category?: string | null;
   questionText?: string | null;
   gifs: string[];
   postToSubreddit?: boolean;
   previewStyle?: 'basic' | 'enhanced';
+  isChatPost?: boolean;
+}
+
+export interface SubredditSettings {
+  allOriginalContent: boolean;
+  allowChatPostCreation: boolean;
 }
 
 export interface GetRecentGamesResponse {
@@ -124,7 +133,10 @@ export interface SaveGameResponse {
   postedToReddit?: boolean;
   redditPostId?: string;
   error?: string;
-  previewUrl?: string;
+  settings?: {
+    isOriginalContent: boolean;
+    isChatPost: boolean;
+  };
 }
 
 export interface GifCacheResponse {

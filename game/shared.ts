@@ -29,6 +29,7 @@ export type WebviewToBlockMessage =
   //     page: Page;
   //     gameId?: string;
   //   }
+  | { type: 'GET_SUBREDDIT_SETTINGS' }
   | { type: 'GET_CURRENT_USER' }
   | { type: 'GET_USER_BY_ID'; data: { userId: string } }
   | { type: 'GET_USER_GAMES'; data: { userId: string; limit?: number } }
@@ -46,11 +47,13 @@ export type WebviewToBlockMessage =
         media_filter?: string;
       };
     }
+  | { type: 'GET_TOP_SCORES' }
   | {
       type: 'SAVE_GAME';
       data: {
         word: string;
         maskedWord: string;
+        category: string;
         questionText: string;
         gifs: string[];
         postToSubreddit?: boolean;
@@ -157,19 +160,28 @@ export type WebviewToBlockMessage =
     }
   | { type: 'REFRESH_POST_PREVIEW'; data?: { gameId?: string } }
   | { type: 'GET_CUMULATIVE_LEADERBOARD'; data: { limit?: number } }
-  | { 
-    type: 'GET_GLOBAL_LEADERBOARD', 
-    data?: { 
-      limit?: number 
-    } 
-  }
-  | { 
-    type: 'GET_USER_STATS', 
-    data: { 
-      username: string 
-    } 
-  }
-  | { type: 'GET_INITIAL_DATA' };
+  | {
+      type: 'GET_GLOBAL_LEADERBOARD';
+      data?: {
+        limit?: number;
+      };
+    }
+  | { type: 'NAVIGATE_TO_POST'; data: { postId: string } }
+  | { type: 'GET_RANDOM_POST'; data?: { excludeIds?: string[] } }
+  | {
+      type: 'GET_USER_STATS';
+      data: {
+        username: string;
+      };
+    }
+  | { type: 'GET_INITIAL_DATA' }
+  | {
+      type: 'GET_UNPLAYED_GAMES';
+      data: {
+        username: string;
+        limit?: number;
+      };
+    };
 
 export type BlocksToWebviewMessage =
   | {
@@ -213,6 +225,13 @@ export type BlocksToWebviewMessage =
       type: 'GET_CURRENT_USER_RESULT';
       success: boolean;
       user?: { username: string };
+      error?: string;
+    }
+  | {
+      type: 'GET_RANDOM_POST_RESULT';
+      success: boolean;
+      postId?: string;
+      gameId?: string;
       error?: string;
     }
   | {
@@ -433,29 +452,70 @@ export type BlocksToWebviewMessage =
       completed: boolean;
       error?: string;
     }
-    | { 
-      type: 'GET_GLOBAL_LEADERBOARD_RESULT', 
-      success: boolean, 
-      result?: { 
-        leaderboard: LeaderboardEntry[] 
-      }, 
-      error?: string 
+  | {
+      type: 'GET_GLOBAL_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: LeaderboardEntry[];
+      };
+      error?: string;
     }
-  | { 
-      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT', 
-      success: boolean, 
-      result?: { 
-        leaderboard: LeaderboardEntry[],
-        isCached?: boolean
-      }, 
-      error?: string 
+  | {
+      type: 'GET_CUMULATIVE_LEADERBOARD_RESULT';
+      success: boolean;
+      result?: {
+        leaderboard: LeaderboardEntry[];
+        isCached?: boolean;
+      };
+      error?: string;
     }
-  | { 
-      type: 'GET_USER_STATS_RESULT', 
-      success: boolean, 
-      stats?: any, 
-      rank?: number, 
-      error?: string 
+  | {
+      type: 'GET_USER_STATS_RESULT';
+      success: boolean;
+      stats?: any;
+      rank?: number;
+      error?: string;
+    }
+  | {
+      type: 'GET_TOP_SCORES_RESULT';
+      success: boolean;
+      scores?: {
+        username: string;
+        bestScore: number;
+      }[];
+      error?: string;
+    }
+  | {
+      type: 'GET_UNPLAYED_GAMES_RESULT';
+      success: boolean;
+      games?: GameData[];
+      error?: string;
+    }
+  | {
+      type: 'NAVIGATE';
+      data: {
+        page: Page;
+        params?: {
+          gameId?: string;
+          [key: string]: any;
+        };
+      };
+    }
+    | {
+      type: 'SUBREDDIT_SETTINGS';
+      data: {
+        allOriginalContent: boolean;
+        allowChatPostCreation: boolean;
+      };
+    }
+    | {
+      type: 'GET_SUBREDDIT_SETTINGS_RESULT';
+      success: boolean;
+      settings?: {
+        allOriginalContent: boolean;
+        allowChatPostCreation: boolean;
+      };
+      error?: string;
     };
 
 export type DevvitMessage = {

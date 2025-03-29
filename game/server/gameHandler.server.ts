@@ -7,7 +7,11 @@ import {
   getUserGames,
   postCompletionComment,
   hasUserCompletedGame,
+  saveGameState,
+  getGameState,
+  getUnplayedGames
 } from './gameHandler';
+
 import {
   saveScore,
   getGameLeaderboard,
@@ -32,6 +36,9 @@ export {
   getCumulativeLeaderboard,
   postCompletionComment,
   hasUserCompletedGame,
+  saveGameState,
+  getGameState,
+  getUnplayedGames,
 };
 
 export async function getRandomGame(
@@ -45,9 +52,12 @@ export async function getRandomGame(
     // Get user's completed games from Redis if username is provided
     let completedGames: string[] = [];
     if (username) {
-      completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+      const rangeResult = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
         by: 'score',
       });
+      completedGames = rangeResult.map((item: { member: any; }) =>
+        typeof item === 'string' ? item : item.member
+      );
       console.log('🔍 [DEBUG] User completed games:', completedGames);
     }
 
@@ -63,8 +73,8 @@ export async function getRandomGame(
 
     console.log('🔍 [DEBUG] Found games in activeGames:', gameMembers.length);
 
-    let userCreatedGameIds: string[] = [];
-    let scheduledGameIds: string[] = [];
+    // Store games with their creation dates for later sorting
+    const gamesWithDates: Array<{gameId: string, createdAt: number, isUserCreated: boolean}> = [];
 
     for (const item of gameMembers) {
       const gameId = typeof item === 'string' ? item : item.member;
@@ -76,6 +86,7 @@ export async function getRandomGame(
 
       // Get game data
       const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      const createdAt = parseInt(gameData.createdAt || '0');
 
       // Check if game has valid GIFs
       let hasValidGifs = false;
@@ -89,41 +100,49 @@ export async function getRandomGame(
       }
 
       if (hasValidGifs) {
-        if (
-          gameData.creatorId &&
-          gameData.creatorId !== 'anonymous' &&
-          gameData.creatorId !== 'system'
-        ) {
-          userCreatedGameIds.push(gameId);
-        } else {
-          scheduledGameIds.push(gameId);
-        }
+        const isUserCreated = gameData.creatorId && 
+                             gameData.creatorId !== 'anonymous' && 
+                             gameData.creatorId !== 'system';
+        
+        gamesWithDates.push({
+          gameId,
+          createdAt,
+          isUserCreated: !!isUserCreated
+        });
       }
     }
 
-    console.log('✅ [DEBUG] User-created games available:', userCreatedGameIds.length);
-    console.log('✅ [DEBUG] Scheduled games available:', scheduledGameIds.length);
+    // Sort by creation date (newest first)
+    gamesWithDates.sort((a, b) => b.createdAt - a.createdAt);
+    
+    // Get the 10 most recent games
+    const recentGames = gamesWithDates.slice(0, 10);
+    console.log('✅ [DEBUG] Filtered to 10 most recent games:', recentGames.length);
 
-    // Determine which pool to select from
-    let candidatePool: string[] = [];
-    if (preferUserCreated && userCreatedGameIds.length > 0) {
-      candidatePool = userCreatedGameIds;
-    } else if (scheduledGameIds.length > 0) {
-      candidatePool = scheduledGameIds;
-    }
-
-    if (candidatePool.length === 0) {
-      console.error('❌ [DEBUG] No valid games available');
+    if (recentGames.length === 0) {
+      console.error('❌ [DEBUG] No valid recent games available');
       return {
         success: false,
-        error: 'No valid games available',
+        error: 'No valid recent games available',
         requestedUserCreated: preferUserCreated,
       };
     }
 
-    // Weighted random selection - newer games have higher chance
-    const randomGameId = weightedRandomSelect(candidatePool);
-    console.log('✅ [DEBUG] Selected random game:', randomGameId);
+    // Filter by user preference if possible
+    let candidatePool = recentGames;
+    if (preferUserCreated) {
+      const userCreatedGames = recentGames.filter(game => game.isUserCreated);
+      if (userCreatedGames.length > 0) {
+        candidatePool = userCreatedGames;
+      }
+    }
+
+    // Select a random game from the candidates
+    const randomIndex = Math.floor(Math.random() * candidatePool.length);
+    const selectedGame = candidatePool[randomIndex];
+    const randomGameId = selectedGame.gameId;
+    
+    console.log('✅ [DEBUG] Selected random game:', randomGameId, 'created at:', new Date(selectedGame.createdAt).toISOString());
 
     // Get the full game data
     const gameResult = await getGame({ gameId: randomGameId }, context);
@@ -135,152 +154,6 @@ export async function getRandomGame(
   }
 }
 
-// Helper function for weighted random selection (newer games have higher chance)
-function weightedRandomSelect(gameIds: string[]): string {
-  if (gameIds.length === 0) return '';
-  if (gameIds.length === 1) return gameIds[0];
-
-  // Simple linear weighting - earlier indices (newer games) have higher weight
-  const weights = gameIds.map((_, index) => gameIds.length - index);
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const random = Math.random() * totalWeight;
-
-  let weightSum = 0;
-  for (let i = 0; i < gameIds.length; i++) {
-    weightSum += weights[i];
-    if (random <= weightSum) {
-      return gameIds[i];
-    }
-  }
-
-  return gameIds[gameIds.length - 1]; // fallback
-}
-
-export async function saveGameState(
-  params: {
-    username: string;
-    gameId: string;
-    gifHintCount?: number;
-    revealedLetters?: number[];
-    guess?: string;
-    playerState?: {
-      gifHintCount: number;
-      revealedLetters: number[];
-      guess: string;
-      lastPlayed: number;
-      isCompleted: boolean;
-    };
-  },
-  context: any
-) {
-  try {
-    console.log('🔍 [DEBUG] saveGameState called with params:', params);
-    const { username, gameId, playerState } = params;
-
-    if (!username || !gameId) {
-      return { success: false, error: 'User ID and Game ID are required' };
-    }
-
-    // Handle both data formats
-    let gifHintCount, revealedLetters, guess, lastPlayed, isCompleted;
-
-    if (playerState) {
-      // New format
-      gifHintCount = playerState.gifHintCount;
-      revealedLetters = playerState.revealedLetters;
-      guess = playerState.guess;
-      lastPlayed = playerState.lastPlayed;
-      isCompleted = playerState.isCompleted;
-    } else {
-      // Old format
-      gifHintCount = params.gifHintCount;
-      revealedLetters = params.revealedLetters;
-      guess = params.guess;
-      lastPlayed = Date.now();
-      isCompleted = false;
-    }
-
-    // Save state in Redis
-    await context.redis.hSet(`gameState:${gameId}:${username}`, {
-      gifHintCount: gifHintCount?.toString() || '1',
-      revealedLetters: JSON.stringify(revealedLetters || []),
-      guess: guess || '',
-      lastPlayed: lastPlayed?.toString() || Date.now().toString(),
-      isCompleted: isCompleted?.toString() || 'false',
-    });
-
-    if (isCompleted) {
-      console.log(`🎮 [DEBUG] Game ${gameId} marked as completed in state for user ${username}`);
-
-      try {
-        // Add to user's completed games list
-        await context.redis.zAdd(`user:${username}:completedGames`, {
-          member: gameId,
-          score: Date.now(),
-        });
-
-        console.log(`✅ [DEBUG] Added ${gameId} to user ${username}'s completed games list`);
-
-        // Verify it was added (for debugging)
-        const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-        console.log(
-          `✅ [DEBUG] Verification - Game in completed set with score: ${score !== null ? score : 'not found'}`
-        );
-      } catch (redisError) {
-        console.error(`❌ [DEBUG] Redis error when adding to completed games:`, redisError);
-        // Don't fail the operation if adding to completed games fails
-      }
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('❌ [DEBUG] Error saving game state:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-export async function getGameState(params: { username: string; gameId: string }, context: any) {
-  try {
-    console.log('🔍 [DEBUG] getGameState called with params:', params);
-    const { username, gameId } = params;
-
-    if (!username || !gameId) {
-      return { success: false, error: 'User ID and Game ID are required' };
-    }
-
-    // Get state from Redis
-    const state = await context.redis.hGetAll(`gameState:${gameId}:${username}`);
-
-    if (!state || Object.keys(state).length === 0) {
-      return { success: false, cached: false };
-    }
-
-    // Parse revealedLetters from JSON string
-    if (state.revealedLetters) {
-      try {
-        state.revealedLetters = JSON.parse(state.revealedLetters);
-      } catch (error) {
-        console.error('❌ [DEBUG] Error parsing revealedLetters:', error);
-        state.revealedLetters = [];
-      }
-    }
-
-    // Convert gifHintCount to number
-    if (state.gifHintCount) {
-      state.gifHintCount = parseInt(state.gifHintCount, 10);
-    }
-
-    return { success: true, state };
-  } catch (error) {
-    console.error('❌ [DEBUG] Error getting game state:', error);
-    return { success: false, error: String(error) };
-  }
-}
-
-/**
- * fetchRequest function to handle external requests and avoid CORS issues.
- * This version uses fetch (like in tenorApi.server.ts) and adds detailed debug logging.
- */
 export async function fetchRequest(
   params: {
     url: string;

@@ -1,10 +1,18 @@
-import { Devvit, Context, useWebView, useState, useAsync } from '@devvit/public-api';
+import {
+  Devvit,
+  Context,
+  useWebView,
+  useState,
+  useAsync,
+  RedditAPIClient,
+} from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
 import {
   saveGame,
   getUserGames,
   getGame,
+  getUnplayedGames,
   getGameState,
   saveGameState,
   getRandomGame,
@@ -49,6 +57,18 @@ Devvit.addSettings([
     isSecret: true,
     scope: 'app',
   },
+  {
+    name: 'allOriginalContent',
+    label: 'Require All Original Content',
+    type: 'boolean',
+    defaultValue: false,
+  },
+  {
+    name: 'allowChatPostCreation',
+    label: 'Allow Chat Post Creation',
+    type: 'boolean',
+    defaultValue: true,
+  },
 ]);
 
 Devvit.configure({
@@ -64,7 +84,6 @@ Devvit.addCustomPostType({
   name: 'giftest01',
   height: 'tall',
   render: (context) => {
-
     let isWebViewReadyFlag: boolean = false;
     const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
       useState(0);
@@ -112,31 +131,31 @@ Devvit.addCustomPostType({
       return (await context.reddit.getCurrentUsername()) ?? null;
     });
 
-    const {
-      data: randomGameData,
-      loading: randomGameLoading,
-      error: randomGameError,
-    } = useAsync(
-      async () => {
-        try {
-          const result = await getRandomGame(
-            {
-              excludeIds: [],
-              preferUserCreated: true,
-            },
-            context
-          );
+    // const {
+    //   data: randomGameData,
+    //   loading: randomGameLoading,
+    //   error: randomGameError,
+    // } = useAsync(
+    //   async () => {
+    //     try {
+    //       const result = await getRandomGame(
+    //         {
+    //           excludeIds: [],
+    //           preferUserCreated: true,
+    //         },
+    //         context
+    //       );
 
-          return result;
-        } catch (error) {
-          console.error('Error in randomGame useAsync:', error);
-          throw error;
-        }
-      },
-      {
-        depends: [context.postId || 'default'],
-      }
-    );
+    //       return result;
+    //     } catch (error) {
+    //       console.error('Error in randomGame useAsync:', error);
+    //       throw error;
+    //     }
+    //   },
+    //   {
+    //     depends: [context.postId || 'default'],
+    //   }
+    // );
 
     const { data: navigationState } = useAsync(
       async () => {
@@ -194,10 +213,7 @@ Devvit.addCustomPostType({
 
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
-      onMessage: async (
-        rawMessage: WebviewToBlockMessage,
-        { postMessage }: { postMessage: (message: BlocksToWebviewMessage) => void }
-      ) => {
+      onMessage: async (rawMessage: WebviewToBlockMessage) => {
         console.log('[DEBUG] main.tsx onMessage received:', rawMessage);
 
         // Unwrap the devvit-message wrapper(s) (using a cast to any)
@@ -255,40 +271,57 @@ Devvit.addCustomPostType({
           case 'requestNavigationState':
             console.log('[DEBUG] main.tsx: requestNavigationState received');
 
-            // Always use the navigation state from useAsync
-            if (navigationState) {
-              // Create a properly typed response object that matches BlocksToWebviewMessage
-              const navResponse: BlocksToWebviewMessage = {
-                type: 'SET_NAVIGATION_STATE',
-                data: {
-                  page: navigationState.page,
-                },
-              };
+            // CRITICAL FIX: Force retrieve the latest navigation state instead of using cached data
+            try {
+              const navStateKey = `navState:${context.postId || 'default'}`;
+              const freshState = await context.redis.hGetAll(navStateKey);
 
-              // Add gameId if it exists
-              if (navigationState.gameId) {
-                // Use a type assertion to add the gameId property
-                (navResponse.data as any).gameId = navigationState.gameId;
+              console.log('[DEBUG] main.tsx: Fresh navigation state retrieved:', freshState);
+
+              if (freshState && freshState.page) {
+                // Create a properly typed response object
+                const navResponse: BlocksToWebviewMessage = {
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: freshState.page as Page,
+                  },
+                };
+
+                // Add gameId if it exists
+                if (freshState.gameId) {
+                  // Use a type assertion to add the gameId property
+                  (navResponse.data as any).gameId = freshState.gameId;
+                  console.log(
+                    '[DEBUG] main.tsx: Including gameId in navigation state:',
+                    freshState.gameId
+                  );
+                }
+
                 console.log(
-                  '[DEBUG] main.tsx: Including gameId in navigation state:',
-                  navigationState.gameId
+                  '[DEBUG] main.tsx: Sending fresh navigation state:',
+                  JSON.stringify(navResponse)
                 );
+                postMessage(navResponse);
+              } else {
+                // Default to landing if navigation state isn't available
+                console.log('[DEBUG] main.tsx: No stored page found, defaulting to landing');
+                postMessage({
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: 'landing',
+                  },
+                  success: true, // Add the required success property
+                } as BlocksToWebviewMessage);
               }
-
-              console.log(
-                '[DEBUG] main.tsx: Sending navigation state from useAsync:',
-                JSON.stringify(navResponse)
-              );
-              postMessage(navResponse);
-            } else {
-              // Default to landing if navigation state isn't available
-              console.log('[DEBUG] main.tsx: No stored page, defaulting to landing');
+            } catch (error) {
+              console.error('[DEBUG] main.tsx: Error retrieving navigation state:', error);
+              // Default to landing on error
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
                 data: {
                   page: 'landing',
                 },
-                success: true, // Add the required success property
+                success: true,
               } as BlocksToWebviewMessage);
             }
             break;
@@ -342,62 +375,91 @@ Devvit.addCustomPostType({
             }
             break;
 
+          // case 'GET_RANDOM_GAME':
+          //   try {
+          //     console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
+
+          //     if (randomGameLoading) {
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: 'Game data is still loading',
+          //       });
+          //       return;
+          //     }
+
+          //     if (randomGameError) {
+          //       // Send the error to the client
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: String(randomGameError),
+          //       });
+          //       return;
+          //     }
+
+          //     if (randomGameData && randomGameData.success && randomGameData.game) {
+          //       // Send the pre-loaded random game data
+          //       const gameToSend = {
+          //         id: randomGameData.game.id,
+          //         word: randomGameData.game.word,
+          //         maskedWord: randomGameData.game.maskedWord,
+          //         questionText: randomGameData.game.questionText,
+          //         gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
+          //         createdAt: randomGameData.game.createdAt,
+          //         username:
+          //           randomGameData.game.username ||
+          //           randomGameData.game.creatorUsername ||
+          //           'anonymous',
+          //       };
+          //       console.log('Sending game with ID:', gameToSend.id);
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: true,
+          //         result: {
+          //           success: true,
+          //           game: gameToSend,
+          //         },
+          //       });
+          //     } else {
+          //       // Send failure message
+          //       postMessage({
+          //         type: 'GET_RANDOM_GAME_RESULT',
+          //         success: false,
+          //         error: randomGameData?.error || 'No game found',
+          //       });
+          //     }
+          //   } catch (error) {
+          //     console.error('Error getting random game:', error);
+          //     postMessage({
+          //       type: 'GET_RANDOM_GAME_RESULT',
+          //       success: false,
+          //       error: String(error),
+          //     });
+          //   }
+          //   break;
+
           case 'GET_RANDOM_GAME':
             try {
-              console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
+              console.log('🔍 [DEBUG] Getting random game, with params:', event.data);
 
-              if (randomGameLoading) {
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: 'Game data is still loading',
-                });
-                return;
-              }
+              // Make sure to include username if available to filter completed games
+              const params = {
+                excludeIds: event.data.excludeIds || [],
+                preferUserCreated: event.data.preferUserCreated !== false,
+                username: event.data.username || username,
+              };
 
-              if (randomGameError) {
-                // Send the error to the client
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: String(randomGameError),
-                });
-                return;
-              }
+              const result = await getRandomGame(params, context);
 
-              if (randomGameData && randomGameData.success && randomGameData.game) {
-                // Send the pre-loaded random game data
-                const gameToSend = {
-                  id: randomGameData.game.id,
-                  word: randomGameData.game.word,
-                  maskedWord: randomGameData.game.maskedWord,
-                  questionText: randomGameData.game.questionText,
-                  gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
-                  createdAt: randomGameData.game.createdAt,
-                  username:
-                    randomGameData.game.username ||
-                    randomGameData.game.creatorUsername ||
-                    'anonymous',
-                };
-                console.log('Sending game with ID:', gameToSend.id);
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: true,
-                  result: {
-                    success: true,
-                    game: gameToSend,
-                  },
-                });
-              } else {
-                // Send failure message
-                postMessage({
-                  type: 'GET_RANDOM_GAME_RESULT',
-                  success: false,
-                  error: randomGameData?.error || 'No game found',
-                });
-              }
+              postMessage({
+                type: 'GET_RANDOM_GAME_RESULT',
+                success: result.success,
+                result: result,
+                error: result.error || undefined,
+              });
             } catch (error) {
-              console.error('Error getting random game:', error);
+              console.error('❌ [DEBUG] Error getting random game:', error);
               postMessage({
                 type: 'GET_RANDOM_GAME_RESULT',
                 success: false,
@@ -556,33 +618,48 @@ Devvit.addCustomPostType({
             break;
 
           // Also add this case to pass back the preloaded data to the client when requested
-          case 'GET_INITIAL_DATA':
-            try {
-              console.log('Sending initial data to client');
+          // case 'GET_INITIAL_DATA':
+          //   try {
+          //     console.log('Sending initial data to client');
 
-              // Send all the preloaded data together
-              postMessage({
-                type: 'INITIAL_DATA_RESULT',
-                success: true,
-                data: {
-                  username: username || null,
-                  randomGame: randomGameData?.success ? randomGameData.game : null,
-                  cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
-                  // Include other cached data as needed
-                },
-              });
-            } catch (error) {
-              console.error('Error sending initial data:', error);
-              postMessage({
-                type: 'INITIAL_DATA_RESULT',
-                success: false,
-                error: String(error),
-              });
-            }
-            break;
+          //     // Send all the preloaded data together
+          //     postMessage({
+          //       type: 'INITIAL_DATA_RESULT',
+          //       success: true,
+          //       data: {
+          //         username: username || null,
+          //         randomGame: randomGameData?.success ? randomGameData.game : null,
+          //         cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
+          //         // Include other cached data as needed
+          //       },
+          //     });
+          //   } catch (error) {
+          //     console.error('Error sending initial data:', error);
+          //     postMessage({
+          //       type: 'INITIAL_DATA_RESULT',
+          //       success: false,
+          //       error: String(error),
+          //     });
+          //   }
+          //   break;
           case 'SAVE_GAME_STATE':
             try {
-              console.log('Saving game state:', event.data);
+              console.log('🎲 [DEBUG] Saving game state:', event.data);
+
+              if (
+                !event.data ||
+                !event.data.username ||
+                !event.data.gameId ||
+                !event.data.playerState
+              ) {
+                postMessage({
+                  type: 'SAVE_GAME_STATE_RESULT',
+                  success: false,
+                  error: 'Missing required data',
+                });
+                return;
+              }
+
               const result = await saveGameState(event.data, context);
 
               postMessage({
@@ -591,7 +668,7 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error saving game state:', error);
+              console.error('❌ [DEBUG] Error saving game state:', error);
               postMessage({
                 type: 'SAVE_GAME_STATE_RESULT',
                 success: false,
@@ -648,7 +725,17 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME_STATE':
             try {
-              console.log('Getting game state:', event.data);
+              console.log('🎲 [DEBUG] Getting game state:', event.data);
+
+              if (!event.data || !event.data.username || !event.data.gameId) {
+                postMessage({
+                  type: 'GET_GAME_STATE_RESULT',
+                  success: false,
+                  error: 'Missing required data',
+                });
+                return;
+              }
+
               const result = await getGameState(event.data, context);
 
               postMessage({
@@ -658,9 +745,40 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error getting game state:', error);
+              console.error('❌ [DEBUG] Error getting game state:', error);
               postMessage({
                 type: 'GET_GAME_STATE_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_UNPLAYED_GAMES':
+            try {
+              console.log('🔍 [DEBUG] Getting unplayed games for user:', event.data?.username);
+
+              if (!event.data || !event.data.username) {
+                postMessage({
+                  type: 'GET_UNPLAYED_GAMES_RESULT',
+                  success: false,
+                  error: 'Username is required',
+                });
+                return;
+              }
+
+              const result = await getUnplayedGames(event.data, context);
+
+              postMessage({
+                type: 'GET_UNPLAYED_GAMES_RESULT',
+                success: result.success,
+                games: result.games || [],
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error getting unplayed games:', error);
+              postMessage({
+                type: 'GET_UNPLAYED_GAMES_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -795,6 +913,41 @@ Devvit.addCustomPostType({
             }
             break;
 
+          case 'GET_TOP_SCORES':
+            try {
+              console.log('[DEBUG] Received GET_TOP_SCORES request');
+
+              const result = await getCumulativeLeaderboard({ limit: 10 }, context);
+
+              if (!result.success || !result.leaderboard) {
+                postMessage({
+                  type: 'GET_TOP_SCORES_RESULT',
+                  success: false,
+                  error: result.error || 'Failed to fetch scores',
+                });
+                return;
+              }
+
+              const scores = result.leaderboard.map((entry) => ({
+                username: entry.username,
+                bestScore: entry.score || 0,
+              }));
+
+              postMessage({
+                type: 'GET_TOP_SCORES_RESULT',
+                success: true,
+                scores,
+              });
+            } catch (error) {
+              console.error('[DEBUG] Error handling GET_TOP_SCORES:', error);
+              postMessage({
+                type: 'GET_TOP_SCORES_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
           case 'MARK_GAME_COMPLETED':
             try {
               console.log('🏁 [DEBUG] Marking game as completed:', event.data);
@@ -808,68 +961,70 @@ Devvit.addCustomPostType({
                 return;
               }
 
-              // Add the game to user's completed games list
-              try {
-                console.log(
-                  `🔍 [DEBUG-COMPLETION] Adding game ${event.data.gameId} to user ${event.data.username}'s completed games`
-                );
-                await context.redis.zAdd(`user:${event.data.username}:completedGames`, {
-                  member: event.data.gameId,
-                  score: Date.now(),
-                });
+              // Create a completed player state
+              const playerState = {
+                gifHintCount: event.data.gifHintCount || 0,
+                revealedLetters: event.data.revealedLetters || [],
+                guess: event.data.finalGuess || '',
+                lastPlayed: Date.now(),
+                isCompleted: true,
+              };
 
-                // Verify it was added
-                const score = await context.redis.zScore(
-                  `user:${event.data.username}:completedGames`,
-                  event.data.gameId
-                );
-                console.log(
-                  `🔍 [DEBUG-COMPLETION] Verification - Game in completed set: ${score !== null}`
-                );
-              } catch (redisError) {
-                console.error('Error adding to completed games:', redisError);
-                // Continue execution - don't fail the whole operation
+              // Save the game state as completed
+              const saveResult = await saveGameState(
+                {
+                  gameId: event.data.gameId,
+                  username: event.data.username,
+                  playerState,
+                },
+                context
+              );
+
+              if (!saveResult.success) {
+                postMessage({
+                  type: 'MARK_GAME_COMPLETED_RESULT',
+                  success: false,
+                  error: saveResult.error || 'Failed to save completed game state',
+                });
+                return;
               }
 
-              // Get additional completion data for comment if available
+              // Additional completion data
               const commentData = event.data.commentData;
 
               // If we have comment data, post a completion comment
               if (commentData) {
                 try {
-                  // Use the provided gameId to fetch the Reddit post ID
                   const redditPostId = context.postId || null;
 
-                  // Call the function to post a comment
+                  // Post a completion comment
                   await postCompletionComment(
                     {
                       gameId: event.data.gameId,
                       username: event.data.username,
                       numGuesses: commentData.numGuesses || 1,
-                      numHints: commentData.numHints || 0,
-                      otherGuesses: commentData.otherGuesses || [],
+                      gifHints: commentData.gifHints || 0,
+                      wordHints: commentData.wordHints || 0,
+                      hintTypeLabel: commentData.hintTypeLabel || 'letter',
                       redditPostId,
                     },
                     context
                   );
                 } catch (commentError) {
-                  console.error('Error posting completion comment:', commentError);
+                  console.error('❌ [DEBUG] Error posting completion comment:', commentError);
                   // Don't fail the whole operation if commenting fails
                 }
               }
 
-              // Trigger a refresh of the GamePostPreview
+              // Trigger a refresh of the UI
               setPostPreviewRefreshTrigger((prev) => prev + 1);
-              console.log(
-                `🔄 [DEBUG-COMPLETION] Triggered post preview refresh (${postPreviewRefreshTrigger + 1})`
-              );
 
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: true,
               });
             } catch (error) {
-              console.error('Error marking game completed:', error);
+              console.error('❌ [DEBUG] Error marking game completed:', error);
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: false,
@@ -967,7 +1122,7 @@ Devvit.addCustomPostType({
                 completed: result.completed,
               });
             } catch (error) {
-              console.error('Error checking game completion status:', error);
+              console.error('❌ [DEBUG] Error checking game completion status:', error);
               postMessage({
                 type: 'HAS_USER_COMPLETED_GAME_RESULT',
                 success: false,
@@ -989,15 +1144,34 @@ Devvit.addCustomPostType({
             );
 
             if (targetPage) {
-              // Store in Redis using our helper function
-              await storeNavigationState(targetPage, targetGameId);
+              // CRITICAL FIX: Force clear any existing navigation state first
+              try {
+                const navStateKey = `navState:${context.postId || 'default'}`;
+                await context.redis.del(navStateKey);
+                console.log('[DEBUG-NAV] main.tsx: Cleared previous navigation state');
+              } catch (clearError) {
+                console.error('[DEBUG-NAV] Error clearing previous navigation state:', clearError);
+              }
+
+              // Store fresh navigation state
+              try {
+                await storeNavigationState(targetPage, targetGameId);
+                console.log(
+                  '[DEBUG-NAV] main.tsx: Stored new navigation state:',
+                  targetPage,
+                  targetGameId
+                );
+              } catch (storeError) {
+                console.error('[DEBUG-NAV] Error storing navigation state:', storeError);
+              }
 
               // Send navigation response
               const navResponse: BlocksToWebviewMessage = {
-                type: 'NAVIGATION_RESULT',
-                success: true,
-                page: targetPage,
-                ...(targetGameId ? { gameId: targetGameId } : {}),
+                type: 'SET_NAVIGATION_STATE',
+                data: {
+                  page: targetPage,
+                  ...(targetGameId ? { gameId: targetGameId } : {}),
+                },
               };
 
               console.log(
@@ -1012,6 +1186,385 @@ Devvit.addCustomPostType({
                 success: false,
                 error: 'Missing page in navigation request',
               } as BlocksToWebviewMessage);
+            }
+            break;
+
+          case 'NAVIGATE_TO_POST':
+            try {
+              console.log('📱 [DEBUG] Navigating to Reddit post:', event.data.postId);
+
+              if (!event.data.postId) {
+                console.error('❌ [DEBUG] No post ID provided for navigation');
+                return;
+              }
+
+              // Make sure the postId has the proper format (add t3_ prefix if missing)
+              const formattedPostId = event.data.postId.startsWith('t3_')
+                ? event.data.postId
+                : `t3_${event.data.postId}`;
+
+              console.log('🔍 [DEBUG] Using formatted post ID:', formattedPostId);
+
+              try {
+                // Method 1: Get the post object using Reddit API
+                const post = await context.reddit.getPostById(formattedPostId);
+
+                if (post) {
+                  // Log all post properties to help with debugging
+                  console.log('✅ [DEBUG] Got post object with properties:', Object.keys(post));
+
+                  if (post.url) {
+                    console.log('✅ [DEBUG] Got post URL:', post.url);
+                    context.ui.navigateTo(post.url);
+                  } else if (post.permalink) {
+                    // Fallback to permalink if url is not available
+                    const fullUrl = `https://www.reddit.com${post.permalink}`;
+                    console.log('✅ [DEBUG] Using permalink instead:', fullUrl);
+                    context.ui.navigateTo(fullUrl);
+                  } else {
+                    throw new Error('Post URL and permalink both missing');
+                  }
+
+                  console.log('✅ [DEBUG] Navigation request sent for post');
+                } else {
+                  throw new Error('Post not found');
+                }
+              } catch (error) {
+                console.error('❌ [DEBUG] Error with Method 1, trying fallback:', error);
+
+                // Fallback method: Construct the URL directly
+                try {
+                  // Clean the postId (remove t3_ prefix if present)
+                  const cleanPostId = event.data.postId.replace('t3_', '');
+
+                  // Get the current subreddit
+                  const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
+                  const subredditName = subreddit?.name || 'PlayGIFEnigma'; // Use your default subreddit
+
+                  const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
+                  console.log('✅ [DEBUG] Constructed fallback post URL:', postUrl);
+
+                  context.ui.navigateTo(postUrl);
+                  console.log('✅ [DEBUG] Navigation request sent with fallback URL');
+                } catch (fallbackError) {
+                  console.error('❌ [DEBUG] Fallback navigation also failed:', fallbackError);
+                }
+              }
+            } catch (error) {
+              console.error('❌ [DEBUG] Error in NAVIGATE_TO_POST handler:', error);
+            }
+            break;
+
+          case 'GET_RANDOM_POST':
+            try {
+              console.log('🔍 [DEBUG] Getting random post, with params:', event.data);
+
+              // Get username if provided
+              const username = event.data?.username || (await context.reddit.getCurrentUsername());
+
+              if (!username) {
+                console.warn('⚠️ [DEBUG] No username available, cannot filter completed games');
+              }
+
+              // Get user's completed games if username is available
+              let completedGameIds: string[] = [];
+              if (username) {
+                const rangeResult = await context.redis.zRange(
+                  `user:${username}:completedGames`,
+                  0,
+                  -1,
+                  {
+                    by: 'score',
+                  }
+                );
+                completedGameIds = rangeResult.map((item) =>
+                  typeof item === 'string' ? item : item.member
+                );
+                console.log('🔍 [DEBUG] User completed games:', completedGameIds);
+              }
+
+              // Get all active games from the sorted set
+              const gameItems = await context.redis.zRange('activeGames', 0, -1);
+              console.log(`🔍 [DEBUG] Found ${gameItems.length} active games`);
+
+              if (!gameItems || gameItems.length === 0) {
+                console.error('❌ [DEBUG] No active games found');
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'No active games found',
+                });
+                return;
+              }
+
+              // Convert to array of game IDs
+              const gameIds = gameItems.map((item) =>
+                typeof item === 'string' ? item : item.member
+              );
+
+              // Get the subreddit directly
+              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma'); // Replace with your actual subreddit name
+
+              // Get comprehensive list of posts using multiple methods
+              console.log('🔍 [DEBUG] Getting comprehensive list of posts');
+
+              // Create a set to store removed post IDs
+              const removedPostIds = new Set<string>();
+
+              // Get posts from various listings
+              try {
+                // Get posts from top posts
+                const topPosts = await subreddit.getTopPosts();
+                const allTopPosts = await topPosts.all();
+                console.log('🔍 [DEBUG] Top posts count:', allTopPosts.length);
+
+                // Get edited posts
+                const editedListing = await subreddit.getEdited({ type: 'post' });
+                const editedPosts = await editedListing.all();
+                console.log('🔍 [DEBUG] Edited posts count:', editedPosts.length);
+
+                // Get unmoderated posts
+                const unmoderatedListing = await subreddit.getUnmoderated({ type: 'post' });
+                const unmoderatedPosts = await unmoderatedListing.all();
+                console.log('🔍 [DEBUG] Unmoderated posts count:', unmoderatedPosts.length);
+
+                // Get mod queue posts
+                const modQueueListing = await subreddit.getModQueue({ type: 'post' });
+                const modQueuePosts = await modQueueListing.all();
+                console.log('🔍 [DEBUG] Mod queue posts count:', modQueuePosts.length);
+
+                // Combine all posts and check isRemoved status
+                const allPosts = [
+                  ...allTopPosts,
+                  ...editedPosts,
+                  ...unmoderatedPosts,
+                  ...modQueuePosts,
+                ];
+
+                // Filter out removed posts
+                for (const post of allPosts) {
+                  // Check if the post is removed
+                  if (post.isRemoved && post.isRemoved()) {
+                    removedPostIds.add(post.id);
+                    console.log(`🔍 [DEBUG] Post ${post.id} is marked as removed`);
+                  }
+                }
+
+                console.log('🔍 [DEBUG] Total removed posts identified:', removedPostIds.size);
+              } catch (error) {
+                console.error('❌ [DEBUG] Error getting posts:', error);
+              }
+
+              // Get posts removed by Automoderator from Redis
+              let automoderatorRemovedIds: string[] = [];
+              try {
+                const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
+                automoderatorRemovedIds = zRangeResult.map((item) =>
+                  typeof item === 'string' ? item : item.member
+                );
+                console.log('🔍 [DEBUG] Posts removed by Automoderator:', automoderatorRemovedIds);
+              } catch (error) {
+                console.error('❌ [DEBUG] Error getting automod removed posts:', error);
+              }
+
+              // Get any additional exclude IDs from the request
+              const excludeIds = event.data?.excludeIds || [];
+
+              // Store available posts with their creation dates
+              const availablePostsWithDates = [];
+
+              // Filter out games with no Reddit post ID, excluded posts, removed posts, and completed games
+              for (const gameId of gameIds) {
+                // Skip if this game is already completed by the user
+                if (completedGameIds.includes(gameId)) {
+                  console.log(`🔍 [DEBUG] Skipping completed game: ${gameId}`);
+                  continue;
+                }
+
+                // Get game data including redditPostId and createdAt
+                const gameData = await context.redis.hGetAll(`game:${gameId}`);
+
+                if (gameData && gameData.redditPostId) {
+                  const postId = gameData.redditPostId;
+                  const createdAt = parseInt(gameData.createdAt || '0');
+                  const cleanPostId = postId.replace('t3_', '');
+                  const fullPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+
+                  console.log(
+                    `🔍 [DEBUG] Checking post ${postId} (clean: ${cleanPostId}, full: ${fullPostId})`
+                  );
+
+                  // Check exclusions with different ID formats
+                  const isInExcludeList =
+                    excludeIds.includes(postId) ||
+                    excludeIds.includes(cleanPostId) ||
+                    excludeIds.includes(fullPostId);
+
+                  // Check if post is in the removed list with different ID formats
+                  const isRemoved =
+                    removedPostIds.has(postId) ||
+                    removedPostIds.has(cleanPostId) ||
+                    removedPostIds.has(fullPostId);
+
+                  // Check if removed by automod with different ID formats
+                  const isRemovedByAutomod = automoderatorRemovedIds.some((id) => {
+                    const cleanId = id.replace('t3_', '');
+                    return cleanId === cleanPostId || id === postId || id === fullPostId;
+                  });
+
+                  console.log(
+                    `🔍 [DEBUG] Post ${postId} status - Excluded: ${isInExcludeList}, Removed: ${isRemoved}, Automod: ${isRemovedByAutomod}`
+                  );
+
+                  // Only proceed if the post is not excluded or removed
+                  if (!isInExcludeList && !isRemoved && !isRemovedByAutomod) {
+                    // Check if user has a game state for this game
+                    let isCompleted = false;
+                    if (username) {
+                      try {
+                        const gameStateKey = `gameState:${gameId}:${username}`;
+                        const gameState = await context.redis.hGetAll(gameStateKey);
+                        if (gameState && gameState.playerState) {
+                          // Parse the player state
+                          const playerState = JSON.parse(gameState.playerState);
+                          isCompleted = playerState.isCompleted === true;
+
+                          if (isCompleted) {
+                            console.log(
+                              `🔍 [DEBUG] Skipping game ${gameId} - user has completed it`
+                            );
+                            continue;
+                          }
+                        }
+                      } catch (stateError) {
+                        console.error(`❌ [DEBUG] Error checking game state: ${stateError}`);
+                        // Continue anyway - assume not completed
+                      }
+                    }
+
+                    // If we get here, the game is valid and not completed
+                    availablePostsWithDates.push({
+                      gameId,
+                      postId: postId,
+                      createdAt: createdAt,
+                    });
+                    console.log(
+                      `✅ [DEBUG] Added post ${postId} for game ${gameId} to available posts (created at: ${new Date(createdAt).toISOString()})`
+                    );
+                  } else {
+                    console.log(
+                      `🚫 [DEBUG] Skipping post ${postId} - ${isInExcludeList ? 'excluded ' : ''}${isRemoved ? 'removed ' : ''}${isRemovedByAutomod ? 'automod removed' : ''}`
+                    );
+                  }
+                }
+              }
+
+              if (availablePostsWithDates.length === 0) {
+                console.error('❌ [DEBUG] No available posts found after filtering');
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'No available posts found after filtering',
+                });
+                return;
+              }
+
+              // Sort by creation date (newest first)
+              availablePostsWithDates.sort((a, b) => b.createdAt - a.createdAt);
+
+              // Take only the 10 most recent posts (or fewer if there aren't 10)
+              const recentPosts = availablePostsWithDates.slice(
+                0,
+                Math.min(10, availablePostsWithDates.length)
+              );
+              console.log(`✅ [DEBUG] Using ${recentPosts.length} most recent posts for selection`);
+
+              // Select a random post from these recent posts
+              const randomIndex = Math.floor(Math.random() * recentPosts.length);
+              const randomPost = recentPosts[randomIndex];
+
+              console.log(
+                '✅ [DEBUG] Selected random post:',
+                randomPost.postId,
+                'for game:',
+                randomPost.gameId,
+                'created at:',
+                new Date(randomPost.createdAt).toISOString()
+              );
+
+              // Final check to ensure post hasn't been removed since our filtering
+              try {
+                const finalCheck = await context.reddit.getPostById(
+                  randomPost.postId.startsWith('t3_')
+                    ? randomPost.postId
+                    : `t3_${randomPost.postId}`
+                );
+
+                if (finalCheck && finalCheck.isRemoved && finalCheck.isRemoved()) {
+                  console.error(
+                    `❌ [DEBUG] Final check found post ${randomPost.postId} is removed!`
+                  );
+                  postMessage({
+                    type: 'GET_RANDOM_POST_RESULT',
+                    success: false,
+                    error: 'Selected post was found to be removed in final check',
+                  });
+                  return;
+                }
+              } catch (finalCheckError) {
+                console.error(`❌ [DEBUG] Error in final post check:`, finalCheckError);
+                // If we can't fetch the post, it might be removed/deleted
+                postMessage({
+                  type: 'GET_RANDOM_POST_RESULT',
+                  success: false,
+                  error: 'Could not verify post in final check - it may be unavailable',
+                });
+                return;
+              }
+
+              postMessage({
+                type: 'GET_RANDOM_POST_RESULT',
+                success: true,
+                postId: randomPost.postId,
+                gameId: randomPost.gameId,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error getting random post:', error);
+              postMessage({
+                type: 'GET_RANDOM_POST_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_SUBREDDIT_SETTINGS':
+            try {
+              console.log('Getting subreddit settings');
+
+              // Get the current subreddit
+              const subreddit = await context.reddit.getCurrentSubreddit();
+
+              // Get the settings
+              const allOriginalContent = await context.settings.get('allOriginalContent');
+
+              const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
+
+              postMessage({
+                type: 'GET_SUBREDDIT_SETTINGS_RESULT',
+                success: true,
+                settings: {
+                  allOriginalContent: allOriginalContent === true,
+                  allowChatPostCreation: allowChatPostCreation !== false, // Default to true if not set
+                },
+              });
+            } catch (error) {
+              console.error('Error getting subreddit settings:', error);
+              postMessage({
+                type: 'GET_SUBREDDIT_SETTINGS_RESULT',
+                success: false,
+                error: String(error),
+              });
             }
             break;
         }
@@ -1041,7 +1594,7 @@ Devvit.addCustomPostType({
         },
         {
           depends: [context.postId ?? ''],
-          finally: (result, error) => {
+          finally: (result) => {
             setIsGame(!!result);
             setIsLoading(false);
             console.log('Post preview component - isGame:', !!result);
@@ -1076,10 +1629,11 @@ Devvit.addCustomPostType({
 });
 
 Devvit.addMenuItem({
-  label: 'Create GIF Enigma Game',
+  label: 'Create GIF Enigma',
   location: 'subreddit',
-  forUserType: 'moderator',
   onPress: async (_, context) => {
+    const allOriginalContent = await context.settings.get('allOriginalContent');
+    const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
 

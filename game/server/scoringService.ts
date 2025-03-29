@@ -152,7 +152,7 @@ export async function saveScore(
       });
 
       // Update cumulative leaderboard
-      await context.redis.zIncrBy('cumulativeLeaderboard', 'username', score);
+      await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
 
       console.log(`✅ [DEBUG] Updated user stats for ${username}, total score: ${totalScore}`);
     } catch (statsError) {

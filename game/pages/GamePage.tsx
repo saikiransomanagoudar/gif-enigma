@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
@@ -7,7 +7,6 @@ import {
   ScoreData,
   LeaderboardEntry,
   GameFlowState,
-  PlayerGameState,
   NavigationProps,
   Page,
 } from '../lib/types';
@@ -31,10 +30,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+  const [gameCompleted, setGameCompleted] = useState<boolean>(false);
   const gameIdRef = useRef(propGameId);
   gameIdRef.current = propGameId;
   // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
+  const [currentGuess, setCurrentGuess] = useState<string>('');
+  const [maskedWord, setMaskedWord] = useState<string>('');
+  const [gifVisibility, setGifVisibility] = useState<boolean[]>([]);
+  const [usedGifHints, setUsedGifHints] = useState<number>(0);
+  // @ts-ignore
+  const [usedLetterHints, setUsedLetterHints] = useState<number>(0);
 
   // game score
   const [gameStartTime, setGameStartTime] = useState<number>(Date.now());
@@ -60,20 +66,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-
-  useEffect(() => {
-      // Detect dark mode
-      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      setIsDarkMode(darkModeQuery.matches);
-      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-      darkModeQuery.addEventListener('change', handleThemeChange);
-      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-    }, []);
-
-  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
-  const answerBoxborders = isDarkMode ? '' : 'border border-black';
-
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
     // Detect dark mode
@@ -94,6 +87,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       console.error('Error: GamePage mounted without a gameId');
       return;
     }
+
+    setIsInitialLoading(true);
+
+    const animationTimeout = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setIsInitialLoading(false);
+      });
+    });
+
     setIsPageLoaded(true);
     animatePageElements();
     setGameStartTime(Date.now());
@@ -158,6 +160,30 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
 
+      if (username && gameData?.id) {
+        window.parent.postMessage(
+          {
+            type: 'GET_GAME_STATE',
+            data: {
+              gameId: gameData.id,
+              username,
+            },
+          },
+          '*'
+        );
+
+        window.parent.postMessage(
+          {
+            type: 'HAS_USER_COMPLETED_GAME',
+            data: {
+              gameId: gameData.id,
+              username,
+            },
+          },
+          '*'
+        );
+      }
+
       // Handle initialization
       if (actualMessage.type === 'INIT_RESPONSE') {
         console.log('INIT_RESPONSE received:', actualMessage);
@@ -219,25 +245,27 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
         console.log('GET_GAME_STATE_RESULT received:', actualMessage);
 
-        if (actualMessage.success && actualMessage.state) {
-          const state = actualMessage.state as PlayerGameState;
+        if (actualMessage.success && actualMessage.state?.playerState) {
+          const playerState = actualMessage.state.playerState;
 
           // Restore game state
-          if (state.gifHintCount) {
-            setGifHintCount(state.gifHintCount);
+          if (typeof playerState.gifHintCount === 'number') {
+            setGifHintCount(playerState.gifHintCount);
           }
 
-          if (state.revealedLetters && Array.isArray(state.revealedLetters)) {
-            const numberArray = state.revealedLetters.map(Number);
-            setRevealedLetters(new Set(numberArray));
+          if (Array.isArray(playerState.revealedLetters)) {
+            setRevealedLetters(new Set(playerState.revealedLetters));
           }
 
-          if (state.guess) {
-            setGuess(state.guess);
+          if (playerState.guess) {
+            setGuess(playerState.guess);
           }
 
-          if (state.isCompleted) {
+          if (playerState.isCompleted) {
             setGameFlowState('completed');
+            setGameCompleted(true);
+
+            // Load leaderboard for completed game
             window.parent.postMessage(
               {
                 type: 'GET_GAME_LEADERBOARD',
@@ -246,6 +274,20 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               '*'
             );
           }
+        }
+      }
+
+      if (actualMessage.type === 'MARK_GAME_COMPLETED_RESULT') {
+        console.log('MARK_GAME_COMPLETED_RESULT received:', actualMessage);
+
+        if (actualMessage.success) {
+          // Successfully marked as completed on the server
+          setGameCompleted(true);
+
+          // Additional actions after successful marking as completed
+          console.log('Game marked as completed successfully');
+        } else {
+          console.error('Failed to mark game as completed:', actualMessage.error);
         }
       }
 
@@ -275,7 +317,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               data: {
                 ...score,
                 username: score.username || username || 'anonymous',
-                gameId: gameData?.id,
+                gameId: gameId || gameData?.id || '',
                 timestamp: Date.now(),
               },
             },
@@ -318,22 +360,49 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setShowLeaderboard(true);
         }
       }
+      if (actualMessage.type === 'HAS_USER_COMPLETED_GAME_RESULT') {
+        console.log('HAS_USER_COMPLETED_GAME_RESULT received:', actualMessage);
+
+        if (actualMessage.success && actualMessage.completed) {
+          // User has already completed this game
+          setGameCompleted(true);
+          setGameFlowState('completed');
+
+          // You may want to show a message or redirect
+          console.log('This game has already been completed by the user');
+
+          // Optionally load the leaderboard
+          window.parent.postMessage(
+            {
+              type: 'GET_GAME_LEADERBOARD',
+              data: { gameId: gameData?.id, limit: 10 },
+            },
+            '*'
+          );
+        }
+      }
     };
+
     window.addEventListener('message', handleMessage);
     console.log('Message event listener added');
 
     // Cleanup the event listener on unmount
     return () => {
+      cancelAnimationFrame(animationTimeout);
       window.removeEventListener('message', handleMessage);
       console.log('Message event listener removed');
     };
   }, [propGameId]);
 
   // Save game state when it changes
+  // Replace or update your existing game state saving useEffect
   useEffect(() => {
+    // Only save state if we have both game data and username
     if (gameData && username) {
+      // Convert Set to Array for storage
       const revealedLettersArray = Array.from(revealedLetters);
 
+      // Create state object that matches our backend structure
       const playerState = {
         gifHintCount,
         revealedLetters: revealedLettersArray,
@@ -342,6 +411,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         isCompleted: gameFlowState === 'won' || gameFlowState === 'completed',
       };
 
+      // Send save state message
       window.parent.postMessage(
         {
           type: 'SAVE_GAME_STATE',
@@ -355,6 +425,119 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       );
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState]);
+
+  useEffect(() => {
+    const handleMessage = (event: { data: any }) => {
+      const message = event.data;
+
+      if (message.type === 'GET_GAME_STATE_RESULT' && message.success) {
+        if (message.state?.playerState) {
+          const { playerState } = message.state;
+
+          if (playerState.guess) setCurrentGuess(playerState.guess);
+
+          if (typeof playerState.gifHintCount === 'number') {
+            const newVisibility = Array(gameData?.gifs?.length || 4).fill(false);
+            for (let i = 0; i < playerState.gifHintCount; i++) {
+              if (i < newVisibility.length) newVisibility[i] = true;
+            }
+            setGifVisibility(newVisibility);
+            setUsedGifHints(playerState.gifHintCount);
+          }
+
+          if (
+            Array.isArray(playerState.revealedLetters) &&
+            playerState.revealedLetters.length > 0
+          ) {
+            setRevealedLetters(playerState.revealedLetters);
+
+            if (gameData?.word) {
+              let newMaskedWord = gameData.maskedWord;
+              if (typeof newMaskedWord === 'string') {
+                const maskedArray = newMaskedWord.split('');
+                playerState.revealedLetters.forEach((index: number) => {
+                  if (index >= 0 && index < gameData.word.length) {
+                    maskedArray[index] = gameData.word[index];
+                  }
+                });
+                setMaskedWord(maskedArray.join(''));
+              }
+            }
+
+            setUsedLetterHints(playerState.revealedLetters.length);
+          }
+
+          if (typeof playerState.isCompleted === 'boolean') {
+            setGameCompleted(playerState.isCompleted);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [gameData]);
+
+  useEffect(() => {
+    if (!gameId || !username) return;
+
+    const playerState = {
+      gifHintCount: usedGifHints,
+      revealedLetters: revealedLetters,
+      guess: currentGuess,
+      lastPlayed: Date.now(),
+      isCompleted: gameCompleted,
+    };
+
+    const timeoutId = setTimeout(() => {
+      window.parent.postMessage(
+        {
+          type: 'SAVE_GAME_STATE',
+          data: { gameId, username, playerState },
+        },
+        '*'
+      );
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [gameId, username, usedGifHints, revealedLetters, currentGuess, gameCompleted]);
+
+  // @ts-ignore
+  const unlockGifHint = useCallback(
+    (index: number) => {
+      if (!gameData || index < 0 || index >= gameData.gifs.length) return;
+
+      const newVisibility = [...gifVisibility];
+      newVisibility[index] = true;
+      setGifVisibility(newVisibility);
+      setUsedGifHints((prev) => prev + 1);
+    },
+    [gameData, gifVisibility]
+  );
+
+  // @ts-ignore
+  const revealLetterHint = useCallback(() => {
+    if (!gameData?.word) return;
+
+    const unrevealedIndices = [];
+    for (let i = 0; i < gameData.word.length; i++) {
+      if (gameData.word[i] === ' ' || revealedLetters.has(i)) continue;
+      unrevealedIndices.push(i);
+    }
+
+    if (unrevealedIndices.length === 0) return;
+
+    const randomIndex = Math.floor(Math.random() * unrevealedIndices.length);
+    const letterIndexToReveal = unrevealedIndices[randomIndex];
+
+    setRevealedLetters((prev) => new Set(prev).add(letterIndexToReveal));
+
+    const newMaskedWordArray = maskedWord.split('');
+    newMaskedWordArray[letterIndexToReveal] = gameData.word[letterIndexToReveal];
+    setMaskedWord(newMaskedWordArray.join(''));
+
+    setUsedLetterHints((prev) => prev + 1);
+  }, [gameData, maskedWord, revealedLetters]);
 
   useEffect(() => {
     if (isCorrect === true) {
@@ -457,23 +640,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     console.log('Requesting a random game with valid GIFs');
     setIsLoading(true);
 
-    // Get any previously played game IDs from localStorage
-    let playedGameIds: string[] = [];
-    try {
-      const savedIds = localStorage.getItem('playedGameIds');
-      if (savedIds) {
-        playedGameIds = JSON.parse(savedIds);
-      }
-    } catch (e) {
-      console.error('Error parsing played game IDs:', e);
-    }
-
-    // Request a random game
+    // Request a random game that the user hasn't completed
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
         data: {
-          excludeIds: playedGameIds,
+          username: username || 'anonymous',
           preferUserCreated: true,
         },
       },
@@ -486,8 +658,24 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       const currentUsername = username || 'anonymous';
       console.log('🏆 [DEBUG] Marking game completed for:', currentUsername);
 
-      const originalRevealedLettersSize = revealedLetters.size;
+      setGameFlowState('won');
+
+      // Calculate hints used for scoring
       const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
+      const originalRevealedLettersSize = revealedLetters.size;
+
+      // Determine if it's a word or phrase for correct hint type labeling
+      const isPhrase = gameData.word.includes(' ');
+      const hintTypeLabel = isPhrase ? 'Phrase' : 'Word';
+
+      // 1. Save game state as completed
+      const playerState = {
+        gifHintCount,
+        revealedLetters: Array.from(revealedLetters),
+        guess: gameData.word,
+        lastPlayed: Date.now(),
+        isCompleted: true,
+      };
 
       let wordHintsUsed = 0;
 
@@ -510,41 +698,33 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
 
-      // Determine if it's a word or phrase for correct hint type labeling
-      const isPhrase = gameData.word.includes(' ');
-      const hintTypeLabel = isPhrase ? 'Phrase' : 'Word';
-
-      // Save game state
       window.parent.postMessage(
         {
           type: 'SAVE_GAME_STATE',
           data: {
             username: currentUsername,
             gameId: gameData.id,
-            playerState: {
-              gifHintCount,
-              revealedLetters: Array.from(revealedLetters),
-              guess: gameData.word,
-              lastPlayed: Date.now(),
-              isCompleted: true,
-            },
+            playerState,
           },
         },
         '*'
       );
 
-      // Mark as completed
+      // 2. Mark as completed (this will update completed games list)
       window.parent.postMessage(
         {
           type: 'MARK_GAME_COMPLETED',
           data: {
-            gameId: gameData?.id,
+            gameId: gameData.id,
             username: currentUsername,
+            gifHintCount,
+            revealedLetters: Array.from(revealedLetters),
+            finalGuess: gameData.word,
             commentData: {
               numGuesses: guessCount,
               gifHints: gifHintsUsed,
               wordHints: wordHintsUsed,
-              hintTypeLabel: hintTypeLabel,
+              hintTypeLabel,
             },
           },
         },
@@ -848,6 +1028,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         // After fadeOut is complete, update state and fade back in
         setTimeout(() => {
           setGifHintCount((current) => current + 1);
+          unlockGifHint(gifHintCount - 1);
 
           // After state update, fade back in
           setTimeout(() => {
@@ -1013,7 +1194,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       <div
         ref={answerBoxesRef}
         id="answer-boxes-container"
-        className={` mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
+        className={`mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
         style={{ animation: isShaking ? 'shake 0.8s ease-in-out' : 'none' }}
       >
         {answer.split('').map((ch, idx) => {
@@ -1167,7 +1348,21 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleNewGame = () => {
-    onNavigate('game');
+    onNavigate('landing');
+    // Option 2: Direct fetch of a new unplayed game
+    // if (username) {
+    //   window.parent.postMessage(
+    //     {
+    //       type: 'GET_RANDOM_GAME',
+    //       data: {
+    //         username: username || 'anonymous',
+    //         preferUserCreated: true,
+    //         // No need to specify excludeIds as the backend will handle this
+    //       },
+    //     },
+    //     '*'
+    //   );
+    // }
   };
 
   if (gameFlowState === 'won') {
@@ -1252,13 +1447,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <div className="flex justify-center gap-4">
                   <button
                     onClick={() => {
-                      window.parent.postMessage(
-                        {
-                          type: 'GET_GAME_LEADERBOARD',
-                          data: { gameId: gameData?.id, limit: 10 },
-                        },
-                        '*'
-                      );
+                      onNavigate('leaderboard');
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
@@ -1269,12 +1458,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </button>
 
                   <button
-                    onClick={handleNewGame}
+                    onClick={handleBackClick}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
-                    <span>🎮</span>
+                    <span>🏠</span>
                     <ComicText size={0.7} color="white">
-                      Play Another
+                      Home
                     </ComicText>
                   </button>
                 </div>
@@ -1299,9 +1488,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   return (
     <div
       key={gameKey}
-      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
+      {isInitialLoading && (
+        <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black">
+          <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+        </div>
+      )}
       <style>
         {`
         @keyframes confetti-fall {
@@ -1567,7 +1761,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
         `}
       </style>
-
       {/* Header */}
       <header
         ref={headerRef}
@@ -1589,7 +1782,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText>
         </div>
       </header>
-
       {/* Question */}
       {!isLoading && !error && gameData && (
         <div
@@ -1602,7 +1794,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText> */}
         </div>
       )}
-
       {/* GIF Content or Loading/Error */}
       <div
         ref={gifAreaRef}
@@ -1610,7 +1801,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       >
         {renderContent()}
       </div>
-
       {/* GIF Hint Button */}
       <div
         ref={hintButtonRef}
@@ -1632,18 +1822,33 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         </button>
       </div>
 
+      {gameData && gameData.category && (
+        <div className="mt-1 flex items-center justify-center">
+          <span className="mr-1">
+            {gameData.category === 'Movies'
+              ? '🎬'
+              : gameData.category === 'Gaming'
+                ? '🎮'
+                : gameData.category === 'Books'
+                  ? '📚'
+                  : '🌐'}
+          </span>
+          <ComicText size={0.6} color={colors.textSecondary}>
+            Category: <span style={{ fontWeight: 'bold' }}>{gameData.category}</span>
+          </ComicText>
+        </div>
+      )}
       {/* Answer Boxes */}
       <div
         ref={answerBoxesContainerRef}
-        className="mt-5 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
+        className="mt-2 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
       >
         {renderAnswerBoxes()}
       </div>
-
       {/* Bottom Bar */}
       <div
         ref={bottomBarRef}
-        className="max-sm:flex-col mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500"
+        className="mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
       >
         <button
           onClick={handleWordHint}
@@ -1655,17 +1860,22 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             {gameData?.word.includes(' ') ? 'Phrase' : 'Word'} Hint
           </ComicText>
         </button>
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="TYPE YOUR GUESS"
-            value={guess}
-            onChange={handleGuessChange}
-            onKeyDown={handleKeyDown}
-            className="w-72 rounded-full border border-gray-300 px-4 py-2 text-center uppercase transition-all duration-200 focus:outline-none"
-            style={{ backgroundColor: 'white' }}
-          />
+        <div className="mx-auto w-72">
+          <div className="mx-auto w-72">
+            <div className="rounded-full bg-gradient-to-r from-blue-500 to-purple-600 p-1 shadow-lg transition-shadow duration-300 hover:shadow-2xl">
+              <input
+                type="text"
+                placeholder="TYPE YOUR GUESS"
+                value={guess}
+                onChange={handleGuessChange}
+                onKeyDown={handleKeyDown}
+                className="w-full rounded-full bg-white px-6 py-3 text-center tracking-widest uppercase focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                style={{ fontFamily: '"Comic Sans MS", cursive, sans-serif' }}
+              />
+            </div>
+          </div>
         </div>
+
         <button
           onClick={() => {
             console.log('Guess button clicked');
@@ -1695,7 +1905,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </div>
         </div>
       )}
-
       {showLeaderboard && (
         <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black p-4">
           <div className="max-h-[90vh] w-full max-w-md overflow-auto rounded-xl bg-white p-4 shadow-2xl">

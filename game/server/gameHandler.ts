@@ -7,13 +7,15 @@ import {
   GifCacheResponse,
   CreatorData,
   PostCommentResponse,
+  PlayerGameState,
 } from '../lib/types';
 
 // Save a created game to Redis and create a Reddit post for it
 // The postToSubreddit parameter defaults to true and controls if a Reddit post is created
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
-    const { word, maskedWord, questionText, gifs, postToSubreddit = true } = params;
+    const { word, maskedWord, category, questionText, gifs, postToSubreddit = true, isChatPost = false } = params;
+    console.log('🔍 [DEBUG] Creating game with category:', category);
     const user = await context.reddit.getCurrentUser();
     const username = user?.username || 'anonymous';
 
@@ -27,6 +29,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     // Save the game data as a hash
     await tx.hSet(`game:${gameId}`, {
       word,
+      category: category || 'General', // Ensure non-null string
       maskedWord: maskedWord || '', // Ensure non-null string
       questionText: questionText || '', // Ensure non-null string
       gifs: JSON.stringify(gifs),
@@ -42,180 +45,129 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     // Post to the subreddit if requested
     let postId = null;
-    if (postToSubreddit) {
-      try {
-        // Get current subreddit
-        const subreddit = await context.reddit.getCurrentSubreddit();
-        const subredditName = subreddit?.name || 'PlayGIFEnigma';
+if (postToSubreddit) {
+  try {
+    // Get current subreddit
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const subredditName = subreddit?.name || 'PlayGIFEnigma';
+    
+    console.log('[DEBUG-POST] Subreddit info:', {
+      id: subreddit?.id,
+      name: subreddit?.name,
+      exists: !!subreddit
+    });
 
-        // Create post title
-        // const wordDisplay = maskedWord ? maskedWord.replace(/_/g, ' _') : '';
-        const postTitle = `Can you decode the word or phrase hidden in this GIF?`;
+    // Get subreddit settings - only get allowChatPostCreation for now
+    const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
+    
+    console.log('[DEBUG-SETTINGS] Using subreddit settings:', {
+      allowChatPostCreation
+    });
 
-        // Store game preview data for faster access (do this BEFORE creating post)
-        await context.redis.hSet(`gamePreview:${gameId}`, {
-          maskedWord: maskedWord || '',
-          gifs: JSON.stringify(gifs),
+    // Create post title
+    const postTitle = `Can you decode the word or phrase hidden in this GIF?`;
+    
+    // Determine if this should be a chat post based on settings
+    const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
+
+    // Store game preview data for faster access (do this BEFORE creating post)
+    await context.redis.hSet(`gamePreview:${gameId}`, {
+      maskedWord: maskedWord || '',
+      gifs: JSON.stringify(gifs),
+      creatorUsername: username,
+      isChatPost: finalIsChatPost ? 'true' : 'false'
+    });
+
+    // Create the simplest possible post options
+    const postOptions: any = {
+      subredditName: subredditName,
+      title: postTitle,
+      preview: Devvit.createElement('text', {}, 'Loading GIF Enigma...')
+    };
+    
+    // Log full post options
+    console.log('[DEBUG-POST] Full post options:', JSON.stringify(postOptions, (key, value) => {
+      // Handle circular references in the preview element
+      if (key === 'preview') {
+        return '(Preview Element)';
+      }
+      return value;
+    }, 2));
+
+    // Don't add chat post type yet - test basic post first
+    // if (finalIsChatPost) {
+    //   postOptions.kind = 'chat';
+    // }
+
+    console.log('[DEBUG-POST] Attempting to submit post...');
+    
+    try {
+      // Try submitting with enhanced error handling
+      const post = await context.reddit.submitPost(postOptions);
+      console.log('[DEBUG-POST] Post submission successful:', {
+        id: post?.id,
+        url: post?.url,
+        success: !!post
+      });
+      
+      if (post && post.id) {
+        postId = post.id;
+
+        // Store post ID with game data for reference, including settings
+        await context.redis.hSet(`game:${gameId}`, { 
+          redditPostId: postId,
+          isChatPost: finalIsChatPost ? 'true' : 'false'
         });
 
-        const post = await context.reddit.submitPost({
-          subredditName: subredditName,
-          title: postTitle,
-          preview: Devvit.createElement(
-            'vstack',
-            {
-              alignment: 'center middle',
-              height: '100%',
-              width: '100%',
-              backgroundColor: '#0d1629',
-            },
-            [
-              Devvit.createElement('image', {
-                url: 'eyebrows.gif',
-                imageWidth: 180,
-                imageHeight: 180,
-                resizeMode: 'fit',
-                description: 'Loading game...',
-              }),
-              // // Title
-              // Devvit.createElement(
-              //   'vstack',
-              //   {
-              //     alignment: 'center middle',
-              //     padding: 'medium',
-              //   },
-              //   [
-              //     Devvit.createElement(
-              //       'text',
-              //       {
-              //         color: '#FF4500',
-              //         size: 'xlarge',
-              //         weight: 'bold',
-              //       },
-              //       'GIF Enigma'
-              //     ),
-              //   ]
-              // ),
-
-              // // Masked word display
-              // Devvit.createElement(
-              //   'vstack',
-              //   {
-              //     padding: 'medium',
-              //     alignment: 'center middle',
-              //   },
-              //   [
-              //     Devvit.createElement(
-              //       'text',
-              //       {
-              //         color: '#FFFFFF',
-              //         size: 'large',
-              //         weight: 'bold',
-              //       },
-              //       'Word to guess:'
-              //     ),
-
-              //     Devvit.createElement(
-              //       'text',
-              //       {
-              //         color: '#7fcfff',
-              //         size: 'xlarge',
-              //         weight: 'bold',
-              //       },
-              //       maskedWord || ''
-              //     ),
-              //   ]
-              // ),
-
-              // // First GIF preview
-              // Devvit.createElement(
-              //   'vstack',
-              //   {
-              //     backgroundColor: '#1a2740',
-              //     cornerRadius: 'large',
-              //     padding: 'medium',
-              //     alignment: 'center middle',
-              //     width: '80%',
-              //   },
-              //   [
-              //     gifs && gifs.length > 0
-              //       ? Devvit.createElement('image', {
-              //           url: gifs[0],
-              //           imageWidth: 180,
-              //           imageHeight: 180,
-              //           resizeMode: 'fit',
-              //           description: 'First GIF clue',
-              //         })
-              //       : null,
-
-              //     Devvit.createElement(
-              //       'text',
-              //       {
-              //         color: '#FFFFFF',
-              //         size: 'xsmall',
-              //       },
-              //       '3 more clues await in the full game!'
-              //     ),
-              //   ]
-              // ),
-
-              // // Play button
-              // Devvit.createElement(
-              //   'vstack',
-              //   {
-              //     padding: 'medium',
-              //     alignment: 'center middle',
-              //   },
-              //   [
-              //     Devvit.createElement(
-              //       'hstack',
-              //       {
-              //         backgroundColor: '#FF4500',
-              //         cornerRadius: 'full',
-              //         padding: 'medium',
-              //         alignment: 'center middle',
-              //       },
-              //       [
-              //         Devvit.createElement(
-              //           'text',
-              //           {
-              //             color: '#FFFFFF',
-              //             weight: 'bold',
-              //           },
-              //           'Solve It!'
-              //         ),
-              //       ]
-              //     ),
-              //   ]
-              // ),
-            ]
-          ),
+        // Store the relationship between post and game, including settings
+        await context.redis.hSet(`post:${postId}`, {
+          gameId,
+          created: Date.now().toString(),
+          isChatPost: finalIsChatPost ? 'true' : 'false'
         });
 
-        if (post && post.id) {
-          postId = post.id;
-
-          // Store post ID with game data for reference
-          await context.redis.hSet(`game:${gameId}`, { redditPostId: postId });
-
-          // Store the relationship between post and game
-          await context.redis.hSet(`post:${postId}`, {
-            gameId,
-            created: Date.now().toString(),
-          });
-
-          // Update gamePreview with postId
-          // await context.redis.hSet(`gamePreview:${gameId}`, { postId });
-
-          console.log(
-            `Successfully posted game ${gameId} to r/${subredditName} with post ID: ${postId}`
-          );
+        console.log(
+          `[DEBUG-POST] Successfully posted game ${gameId} to r/${subredditName} with post ID: ${postId} - Chat: ${finalIsChatPost}`
+        );
+      } else {
+        console.error('[DEBUG-POST] Post created but missing ID or data');
+      }
+    } catch (postError) {
+      // Enhanced error logging
+      console.error('[DEBUG-POST] Post submission error:', postError);
+      if (postError instanceof Error) {
+        console.error('[DEBUG-POST] Error message:', postError.message);
+        console.error('[DEBUG-POST] Error name:', postError.name);
+        console.error('[DEBUG-POST] Error stack:', postError.stack);
+      }
+      if (typeof postError === 'object' && postError !== null) {
+        console.error('[DEBUG-POST] Error object keys:', Object.keys(postError));
+        try {
+          console.error('[DEBUG-POST] Error object contents:', JSON.stringify(postError));
+        } catch (e) {
+          console.error('[DEBUG-POST] Could not stringify error object');
         }
-      } catch (postError) {
-        console.error('Error posting to subreddit:', postError);
-        // Don't fail the entire operation if posting to Reddit fails
+      }
+      
+      // Try a very simple hardcoded post as a test
+      try {
+        console.log('[DEBUG-POST] Trying hardcoded test post...');
+        const hardcodedPost = await context.reddit.submitPost({
+          subredditName: subredditName,
+          title: "GIF Enigma Test Post",
+          text: "This is a test post for debugging"
+        });
+        console.log('[DEBUG-POST] Hardcoded post result:', hardcodedPost ? 'Success' : 'Failed', 
+          hardcodedPost?.id ? `ID: ${hardcodedPost.id}` : 'No ID');
+      } catch (hardcodedError) {
+        console.error('[DEBUG-POST] Hardcoded post also failed:', hardcodedError);
       }
     }
+  } catch (outerError) {
+    console.error('[DEBUG-POST] Error in outer post creation block:', outerError);
+    // Don't fail the entire operation if posting to Reddit fails
+  }
+}
 
     return {
       success: true,
@@ -244,7 +196,7 @@ export async function postCompletionComment(
   context: Context
 ): Promise<PostCommentResponse> {
   try {
-    console.log('🎉 [DEBUG] postCompletionComment called with params:', JSON.stringify(params));
+    console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
     const { gameId, username, numGuesses, gifHints, wordHints, hintTypeLabel, redditPostId } =
       params;
 
@@ -439,6 +391,7 @@ export async function getRecentGames(
             id: gameId,
             word: rawGameData.word,
             maskedWord: rawGameData.maskedWord,
+            category: rawGameData.category || 'General',
             questionText: rawGameData.questionText,
             gifs: [],
             createdAt: rawGameData.createdAt,
@@ -523,6 +476,8 @@ export async function getGame(
       return { success: false, error: 'Corrupted game data' };
     }
 
+    console.log('🔍 [DEBUG] Raw game data category:', rawGameData.category);
+
     // 3. Parse and validate
     const gameData: GameData = {
       id: gameId,
@@ -533,6 +488,7 @@ export async function getGame(
       createdAt: rawGameData.createdAt,
       username: rawGameData.username,
       redditPostId: rawGameData.redditPostId,
+      category: rawGameData.category || 'General',
     };
 
     // 4. Process GIFs
@@ -589,10 +545,12 @@ export async function hasUserCompletedGame(
 
     // Check if the game is in the user's completed games set
     const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-    const completed = !!(score && Number(score) > 0);
+    
+    // FIXED: Only consider completed if score is not null and not undefined
+    const completed = score !== null && score !== undefined;
 
     console.log(
-      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}`
+      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}, score: ${score}`
     );
     return { completed };
   } catch (error) {
@@ -740,6 +698,170 @@ export async function getCachedGifResults(
     return { success: true, cached: true, results: JSON.parse(cachedResults) };
   } catch (error) {
     console.error('❌ [DEBUG] Error in getCachedGifResults:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function saveGameState(
+  params: {
+    username: string;
+    gameId: string;
+    playerState: PlayerGameState;
+  },
+  context: Context
+) {
+  try {
+    console.log('Saving game state:', params);
+    const { username, gameId, playerState } = params;
+
+    if (!username || !gameId || !playerState) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    // Create a key for this user's state for this specific game
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    
+    // Store the player state as a JSON string
+    await context.redis.hSet(gameStateKey, {
+      playerState: JSON.stringify(playerState),
+      lastUpdated: Date.now().toString()
+    });
+    
+    // Set an expiration on the game state (30 days)
+    await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
+
+    // If the game is completed, add it to the user's completed games set
+    if (playerState.isCompleted) {
+      console.log(`Adding game ${gameId} to ${username}'s completed games`);
+      await context.redis.zAdd(`user:${username}:completedGames`, {
+        member: gameId,
+        score: Date.now(), // Using timestamp as score for sorting
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving game state:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getGameState(
+  params: {
+    username: string;
+    gameId: string;
+  },
+  context: Context
+) {
+  try {
+    console.log('Getting game state for:', params);
+    const { username, gameId } = params;
+
+    if (!username || !gameId) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    const gameState = await context.redis.hGetAll(gameStateKey);
+
+    if (!gameState || Object.keys(gameState).length === 0) {
+      // No saved state found
+      return { 
+        success: false, 
+        error: 'Game state not found',
+        // Return default initial state
+        state: {
+          playerState: {
+            gifHintCount: 0,
+            revealedLetters: [],
+            guess: '',
+            lastPlayed: Date.now(),
+            isCompleted: false
+          },
+          lastUpdated: Date.now().toString()
+        }
+      };
+    }
+
+    // Parse the player state from JSON
+    try {
+      if (gameState.playerState) {
+        gameState.playerState = JSON.parse(gameState.playerState);
+      }
+    } catch (e) {
+      console.error('Error parsing playerState JSON:', e);
+      gameState.playerState = JSON.stringify({
+        gifHintCount: 0,
+        revealedLetters: [],
+        guess: '',
+        lastPlayed: Date.now(),
+        isCompleted: false
+      });
+    }
+
+    return { success: true, state: gameState };
+  } catch (error) {
+    console.error('Error getting game state:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getUnplayedGames(
+  params: {
+    username: string;
+    limit?: number;
+  },
+  context: Context
+) {
+  try {
+    const { username, limit = 10 } = params;
+
+    if (!username) {
+      return { success: false, error: 'Username is required' };
+    }
+
+    // Get the user's completed games
+    const completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+      by: 'score'
+    });
+    
+    const completedGameIds = completedGames.map(game => 
+      typeof game === 'string' ? game : game.member
+    );
+
+    // Get all active games
+    const allGames = await context.redis.zRange('activeGames', 0, -1, {
+      by: 'score',
+      reverse: true, // Get newest first
+    });
+
+    // Filter out games the user has already completed
+    const unplayedGames = [];
+    for (const game of allGames) {
+      const gameId = typeof game === 'string' ? game : game.member;
+      
+      if (!completedGameIds.includes(gameId)) {
+        const gameData = await context.redis.hGetAll(`game:${gameId}`);
+        
+        if (gameData && Object.keys(gameData).length > 0) {
+          // Parse the gifs JSON string back to an array
+          if (gameData.gifs) {
+            gameData.gifs = JSON.parse(gameData.gifs);
+          }
+          
+          unplayedGames.push({ id: gameId, ...gameData });
+          
+          // Stop if we've reached the limit
+          if (unplayedGames.length >= limit) {
+            break;
+          }
+        }
+      }
+    }
+
+    return { success: true, games: unplayedGames };
+  } catch (error) {
+    console.error('Error getting unplayed games:', error);
     return { success: false, error: String(error) };
   }
 }

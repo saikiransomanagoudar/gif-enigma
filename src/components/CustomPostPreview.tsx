@@ -32,6 +32,7 @@ export const CustomPostPreview = ({
     page: Page;
     gameId?: string;
   } | null>(null);
+  const [isWebViewMounted, setIsWebViewMounted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
   useAsync(
     async () => {
@@ -69,85 +70,123 @@ export const CustomPostPreview = ({
         if (error) {
           console.error('Error fetching assets or username:', error);
         }
-      },
-    }
-  );
-
-  useAsync(
-    async () => {
-      if (!context.postId) return null;
-
-      // Get game ID from post relationship
-      const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-      if (!gameId) return null;
-
-      // Try to get preview data first
-      const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
-
-      if (previewData && previewData.maskedWord) {
-        return {
-          maskedWord: previewData.maskedWord,
-          gifs: JSON.parse(previewData.gifs || '[]'),
-          gameId: gameId,
-        };
-      }
-
-      // Fallback to game data
-      const gameData = await context.redis.hGetAll(`game:${gameId}`);
-      if (gameData && gameData.maskedWord) {
-        return {
-          maskedWord: gameData.maskedWord,
-          gifs: JSON.parse(gameData.gifs || '[]'),
-          gameId: gameId,
-        };
-      }
-
-      return null;
-    },
-    {
-      depends: [context.postId ?? ''],
-      finally: (data, error) => {
-        if (data && !error) {
-          setPreviewData(data);
-        }
-
-        if (error) {
-          console.error('Error loading game preview:', error);
-        }
-
         setIsLoading(false);
       },
     }
   );
 
-  //  Helper function to send navigation messages
-  const safePostMessage = (message: any) => {
-    console.log(
-      '[DEBUG-NAV] CustomPostPreview: Sending navigation message:',
-      JSON.stringify(message)
-    );
-    // @ts-ignore - Ignore TypeScript errors
-    postMessage(message);
-  };
+  useAsync<{ shouldNavigate: boolean; page?: Page; gameId?: string }>(
+    async () => {
+      // Return a promise that resolves if we should navigate
+      if (isWebViewReady && pendingNavigation) {
+        return {
+          shouldNavigate: true,
+          page: pendingNavigation.page,
+          gameId: pendingNavigation.gameId,
+        };
+      }
+      return { shouldNavigate: false };
+    },
+    {
+      depends: [isWebViewReady, pendingNavigation],
+      finally: (data, error) => {
+        if (!error && data?.shouldNavigate) {
+          console.log(
+            '[DEBUG-NAV] CustomPostPreview: WebView is ready, sending pending navigation to:',
+            data.page
+          );
 
-  // Handle the case when WebView becomes ready and we have pending navigation
-  if (isWebViewReady && pendingNavigation) {
-    console.log(
-      '[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:',
-      pendingNavigation.page
-    );
+          // Send the navigation message
+          postMessage({
+            type: 'SET_NAVIGATION_STATE',
+            data: {
+              page: data.page,
+              ...(data.gameId ? { gameId: data.gameId } : {}),
+            },
+          });
 
-    safePostMessage({
-      type: 'NAVIGATE',
-      data: {
-        page: pendingNavigation.page,
-        params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {},
+          // Clear pending navigation to prevent duplicate sends
+          setPendingNavigation(null);
+        }
       },
-    });
+    }
+  );
 
-    // Clear pending navigation to prevent duplicate sends
-    setPendingNavigation(null);
-  }
+  // useAsync(
+  //   async () => {
+  //     if (!context.postId) return null;
+
+  //     // Get game ID from post relationship
+  //     const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+  //     if (!gameId) return null;
+
+  //     // Try to get preview data first
+  //     const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
+
+  //     if (previewData && previewData.maskedWord) {
+  //       return {
+  //         maskedWord: previewData.maskedWord,
+  //         gifs: JSON.parse(previewData.gifs || '[]'),
+  //         gameId: gameId,
+  //       };
+  //     }
+
+  //     // Fallback to game data
+  //     const gameData = await context.redis.hGetAll(`game:${gameId}`);
+  //     if (gameData && gameData.maskedWord) {
+  //       return {
+  //         maskedWord: gameData.maskedWord,
+  //         gifs: JSON.parse(gameData.gifs || '[]'),
+  //         gameId: gameId,
+  //       };
+  //     }
+
+  //     return null;
+  //   },
+  //   {
+  //     depends: [context.postId ?? ''],
+  //     finally: (data, error) => {
+  //       if (data && !error) {
+  //         setPreviewData(data);
+  //       }
+
+  //       if (error) {
+  //         console.error('Error loading game preview:', error);
+  //       }
+
+  //       setIsLoading(false);
+  //     },
+  //   }
+  // );
+
+  // //  Helper function to send navigation messages
+  // const safePostMessage = (message: any) => {
+  //   console.log(
+  //     '[DEBUG-NAV] CustomPostPreview: Sending navigation message:',
+  //     JSON.stringify(message)
+  //   );
+  //   // @ts-ignore - Ignore TypeScript errors
+  //   postMessage(message);
+  // };
+
+  // // Handle the case when WebView becomes ready and we have pending navigation
+  // if (isWebViewReady && pendingNavigation) {
+  //   console.log(
+  //     '[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:',
+  //     pendingNavigation.page
+  //   );
+
+  //   safePostMessage({
+  //     type: 'NAVIGATE',
+  //     data: {
+  //       page: pendingNavigation.page,
+  //       params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {},
+  //     },
+  //   });
+
+  //   // Clear pending navigation to prevent duplicate sends
+  //   setPendingNavigation(null);
+  // }
 
   const storeLandingPage = async () => {
     try {
@@ -162,29 +201,30 @@ export const CustomPostPreview = ({
     }
   };
 
-  const handlePlayGame = () => {
+  // In CustomPostPreview.tsx
+  // In CustomPostPreview.tsx - update handlePlayGame function
+  // In CustomPostPreview.tsx - update handlePlayGame function
+  const handlePlayGame = async () => {
     console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
 
-    storeLandingPage();
-    // Mount the WebView
+    // Always store the landing page as the destination
+    await storeLandingPage();
+
+    // Force remount the WebView every time
+    console.log('[DEBUG-NAV] CustomPostPreview: Force remounting WebView');
+    setIsWebViewMounted(false);
+
+    // Use this approach to create a small delay without setTimeout
+    await context.redis.set('temp_key', 'temp_value');
+
+    // Now mount it again
+    setIsWebViewMounted(true);
     onMount();
 
-    if (isWebViewReady) {
-      console.log('[DEBUG-NAV] CustomPostPreview: WebView ready, sending navigation');
-      safePostMessage({
-        type: 'NAVIGATE',
-        data: {
-          page: 'landing',
-        },
-      });
-    } else {
-      console.log(
-        '[DEBUG-NAV] CustomPostPreview: WebView not ready yet, storing pending navigation'
-      );
-      setPendingNavigation({
-        page: 'landing',
-      });
-    }
+    // Set landing as the destination
+    setPendingNavigation({
+      page: 'landing',
+    });
   };
 
   const isSmallScreen = (context.dimensions?.width ?? 0) < 300;
@@ -200,44 +240,44 @@ export const CustomPostPreview = ({
         </ComicText>
       </vstack>
       {/* Intro text */}
-      <vstack alignment="center middle" padding="medium">
+      <vstack alignment="center middle" padding="medium" width="100%">
         <spacer size="large" />
-        <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"}  weight="bold">
-          Hi {username}, ready to unravel the secret word/phrase
+        <text
+          color="orangered-500"
+          size={isSmallScreen ? 'small' : 'xlarge'}
+          weight="bold"
+          wrap={true}
+          alignment="center"
+        >
+          Hi {username}, ready to unravel the secret word/phrase from GIFs?
         </text>
-        <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"} weight="bold">
-          from GIFs?
-        </text>
-        <spacer size="medium"/>
+        <spacer size="medium" />
       </vstack>
 
       {/* Main buttons section */}
-      <hstack width="100%" padding="medium" alignment="center middle" gap="medium">
+      <hstack width="100%" padding="medium" alignment="center middle">
         <vstack
           backgroundColor="#c6c6e1"
           cornerRadius="large"
-          width="30%"
+          width={isSmallScreen ? '90%' : '50%'}
+          padding="medium"
           alignment="center middle"
-          onPress={handlePlayGame}
+          border="thin"
+          borderColor="#9494c8"
         >
-          <vstack gap="medium" height={150} cornerRadius="small">
-            <image url="eyebrows.gif" imageWidth={200} imageHeight={100} />
+          <vstack gap="medium" cornerRadius="medium" width="100%" alignment="center middle">
+            <image
+              url="eyebrows.gif"
+              imageWidth={isSmallScreen ? 150 : 200}
+              imageHeight={100}
+              resizeMode="fit"
+            />
           </vstack>
-          {/* <vstack
-            backgroundColor="rgba(0,0,0,0.3)"
-            cornerRadius="large"
-            padding="xsmall"
-            width="100%"
-            alignment="center"
-          > */}
-            {/* <hstack alignment="middle center"> */}
-            {/* <ComicText size={0.2} color="dark-green">
-                S       tart      Playing
-              </ComicText> */}
-            <button onPress={handlePlayGame}>Start Playing 👉</button>
-            {/* <text> 👉</text> */}
-            {/* </hstack> */}
-          {/* </vstack> */}
+          <spacer size="medium" />
+          <button appearance="primary" size="large" icon="play" onPress={handlePlayGame}>
+            Start Playing 👉
+          </button>
+          <spacer size="small" />
         </vstack>
       </hstack>
     </vstack>
