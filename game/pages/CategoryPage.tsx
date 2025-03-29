@@ -35,6 +35,15 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       return () => darkModeQuery.removeEventListener('change', handleThemeChange);
     }, []);
 
+  useEffect(() => {
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
+
   const categories: {
     type: CategoryType;
     icon: string;
@@ -172,7 +181,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
   return (
     <div
-    className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       {/* Header section */}
@@ -184,7 +193,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
           ref={backButtonRef}
           onClick={handleBackClick}
           className={`${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
-          style={{ backgroundColor: colors.primary }}
+          style={{ backgroundColor: colors.primary }}         
         >
           <span className="mr-1 text-sm text-white">👈</span>
           <ComicText size={0.5} color="white">
@@ -216,14 +225,14 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4">
-      <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
+      <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
           {categories.map((category) => (
             <button
               key={category.type}
               onClick={() => handleCategorySelect(category.type)}
               onMouseEnter={() => setHoverCategory(category.type)}
               onMouseLeave={() => setHoverCategory(null)}
-              className="max-sm:h-4/5 category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
+              className="max-sm:h-4/5 max-sm:h-4/5 category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
               style={{
                 overflow: 'hidden',
                 transform:

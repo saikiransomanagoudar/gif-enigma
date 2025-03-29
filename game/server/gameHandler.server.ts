@@ -174,113 +174,83 @@ export async function saveGameState(
   context: any
 ) {
   try {
-    console.log('🔍 [DEBUG] saveGameState called with params:', params);
     const { username, gameId, playerState } = params;
 
     if (!username || !gameId) {
-      return { success: false, error: 'User ID and Game ID are required' };
+      return { success: false, error: 'Missing required parameters' };
     }
 
-    // Handle both data formats
-    let gifHintCount, revealedLetters, guess, lastPlayed, isCompleted;
-
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    let dataToStore: any = {};
+    
     if (playerState) {
-      // New format
-      gifHintCount = playerState.gifHintCount;
-      revealedLetters = playerState.revealedLetters;
-      guess = playerState.guess;
-      lastPlayed = playerState.lastPlayed;
-      isCompleted = playerState.isCompleted;
+      dataToStore = {
+        playerState: JSON.stringify(playerState),
+        lastUpdated: Date.now().toString()
+      };
     } else {
-      // Old format
-      gifHintCount = params.gifHintCount;
-      revealedLetters = params.revealedLetters;
-      guess = params.guess;
-      lastPlayed = Date.now();
-      isCompleted = false;
+      const stateToStore: any = {
+        gifHintCount: params.gifHintCount ?? 0,
+        revealedLetters: params.revealedLetters ?? [],
+        guess: params.guess ?? '',
+        lastPlayed: Date.now(),
+        isCompleted: false
+      };
+      
+      dataToStore = {
+        playerState: JSON.stringify(stateToStore),
+        lastUpdated: Date.now().toString()
+      };
     }
 
-    // Save state in Redis
-    await context.redis.hSet(`gameState:${gameId}:${username}`, {
-      gifHintCount: gifHintCount?.toString() || '1',
-      revealedLetters: JSON.stringify(revealedLetters || []),
-      guess: guess || '',
-      lastPlayed: lastPlayed?.toString() || Date.now().toString(),
-      isCompleted: isCompleted?.toString() || 'false',
-    });
-
-    if (isCompleted) {
-      console.log(`🎮 [DEBUG] Game ${gameId} marked as completed in state for user ${username}`);
-
-      try {
-        // Add to user's completed games list
-        await context.redis.zAdd(`user:${username}:completedGames`, {
-          member: gameId,
-          score: Date.now(),
-        });
-
-        console.log(`✅ [DEBUG] Added ${gameId} to user ${username}'s completed games list`);
-
-        // Verify it was added (for debugging)
-        const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
-        console.log(
-          `✅ [DEBUG] Verification - Game in completed set with score: ${score !== null ? score : 'not found'}`
-        );
-      } catch (redisError) {
-        console.error(`❌ [DEBUG] Redis error when adding to completed games:`, redisError);
-        // Don't fail the operation if adding to completed games fails
-      }
-    }
+    await context.redis.hSet(gameStateKey, dataToStore);
+    await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
 
     return { success: true };
   } catch (error) {
-    console.error('❌ [DEBUG] Error saving game state:', error);
+    console.error('Error saving game state:', error);
     return { success: false, error: String(error) };
   }
 }
 
-export async function getGameState(params: { username: string; gameId: string }, context: any) {
+export async function getGameState(
+  params: {
+    username: string;
+    gameId: string;
+  },
+  context: any
+) {
   try {
-    console.log('🔍 [DEBUG] getGameState called with params:', params);
     const { username, gameId } = params;
 
     if (!username || !gameId) {
-      return { success: false, error: 'User ID and Game ID are required' };
+      return { success: false, error: 'Missing required parameters' };
     }
 
-    // Get state from Redis
-    const state = await context.redis.hGetAll(`gameState:${gameId}:${username}`);
+    const gameStateKey = `gameState:${gameId}:${username}`;
+    const gameState = await context.redis.hGetAll(gameStateKey);
 
-    if (!state || Object.keys(state).length === 0) {
-      return { success: false, cached: false };
+    if (!gameState || Object.keys(gameState).length === 0) {
+      return { success: false, error: 'Game state not found' };
     }
 
-    // Parse revealedLetters from JSON string
-    if (state.revealedLetters) {
+    const result: any = { ...gameState };
+    
+    if (result.playerState) {
       try {
-        state.revealedLetters = JSON.parse(state.revealedLetters);
-      } catch (error) {
-        console.error('❌ [DEBUG] Error parsing revealedLetters:', error);
-        state.revealedLetters = [];
+        result.playerState = JSON.parse(result.playerState);
+      } catch (e) {
+        console.error('Error parsing playerState JSON:', e);
       }
     }
 
-    // Convert gifHintCount to number
-    if (state.gifHintCount) {
-      state.gifHintCount = parseInt(state.gifHintCount, 10);
-    }
-
-    return { success: true, state };
+    return { success: true, state: result };
   } catch (error) {
-    console.error('❌ [DEBUG] Error getting game state:', error);
+    console.error('Error getting game state:', error);
     return { success: false, error: String(error) };
   }
 }
 
-/**
- * fetchRequest function to handle external requests and avoid CORS issues.
- * This version uses fetch (like in tenorApi.server.ts) and adds detailed debug logging.
- */
 export async function fetchRequest(
   params: {
     url: string;

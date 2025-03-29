@@ -1,6 +1,8 @@
 import { GameData, Page } from './lib/types';
 import { LeaderboardEntry } from './lib/types';
 
+export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
+
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
   | { type: 'webViewReady' }
@@ -169,6 +171,7 @@ export type WebviewToBlockMessage =
       username: string 
     } 
   }
+  | { type: 'GET_TOP_SCORES' }
   | { type: 'GET_INITIAL_DATA' };
 
 export type BlocksToWebviewMessage =
@@ -450,15 +453,27 @@ export type BlocksToWebviewMessage =
       }, 
       error?: string 
     }
-  | { 
+    | { 
       type: 'GET_USER_STATS_RESULT', 
       success: boolean, 
       stats?: any, 
       rank?: number, 
       error?: string 
+    }
+  | {
+      type: 'GET_TOP_SCORES_RESULT';
+      success: boolean;
+      scores?: {
+        username: string;
+        bestScore: number;
+      }[];
+      error?: string;
     };
+
+    
 
 export type DevvitMessage = {
   type: 'devvit-message';
   data: { message: BlocksToWebviewMessage };
 };
+

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
@@ -31,10 +31,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+  const [gameCompleted, setGameCompleted] = useState<boolean>(false);
   const gameIdRef = useRef(propGameId);
   gameIdRef.current = propGameId;
   // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
+  const [currentGuess, setCurrentGuess] = useState<string>('');
+  const [maskedWord, setMaskedWord] = useState<string>('');
+  const [gifVisibility, setGifVisibility] = useState<boolean[]>([]);
+  const [usedGifHints, setUsedGifHints] = useState<number>(0);
+  // @ts-ignore
+  const [usedLetterHints, setUsedLetterHints] = useState<number>(0);
 
   // game score
   const [gameStartTime, setGameStartTime] = useState<number>(Date.now());
@@ -59,17 +66,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
-
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
-    // Detect dark mode
-    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDarkMode(darkModeQuery.matches);
-    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-    darkModeQuery.addEventListener('change', handleThemeChange);
-    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-  }, []);
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
@@ -262,7 +268,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               data: {
                 ...score,
                 username: score.username || username || 'anonymous',
-                gameId: gameData?.id,
+                gameId: gameId || gameData?.id || '',
                 timestamp: Date.now(),
               },
             },
@@ -342,6 +348,110 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       );
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState]);
+
+  useEffect(() => {
+    const handleMessage = (event: { data: any; }) => {
+      const message = event.data;
+      
+      if (message.type === 'GET_GAME_STATE_RESULT' && message.success) {
+        if (message.state?.playerState) {
+          const { playerState } = message.state;
+          
+          if (playerState.guess) setCurrentGuess(playerState.guess);
+          
+          if (typeof playerState.gifHintCount === 'number') {
+            const newVisibility = Array(gameData?.gifs?.length || 4).fill(false);
+            for (let i = 0; i < playerState.gifHintCount; i++) {
+              if (i < newVisibility.length) newVisibility[i] = true;
+            }
+            setGifVisibility(newVisibility);
+            setUsedGifHints(playerState.gifHintCount);
+          }
+          
+          if (Array.isArray(playerState.revealedLetters) && playerState.revealedLetters.length > 0) {
+            setRevealedLetters(playerState.revealedLetters);
+            
+            if (gameData?.word) {
+              let newMaskedWord = gameData.maskedWord;
+              if (typeof newMaskedWord === 'string') {
+                const maskedArray = newMaskedWord.split('');
+                playerState.revealedLetters.forEach((index: number) => {
+                  if (index >= 0 && index < gameData.word.length) {
+                    maskedArray[index] = gameData.word[index];
+                  }
+                });
+                setMaskedWord(maskedArray.join(''));
+              }
+            }
+            
+            setUsedLetterHints(playerState.revealedLetters.length);
+          }
+          
+          if (typeof playerState.isCompleted === 'boolean') {
+            setGameCompleted(playerState.isCompleted);
+          }
+        }
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [gameData]);
+
+  useEffect(() => {
+    if (!gameId || !username) return;
+    
+    const playerState = {
+      gifHintCount: usedGifHints,
+      revealedLetters: revealedLetters,
+      guess: currentGuess,
+      lastPlayed: Date.now(),
+      isCompleted: gameCompleted,
+    };
+    
+    const timeoutId = setTimeout(() => {
+      window.parent.postMessage({
+        type: 'SAVE_GAME_STATE',
+        data: { gameId, username, playerState }
+      }, '*');
+    }, 1000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [gameId, username, usedGifHints, revealedLetters, currentGuess, gameCompleted]);
+
+  // @ts-ignore
+  const unlockGifHint = useCallback((index: number) => {
+    if (!gameData || index < 0 || index >= gameData.gifs.length) return;
+    
+    const newVisibility = [...gifVisibility];
+    newVisibility[index] = true;
+    setGifVisibility(newVisibility);
+    setUsedGifHints(prev => prev + 1);
+  }, [gameData, gifVisibility]);
+
+  // @ts-ignore
+  const revealLetterHint = useCallback(() => {
+    if (!gameData?.word) return;
+    
+    const unrevealedIndices = [];
+    for (let i = 0; i < gameData.word.length; i++) {
+      if (gameData.word[i] === ' ' || revealedLetters.has(i)) continue;
+      unrevealedIndices.push(i);
+    }
+    
+    if (unrevealedIndices.length === 0) return;
+    
+    const randomIndex = Math.floor(Math.random() * unrevealedIndices.length);
+    const letterIndexToReveal = unrevealedIndices[randomIndex];
+    
+    setRevealedLetters(prev => new Set(prev).add(letterIndexToReveal));
+    
+    const newMaskedWordArray = maskedWord.split('');
+    newMaskedWordArray[letterIndexToReveal] = gameData.word[letterIndexToReveal];
+    setMaskedWord(newMaskedWordArray.join(''));
+    
+    setUsedLetterHints(prev => prev + 1);
+  }, [gameData, maskedWord, revealedLetters]);
 
   useEffect(() => {
     if (isCorrect === true) {
@@ -835,6 +945,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         // After fadeOut is complete, update state and fade back in
         setTimeout(() => {
           setGifHintCount((current) => current + 1);
+          unlockGifHint(gifHintCount - 1);
 
           // After state update, fade back in
           setTimeout(() => {
@@ -1239,13 +1350,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <div className="flex justify-center gap-4">
                   <button
                     onClick={() => {
-                      window.parent.postMessage(
-                        {
-                          type: 'GET_GAME_LEADERBOARD',
-                          data: { gameId: gameData?.id, limit: 10 },
-                        },
-                        '*'
-                      );
+                      onNavigate('leaderboard');
                     }}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
@@ -1256,12 +1361,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </button>
 
                   <button
-                    onClick={handleNewGame}
+                    onClick={handleBackClick}
                     className="flex cursor-pointer items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
                   >
-                    <span>🎮</span>
+                    <span>🏠</span>
                     <ComicText size={0.7} color="white">
-                      Play Another
+                      Home
                     </ComicText>
                   </button>
                 </div>

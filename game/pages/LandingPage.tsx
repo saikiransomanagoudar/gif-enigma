@@ -204,7 +204,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             >
               {/* <ComicText
                 size={0.8}
-                color={textColor}
+                // color={textColor}
                 className={`select-none cursor-default mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
               >
                 Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
