@@ -59,6 +59,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+      // Detect dark mode
+      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(darkModeQuery.matches);
+      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      darkModeQuery.addEventListener('change', handleThemeChange);
+      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+    }, []);
+
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+  const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -1200,7 +1213,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               <div className="mb-2 inline-block -rotate-3 transform">
                 <div className="mb-1 text-5xl">🎉</div>
               </div>
-
+              
               {/* Header text - Added text shadow and background for better visibility */}
               <div className="relative z-10">
                 <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-4 py-2 shadow-lg">

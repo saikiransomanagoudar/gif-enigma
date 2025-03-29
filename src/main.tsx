@@ -61,7 +61,7 @@ Devvit.configure({
 });
 
 Devvit.addCustomPostType({
-  name: 'GIF Enigma',
+  name: 'giftest01',
   height: 'tall',
   render: (context) => {
 

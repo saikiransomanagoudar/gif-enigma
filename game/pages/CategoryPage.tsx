@@ -172,7 +172,8 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
   return (
     <div
-    className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       {/* Header section */}
@@ -216,7 +217,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4">
-      <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
+        <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
           {categories.map((category) => (
             <button
               key={category.type}

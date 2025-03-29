@@ -79,15 +79,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {[
-                "Start by viewing the initial GIF clue that hints at a secret word or phrase.",
-                "Enter your guess into the input field.",
-                "If you're stuck, reveal extra GIF hints—up to 4 total.",
-                "GIF hints cost points: -10 after 2 hints, -20 after 3, and -40 after 4.",
-                "Alternatively, use word/phrase hints that reveal letters. Note: these incur a higher penalty based on answer length.",
-                "You begin with 100 points—using fewer hints earns you a higher score.",
-                "Decipher the enigma by balancing clues and your score!"
-              ].map((instruction, index) => (
+              {['🎬', '👁️', '💡', '⌨️', '🏆'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
@@ -99,7 +91,15 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                     {['🖼️', '⌨️', '💡', '⚖️', '🔠', '🏆', '🎯'][index]}
                   </span>
                   <ComicText className="text-lg">
-                    {instruction}
+                    {
+                      [
+                        'Each question has 4 hidden GIFs as clues.',
+                        'Initially, only the first GIF is shown.',
+                        'If you need help, reveal more GIFs/Words as hints.',
+                        'Type your guess in the input field and submit.',
+                        'Score points and Win.',
+                      ][index]
+                    }
                   </ComicText>
                 </motion.div>
               ))}
@@ -118,13 +118,14 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1.6 }}
+              
             >
-              <ComicText size={1.25} className="text-[#E8E5DA]">
+              <ComicText size={1.25} className="">
                 Create Mode
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['✏️', '🔎', '🖼️', '💾'].map((icon, index) => (
+              {['✏️', '🔎', '🖼️', '🎮'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
@@ -136,10 +137,10 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Choose a secret word or phrase for others to guess.',
-                        'Search for GIFs that serve as creative clues.',
-                        'Select 4 GIFs that progressively hint your secret.',
-                        'Share your puzzle on the subreddit for community fun!'
+                        'Select a secret word for others to guess.',
+                        'Search for GIFs by trying to add them.',
+                        'Select 4 GIFs that match your secret word.',
+                        'Create a game, let others guess your word!',
                       ][index]
                     }
                   </ComicText>
