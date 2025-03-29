@@ -1193,9 +1193,9 @@ Devvit.addTrigger({
   onEvent: async (_event, context) => {
     const jobId = await context.scheduler.runJob({
       name: 'auto_create_post',
-      cron: '*/1 * * * *', // every 1 minute
+      cron: '0 */4 * * *', // every 4 hours
     });
-    console.log('✅ Scheduled auto_create_post job to run every 1 minute:', jobId);
+    console.log('✅ Scheduled auto_create_post job to run every 4hours:', jobId);
   },
 });
 
