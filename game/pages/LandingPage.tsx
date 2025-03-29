@@ -217,7 +217,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             transition={{ duration: 0.5, delay: 1.2 }}
           >
             <img
-              src="/landing-page/lets-play.gif"
+              src="/asset-gif/lets-play.gif"
               alt="Play GIF"
               className={`block w-full rounded-2xl ${isLoading ? 'opacity-50' : ''}`}
             />
@@ -240,7 +240,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             transition={{ duration: 0.5, delay: 1.4 }}
           >
             <img
-              src="/landing-page/lets-build.gif"
+              src="/asset-gif/lets-build.gif"
               alt="Create GIF"
               className="block w-full rounded-2xl"
             />

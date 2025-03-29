@@ -34,7 +34,6 @@ export const CustomPostPreview = ({
   } | null>(null);
   const [isWebViewMounted, setIsWebViewMounted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
-
   useAsync(
     async () => {
       // Get asset URLs
@@ -47,6 +46,11 @@ export const CustomPostPreview = ({
       return {
         startGifUrl: startGifUrl,
         currentUsername: currentUsername,
+        decodeUrl: decodeUrl,
+        gifPreviewUrl: gifPreviewUrl,
+        heyUrl: heyUrl,
+        readyUrl: readyUrl,
+        toPreviewUrl: toPreviewUrl,
       };
     },
     {
@@ -235,7 +239,6 @@ export const CustomPostPreview = ({
           GIF Enigma
         </ComicText>
       </vstack>
-
       {/* Intro text */}
       <vstack alignment="center middle" padding="medium" width="100%">
         <spacer size="large" />

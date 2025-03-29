@@ -1408,7 +1408,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               <div className="mb-2 inline-block -rotate-3 transform">
                 <div className="mb-1 text-5xl">🎉</div>
               </div>
-
+              
               {/* Header text - Added text shadow and background for better visibility */}
               <div className="relative z-10">
                 <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-4 py-2 shadow-lg">
