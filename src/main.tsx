@@ -4,13 +4,11 @@ import {
   useWebView,
   useState,
   useAsync,
-  RedditAPIClient,
 } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
 import { searchTenorGifs } from '../game/server/tenorApi.server.js';
 import {
   saveGame,
-  getUserGames,
   getGame,
   getUnplayedGames,
   getGameState,
@@ -28,12 +26,11 @@ import { CustomPostPreview } from './components/CustomPostPreview.js';
 import { GamePostPreview } from './components/GamePostPreview.js';
 import {
   saveScore,
-  getGameLeaderboard,
   getGlobalLeaderboard,
-  getUserScores,
   calculateScore,
   getCumulativeLeaderboard,
 } from '../game/server/scoringService.js';
+import '../game/server/autoCreateGameSchedular.js';
 
 Devvit.addSettings([
   {
@@ -105,27 +102,6 @@ Devvit.addCustomPostType({
       }
     };
     // Function to retrieve navigation state
-    const retrieveNavigationState = async (): Promise<{ page: Page | null; gameId?: string }> => {
-      console.log('[DEBUG-STORAGE] Retrieving navigation state');
-
-      try {
-        const navStateKey = `navState:${context.postId || 'default'}`;
-        const storedState = await context.redis.hGetAll(navStateKey);
-
-        if (storedState && storedState.page) {
-          console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
-          return {
-            page: storedState.page as Page,
-            gameId: storedState.gameId ?? null,
-          };
-        }
-      } catch (error) {
-        console.error('[DEBUG-STORAGE] Error retrieving navigation state:', error);
-      }
-
-      console.log('[DEBUG-STORAGE] No stored navigation state found');
-      return { page: null };
-    };
 
     const { data: username } = useAsync(async () => {
       return (await context.reddit.getCurrentUsername()) ?? null;
@@ -207,9 +183,6 @@ Devvit.addCustomPostType({
       }
     );
 
-    const refreshCumulativeLeaderboard = () => {
-      setCumulativeLeaderboardRefreshTrigger((prev) => prev + 1);
-    };
 
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
@@ -1543,7 +1516,6 @@ Devvit.addCustomPostType({
               console.log('Getting subreddit settings');
 
               // Get the current subreddit
-              const subreddit = await context.reddit.getCurrentSubreddit();
 
               // Get the settings
               const allOriginalContent = await context.settings.get('allOriginalContent');
@@ -1632,8 +1604,6 @@ Devvit.addMenuItem({
   label: 'Create GIF Enigma',
   location: 'subreddit',
   onPress: async (_, context) => {
-    const allOriginalContent = await context.settings.get('allOriginalContent');
-    const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
 
@@ -1652,6 +1622,32 @@ Devvit.addMenuItem({
 
     ui.showToast('Created new GIF Enigma post!');
     ui.navigateTo(post.url);
+  },
+});
+
+Devvit.addMenuItem({
+  label: '🔁 Test Auto Game Post (Manual)',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    await context.scheduler.runJob({
+      name: 'auto_create_post',
+      data: undefined,
+      runAt: new Date(),
+    });
+
+    context.ui.showToast('✅ Triggered auto game post manually!');
+  },
+});
+
+Devvit.addTrigger({
+  event: 'AppInstall',
+  onEvent: async (_event, context) => {
+    const jobId = await context.scheduler.runJob({
+      name: 'auto_create_post',
+      cron: '0 */4 * * *',
+    });
+    console.log('✅ Scheduled auto_create_post job to run every 4hours:', jobId);
   },
 });
 
