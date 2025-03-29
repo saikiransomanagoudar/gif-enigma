@@ -27,6 +27,10 @@ import {
   getCumulativeLeaderboard,
 } from '../game/server/scoringService.js';
 
+// 👇 Needed to register the scheduler job
+import '../game/server/autoCreateGameScheduler.js';
+
+
 Devvit.addSettings([
   {
     name: 'tenor-api-key',
@@ -1166,6 +1170,43 @@ Devvit.addMenuItem({
     ui.navigateTo(post.url);
   },
 });
+
+Devvit.addMenuItem({
+  label: '🔁 Test Auto Game Post (Manual)',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    await context.scheduler.runJob({
+      name: 'auto_create_post',
+      data: undefined,
+      runAt: new Date(), // 👈 this means "run it now"
+    });
+
+    context.ui.showToast('✅ Triggered auto game post manually!');
+  },
+});
+
+
+
+Devvit.addTrigger({
+  event: 'AppInstall',
+  onEvent: async (_event, context) => {
+    const jobId = await context.scheduler.runJob({
+      name: 'auto_create_post',
+      cron: '*/1 * * * *', // every 1 minute
+    });
+    console.log('✅ Scheduled auto_create_post job to run every 1 minute:', jobId);
+  },
+});
+
+// Devvit.addHook('onInstall', async (context) => {
+//   await context.scheduler.runJob({
+//     name: 'auto_create_post',
+//     data: undefined,
+//     cron: '* * * * *', // every minute
+//   });
+// });
+
 
 export function getAppVersion(context: Context): string {
   return context.appVersion || '1.0.0.0';

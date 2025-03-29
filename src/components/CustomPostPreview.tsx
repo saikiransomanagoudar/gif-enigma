@@ -200,7 +200,7 @@ export const CustomPostPreview = ({
       <vstack alignment="center middle" padding="medium">
         <spacer size="large" />
         <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"}  weight="bold">
-          Hi {username}, ready to unravel the secret word/phrase
+          Hi {username},  ready to unravel the secret word/phrase
         </text>
         <text color="orangered-500" size={isSmallScreen ? "large" : "xlarge"} weight="bold">
           from GIFs?

@@ -1,6 +1,8 @@
 import { GameData, Page } from './lib/types';
 import { LeaderboardEntry } from './lib/types';
 
+export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
+
 export type WebviewToBlockMessage =
   | { type: 'INIT' }
   | { type: 'webViewReady' }
@@ -474,3 +476,4 @@ export type DevvitMessage = {
   type: 'devvit-message';
   data: { message: BlocksToWebviewMessage };
 };
+
