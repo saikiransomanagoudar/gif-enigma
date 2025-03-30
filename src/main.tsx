@@ -22,6 +22,7 @@ import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
 } from '../game/server/geminiApi.server.js';
+import { Preview } from './components/Preview.js';
 import { CustomPostPreview } from './components/CustomPostPreview.js';
 import { GamePostPreview } from './components/GamePostPreview.js';
 import {
@@ -30,7 +31,7 @@ import {
   calculateScore,
   getCumulativeLeaderboard,
 } from '../game/server/scoringService.js';
-import '../game/server/autoCreateGameSchedular.js';
+import '../game/server/autoCreateGameScheduler.js';
 
 Devvit.addSettings([
   {
@@ -78,7 +79,7 @@ Devvit.configure({
 });
 
 Devvit.addCustomPostType({
-  name: 'giftest01',
+  name: 'gif-enigma',
   height: 'tall',
   render: (context) => {
     let isWebViewReadyFlag: boolean = false;
@@ -590,31 +591,6 @@ Devvit.addCustomPostType({
             }
             break;
 
-          // Also add this case to pass back the preloaded data to the client when requested
-          // case 'GET_INITIAL_DATA':
-          //   try {
-          //     console.log('Sending initial data to client');
-
-          //     // Send all the preloaded data together
-          //     postMessage({
-          //       type: 'INITIAL_DATA_RESULT',
-          //       success: true,
-          //       data: {
-          //         username: username || null,
-          //         randomGame: randomGameData?.success ? randomGameData.game : null,
-          //         cumulativeLeaderboard: cumulativeLeaderboardData?.leaderboard || [],
-          //         // Include other cached data as needed
-          //       },
-          //     });
-          //   } catch (error) {
-          //     console.error('Error sending initial data:', error);
-          //     postMessage({
-          //       type: 'INITIAL_DATA_RESULT',
-          //       success: false,
-          //       error: String(error),
-          //     });
-          //   }
-          //   break;
           case 'SAVE_GAME_STATE':
             try {
               console.log('🎲 [DEBUG] Saving game state:', event.data);
@@ -1603,21 +1579,23 @@ Devvit.addCustomPostType({
 Devvit.addMenuItem({
   label: 'Create GIF Enigma',
   location: 'subreddit',
+  forUserType: 'moderator',
   onPress: async (_, context) => {
     const { reddit, ui } = context;
     const subreddit = await reddit.getCurrentSubreddit();
 
     const post = await reddit.submitPost({
-      title: 'New GIF Enigma Challenge!',
+      title: 'GIF Enigma Game',
       subredditName: subreddit.name,
-      preview: (
-        <CustomPostPreview
-          context={context}
-          onMount={() => {}}
-          postMessage={() => {}}
-          isWebViewReady={false}
-        />
-      ),
+      // preview: (
+      //   <CustomPostPreview
+      //     context={context}
+      //     onMount={() => {}}
+      //     postMessage={() => {}}
+      //     isWebViewReady={false}
+      //   />
+      // ),
+      preview: <Preview />,
     });
 
     ui.showToast('Created new GIF Enigma post!');
@@ -1646,6 +1624,7 @@ Devvit.addTrigger({
     const jobId = await context.scheduler.runJob({
       name: 'auto_create_post',
       cron: '0 */4 * * *',
+      // cron: '*/1 * * * *',
     });
     console.log('✅ Scheduled auto_create_post job to run every 4hours:', jobId);
   },

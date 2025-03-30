@@ -1,13 +1,13 @@
 {
   "private": true,
-  "name": "giftest01",
+  "name": "gif-enigma",
   "version": "0.0.0",
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
     "vite": "vite",
     "dev:game": "vite build --watch",
-    "dev:devvit": "devvit playtest r/giftest01",
+    "dev:devvit": "devvit playtest r/PlayGIFEnigma",
     "dev": "concurrently -p \"[{name}]\" -n \"DEVVIT,GAME\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:devvit\" \"npm run dev:game\" --restart-tries 30",
     "build:react": "vite build",
     "build": "npm run build:react",

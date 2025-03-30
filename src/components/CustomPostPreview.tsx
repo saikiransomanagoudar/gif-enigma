@@ -46,11 +46,6 @@ export const CustomPostPreview = ({
       return {
         startGifUrl: startGifUrl,
         currentUsername: currentUsername,
-        decodeUrl: decodeUrl,
-        gifPreviewUrl: gifPreviewUrl,
-        heyUrl: heyUrl,
-        readyUrl: readyUrl,
-        toPreviewUrl: toPreviewUrl,
       };
     },
     {
@@ -112,82 +107,6 @@ export const CustomPostPreview = ({
     }
   );
 
-  // useAsync(
-  //   async () => {
-  //     if (!context.postId) return null;
-
-  //     // Get game ID from post relationship
-  //     const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-  //     if (!gameId) return null;
-
-  //     // Try to get preview data first
-  //     const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
-
-  //     if (previewData && previewData.maskedWord) {
-  //       return {
-  //         maskedWord: previewData.maskedWord,
-  //         gifs: JSON.parse(previewData.gifs || '[]'),
-  //         gameId: gameId,
-  //       };
-  //     }
-
-  //     // Fallback to game data
-  //     const gameData = await context.redis.hGetAll(`game:${gameId}`);
-  //     if (gameData && gameData.maskedWord) {
-  //       return {
-  //         maskedWord: gameData.maskedWord,
-  //         gifs: JSON.parse(gameData.gifs || '[]'),
-  //         gameId: gameId,
-  //       };
-  //     }
-
-  //     return null;
-  //   },
-  //   {
-  //     depends: [context.postId ?? ''],
-  //     finally: (data, error) => {
-  //       if (data && !error) {
-  //         setPreviewData(data);
-  //       }
-
-  //       if (error) {
-  //         console.error('Error loading game preview:', error);
-  //       }
-
-  //       setIsLoading(false);
-  //     },
-  //   }
-  // );
-
-  // //  Helper function to send navigation messages
-  // const safePostMessage = (message: any) => {
-  //   console.log(
-  //     '[DEBUG-NAV] CustomPostPreview: Sending navigation message:',
-  //     JSON.stringify(message)
-  //   );
-  //   // @ts-ignore - Ignore TypeScript errors
-  //   postMessage(message);
-  // };
-
-  // // Handle the case when WebView becomes ready and we have pending navigation
-  // if (isWebViewReady && pendingNavigation) {
-  //   console.log(
-  //     '[DEBUG-NAV] CustomPostPreview: WebView now ready, sending pending navigation to:',
-  //     pendingNavigation.page
-  //   );
-
-  //   safePostMessage({
-  //     type: 'NAVIGATE',
-  //     data: {
-  //       page: pendingNavigation.page,
-  //       params: pendingNavigation.gameId ? { gameId: pendingNavigation.gameId } : {},
-  //     },
-  //   });
-
-  //   // Clear pending navigation to prevent duplicate sends
-  //   setPendingNavigation(null);
-  // }
-
   const storeLandingPage = async () => {
     try {
       if (context.postId) {
@@ -201,9 +120,6 @@ export const CustomPostPreview = ({
     }
   };
 
-  // In CustomPostPreview.tsx
-  // In CustomPostPreview.tsx - update handlePlayGame function
-  // In CustomPostPreview.tsx - update handlePlayGame function
   const handlePlayGame = async () => {
     console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
 

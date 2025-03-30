@@ -29,9 +29,9 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     // Save the game data as a hash
     await tx.hSet(`game:${gameId}`, {
       word,
-      category: category || 'General', // Ensure non-null string
-      maskedWord: maskedWord || '', // Ensure non-null string
-      questionText: questionText || '', // Ensure non-null string
+      category: category || 'General',
+      maskedWord: maskedWord || '',
+      questionText: questionText || '',
       gifs: JSON.stringify(gifs),
       createdAt: Date.now().toString(),
       username,
@@ -243,9 +243,9 @@ export async function postCompletionComment(
     let completionText = '';
     
     if (numGuesses === 1) {
-      completionText = `I solved it on my **first attempt** with **${hintsDescription}**!`;
+      completionText = `I cracked it on my **first attempt** with **${hintsDescription}**!`;
     } else {
-      completionText = `I solved it in **${numGuesses} attempts** with **${hintsDescription}**!`;
+      completionText = `I cracked it in **${numGuesses} attempts** with **${hintsDescription}**!`;
     }
     
     console.log(`📝 [DEBUG] Comment to post: "${completionText}"`);
