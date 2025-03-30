@@ -12,12 +12,14 @@ const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length
 Devvit.addSchedulerJob({
   name: 'auto_create_post',
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
-    const context = rawContext as unknown as Context; // ✅ force cast
+    const context = rawContext as unknown as Context;
 
     console.log('⏱️ Running auto_create_post...');
 
     const category = pickRandom(categories);
     const inputType = pickRandom(inputTypes);
+
+    console.log(`[SERVER] Fetching recommendations for category: ${category}, type: ${inputType}, count: 10`);
 
     const recResult = await fetchGeminiRecommendations(context, category, inputType, 10);
     if (!recResult.success || !recResult.recommendations?.length) {
