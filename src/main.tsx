@@ -142,7 +142,7 @@ Devvit.addCustomPostType({
           const navStateKey = `navState:${context.postId || 'default'}`;
           const storedState = await context.redis.hGetAll(navStateKey);
 
-          if (storedState && storedState.page) {
+          if (storedState?.page) {
             console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
             return {
               page: storedState.page as Page,
@@ -151,7 +151,6 @@ Devvit.addCustomPostType({
           }
         } catch (redisError) {
           console.error('[DEBUG-STORAGE] Redis error in useAsync:', redisError);
-          // Don't throw - return a default instead
         }
 
         console.log('[DEBUG-STORAGE] No stored navigation state found, using default');
@@ -190,9 +189,16 @@ Devvit.addCustomPostType({
       onMessage: async (rawMessage: WebviewToBlockMessage) => {
         console.log('[DEBUG] main.tsx onMessage received:', rawMessage);
 
-        // Unwrap the devvit-message wrapper(s) (using a cast to any)
         let event: any;
         const messageAny = rawMessage as any;
+        if (context.postId && messageAny.data?.gameId) {
+          console.log(`[DEBUG] Validating post ${context.postId} owns game ${messageAny.data.gameId}`);
+          const postGameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+          if (postGameId !== messageAny.data.gameId) {
+            console.log('[DEBUG] Rejecting stale game data');
+            return;
+          }
+        }
         if (messageAny?.type === 'devvit-message') {
           if (messageAny.data?.type === 'devvit-message' && messageAny.data?.message) {
             // Double-wrapped scenario

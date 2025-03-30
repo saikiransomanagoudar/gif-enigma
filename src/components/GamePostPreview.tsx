@@ -38,6 +38,23 @@ export const GamePostPreview = ({
   const [isWebViewMounted, setIsWebViewMounted] = useState(false);
   const [usernameRetryCount, setUsernameRetryCount] = useState(0);
 
+  // Add this useAsync block to reset state when postId changes
+  useAsync(
+    async () => {
+      if (context.postId) {
+        console.log('[DEBUG] Post ID changed, resetting preview state');
+        setPreviewData({});
+        setLetterBoxes([]);
+        setHasCompletedGame(false);
+        setUsername('there');
+        setUsernameRetryCount(0);
+      }
+      return null;
+    },
+    {
+      depends: [context.postId ?? ''],
+    }
+  );
   useAsync(
     async () => {
       // Only retry if username is still default and we haven't tried too many times
@@ -253,13 +270,13 @@ export const GamePostPreview = ({
 
   const sendNavigation = (page: Page, gameId?: string) => {
     console.log('[DEBUG-NAV] GamePostPreview: Sending navigation message:', page, gameId);
-    
+
     postMessage({
       type: 'NAVIGATE',
       data: {
         page: page,
-        params: gameId ? { gameId } : undefined
-      }
+        params: gameId ? { gameId } : undefined,
+      },
     });
   };
 
@@ -285,7 +302,6 @@ export const GamePostPreview = ({
     }
   );
 
-  // Store game ID in Redis for persistence
   const storeGameId = async (gameId: string) => {
     try {
       if (context.postId) {
@@ -302,16 +318,16 @@ export const GamePostPreview = ({
 
   const handlePlayGame = async () => {
     if (previewData.gameId) {
+      await context.redis.del(`navState:${context.postId}`);
       console.log(
         '[DEBUG-NAV] GamePostPreview: handlePlayGame pressed, navigating to game page with gameId:',
         previewData.gameId
       );
-      
-      // Store the gameId in Redis for persistence
+
       await storeGameId(previewData.gameId);
-  
+
       onMount();
-      
+
       // Send navigation message
       sendNavigation('game', previewData.gameId);
     } else {
@@ -319,10 +335,13 @@ export const GamePostPreview = ({
       context.ui.showToast('Game not found');
     }
   };
-  
+
   const handleHowToPlay = async () => {
-    console.log('[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed, navigating to howToPlay page');
-    
+    await context.redis.del(`navState:${context.postId}`);
+    console.log(
+      '[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed, navigating to howToPlay page'
+    );
+
     // CRITICAL FIX: Clear any stored navigation state for this post first
     try {
       if (context.postId) {
@@ -333,30 +352,30 @@ export const GamePostPreview = ({
     } catch (error) {
       console.error('[DEBUG-NAV] Error clearing navigation state:', error);
     }
-    
+
     // Store new navigation state explicitly
     try {
       if (context.postId) {
         console.log('[DEBUG-NAV] GamePostPreview: Storing howToPlay in navigation state');
         await context.redis.hSet(`navState:${context.postId}`, {
-          page: 'howToPlay'
+          page: 'howToPlay',
         });
       }
     } catch (error) {
       console.error('[DEBUG-NAV] Error storing navigation state:', error);
     }
-    
+
     onMount();
-    
-    // Send the navigation message
+
     sendNavigation('howToPlay');
   };
-  
-  // Similarly update the handleShowResults function:
-  
+
   const handleShowResults = async () => {
-    console.log('[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to leaderboard page');
-    
+    await context.redis.del(`navState:${context.postId}`);
+    console.log(
+      '[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to leaderboard page'
+    );
+
     // CRITICAL FIX: Clear any stored navigation state for this post first
     try {
       if (context.postId) {
@@ -367,7 +386,7 @@ export const GamePostPreview = ({
     } catch (error) {
       console.error('[DEBUG-NAV] Error clearing navigation state:', error);
     }
-    
+
     // Store new navigation state explicitly
     if (previewData.gameId) {
       try {
@@ -375,13 +394,13 @@ export const GamePostPreview = ({
           console.log('[DEBUG-NAV] GamePostPreview: Storing leaderboard in navigation state');
           await context.redis.hSet(`navState:${context.postId}`, {
             page: 'leaderboard',
-            gameId: previewData.gameId
+            gameId: previewData.gameId,
           });
         }
       } catch (error) {
         console.error('[DEBUG-NAV] Error storing navigation state:', error);
       }
-      
+
       onMount();
       sendNavigation('leaderboard', previewData.gameId);
     } else {
@@ -429,7 +448,7 @@ export const GamePostPreview = ({
 
   console.log('[DEBUG-UI] GamePostPreview: Rendering with hasCompletedGame =', hasCompletedGame);
   const firstGif = getFirstGif();
-  
+
   if (previewData.gameId && username) {
     // Log the actual value from state
     console.log(`[DEBUG-FORCE] Original hasCompletedGame: ${hasCompletedGame}`);
