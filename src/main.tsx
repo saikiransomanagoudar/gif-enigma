@@ -1172,6 +1172,43 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
+  label: '📌 Post Welcome Message (Manual)',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    const alreadyPosted = await context.redis.get('mainCustomPreviewPosted');
+    if (alreadyPosted) {
+      context.ui.showToast('⚠️ Welcome post already exists.');
+      return;
+    }
+
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const post = await context.reddit.submitPost({
+      title: '🎮 Welcome to GIF Enigma!',
+      subredditName: subreddit.name,
+      preview: (
+        <CustomPostPreview
+          context={context}
+          onMount={() => {}}
+          postMessage={() => {}}
+          isWebViewReady={false}
+        />
+      ),
+    });
+
+    await context.redis.set('mainCustomPreviewPosted', 'true');
+    await context.redis.set('mainCustomPreviewPostId', post.id);
+
+    context.ui.showToast('✅ Welcome post created!');
+    context.ui.navigateTo(post.url);
+  },
+});
+
+
+
+
+
+Devvit.addMenuItem({
   label: '🔁 Test Auto Game Post (Manual)',
   location: 'subreddit',
   forUserType: 'moderator',
@@ -1193,13 +1230,14 @@ Devvit.addTrigger({
   onEvent: async (_event, context) => {
     const jobId = await context.scheduler.runJob({
       name: 'auto_create_post',
-      cron: '0 */4 * * *', // every 4 hours
+      cron: '*/1 * * * *', // every 1 minute
     });
-    console.log('✅ Scheduled auto_create_post job to run every 4hours:', jobId);
+    console.log('✅ Scheduled auto_create_post job to run every 1 minute:', jobId);
   },
 });
 
-// Devvit.addHook('onInstall', async (context) => {
+
+// '0 */4 * * *' Devvit.addHook('onInstall', async (context) => {
 //   await context.scheduler.runJob({
 //     name: 'auto_create_post',
 //     data: undefined,
