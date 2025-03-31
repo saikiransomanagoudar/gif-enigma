@@ -971,7 +971,38 @@ Devvit.addCustomPostType({
                 }
               }
 
-              // Trigger a refresh of the UI
+              try {
+                const gameResult = await getGame({ gameId: event.data.gameId }, context);
+                
+                if (gameResult.success && gameResult.game && gameResult.game.word) {
+                  // Calculate the score using the word from the game data
+                  const scoreData = calculateScore({
+                    word: gameResult.game.word,
+                    gifHintCount: playerState.gifHintCount || 0,
+                    revealedLetterCount: playerState.revealedLetters?.length || 0,
+                    timeTaken: event.data.timeTaken || 0
+                  });
+                  
+                  // Save the score
+                  await saveScore({
+                    username: event.data.username,
+                    gameId: event.data.gameId,
+                    score: scoreData.score,
+                    gifPenalty: scoreData.gifPenalty,
+                    wordPenalty: scoreData.wordPenalty,
+                    timeTaken: scoreData.timeTaken,
+                    timestamp: Date.now()
+                  }, context);
+                  
+                  console.log('✅ [DEBUG] Automatically calculated and saved score:', scoreData.score);
+                } else {
+                  console.log('⚠️ [DEBUG] Could not retrieve game data for score calculation');
+                }
+              } catch (scoreError) {
+                console.error('❌ [DEBUG] Error auto-calculating score:', scoreError);
+                // Don't fail the operation if score calculation fails
+              }
+
               setPostPreviewRefreshTrigger((prev) => prev + 1);
 
               postMessage({

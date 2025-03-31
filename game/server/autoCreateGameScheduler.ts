@@ -1,12 +1,14 @@
 import { Devvit, ScheduledJobEvent, JobContext, Context } from '@devvit/public-api';
 import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server.js';
 import { searchTenorGifs } from './tenorApi.server.js';
-import { saveGame } from './gameHandler.server.js';
+import { saveGame, saveScore, saveGameState } from './gameHandler.server.js';
 import type { CategoryType } from '../shared.js';
 
 const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'General'];
 const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+const SYSTEM_USERNAME = 'gif-enigma';
 
 Devvit.addSchedulerJob({
   name: 'auto_create_post',
@@ -68,6 +70,42 @@ Devvit.addSchedulerJob({
 
     if (saveResult.success) {
       console.log(`✅ Game created and posted with ID: ${saveResult.gameId}`);
+      try {
+        // First create a game state for the system user
+        const timestamp = Date.now();
+
+        await saveGameState(
+          {
+            gameId: saveResult.gameId || 'unknown',
+            username: SYSTEM_USERNAME,
+            playerState: {
+              gifHintCount: 0,  // System didn't use hints
+              revealedLetters: [],
+              guess: word,
+              lastPlayed: timestamp,
+              isCompleted: true  // Mark as completed
+            }
+          },
+          context
+        );
+        
+        await saveScore(
+          {
+            username: SYSTEM_USERNAME,
+            gameId: saveResult.gameId || 'unknown',
+            score: 10,
+            gifPenalty: 0,
+            wordPenalty: 0,
+            timeTaken: 0,
+            timestamp: timestamp
+          },
+          context
+        );
+        
+        console.log(`✅ Registered system completion and score for game: ${saveResult.gameId}`);
+      } catch (error) {
+        console.error('❌ Error registering system completion:', error);
+      }
     } else {
       console.error('❌ Failed to save game:', saveResult.error);
     }

@@ -109,11 +109,11 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Each question has 4 hidden GIFs as clues.',
-                        'Initially, only the first GIF is shown.',
-                        'If you need help, reveal more GIFs/Words as hints.',
+                        'Solve either user generated or system generated GIF enigmas in the feed. Each question will have 4 hidden GIFs as hints.',
+                        'First GIF is shown initially. Further GIFs are revealed as progressive hints that closely matches the secret word, but this comes at a cost of losing points.',
+                        'There are also word/phrase hints that reveal letters (costs more than GIF hints). If you need help, reveal more GIFs or word/phrase as hints.',
                         'Type your guess in the input field and submit.',
-                        'Score points and Win.',
+                        'If you guess correctly, you will earn points based on the number of hints used. Higher the hints, lower the points.',
                       ][index]
                     }
                   </ComicText>
@@ -153,10 +153,10 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Select a secret word for others to guess.',
-                        'Search for GIFs by trying to add them.',
-                        'Select 4 GIFs that match your secret word.',
-                        'Create a game, let others guess your word!',
+                        'Select a secret word/phrase from the recommended list of words/phrases for others to guess. You can cycle through the list.',
+                        'Your selected word/phrase will come with synonyms that serve as search query for GIFs.',
+                        'Select 4 GIFs (from Abstract to Direct match) for your secret word (choose wisely!).',
+                        'Create a game, and let others guess your word/phrase!',
                       ][index]
                     }
                   </ComicText>
@@ -173,14 +173,14 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 2 }}
         >
-          <motion.h3
+          {/* <motion.h3
             className="text-primary text-center text-2xl font-bold"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 2.2 }}
           >
             <ComicText>Decode the clues, manage your points, and crack the GIF enigma!</ComicText>
-          </motion.h3>
+          </motion.h3> */}
           <motion.button
             onClick={() => onNavigate('landing')}
             className="transform cursor-pointer rounded-full bg-[#E8E5DA] px-8 py-4 text-lg text-white shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105"
