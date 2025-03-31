@@ -518,7 +518,7 @@ export const GamePostPreview = ({
               alignment="center middle"
             >
               <text color="#FFFFFF" weight="bold">
-                How This Game Works ❓
+                How To Play? 🤔
               </text>
             </hstack>
           </hstack>
@@ -534,7 +534,7 @@ export const GamePostPreview = ({
                 alignment="center middle"
               >
                 <text color="#FFFFFF" weight="bold">
-                  How This Game Works 🤔
+                  How To Play? 🤔
                 </text>
               </hstack>
               <hstack
