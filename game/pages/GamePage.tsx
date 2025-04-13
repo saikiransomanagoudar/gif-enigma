@@ -69,7 +69,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
-    // Detect dark mode
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
     const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
@@ -80,11 +79,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
-  // Set up initial game page load animations and event handlers
   useEffect(() => {
-    console.log('GamePage mounted with propGameId:', propGameId);
     if (!propGameId) {
-      console.error('Error: GamePage mounted without a gameId');
       return;
     }
 
@@ -99,8 +95,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     setIsPageLoaded(true);
     animatePageElements();
     setGameStartTime(Date.now());
-
-    console.log('Directly requesting game data for ID:', propGameId);
     window.parent.postMessage(
       {
         type: 'GET_GAME',
@@ -108,29 +102,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       },
       '*'
     );
-    // Get user info if available
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
-
-    // Load previously played game IDs from localStorage
     loadPlayedGameIds();
-    console.log('🏆 [DEBUG] Marking game completed for:', username);
 
-    // Set up main message handler
     const handleMessage = (event: MessageEvent) => {
-      console.log('Message event received:', event);
-      console.log('Raw event data:', event.data);
-
-      // Unwrap the message if it's wrapped in a devvit envelope
       let actualMessage = event.data;
       if (actualMessage && actualMessage.type === 'devvit-message' && actualMessage.data?.message) {
         actualMessage = actualMessage.data.message;
-        console.log('Unwrapped message:', actualMessage);
-      } else {
-        console.log('Message is not wrapped; using raw message:', actualMessage);
       }
-
       if (actualMessage.type === 'GET_GAME_RESULT') {
-        console.log('GET_GAME_RESULT received:', actualMessage);
         setIsLoading(false);
 
         if (actualMessage.success && actualMessage.game) {
@@ -142,20 +122,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setGifHintCount(1);
           setIsCorrect(null);
 
-          // If this is a new game, add it to played games
           addToPlayedGames(loadedGameData.id);
         } else {
           setError(actualMessage.error || 'Game could not be loaded');
         }
       }
 
-      // Handle user data
       if (actualMessage.type === 'GET_CURRENT_USER_RESULT') {
         if (actualMessage.success && actualMessage.user?.username) {
           setUsername(actualMessage.user.username);
-          console.log('✅ [DEBUG] Set username to:', actualMessage.user.username);
         } else {
-          console.warn('⚠️ [DEBUG] No username found, using anonymous');
           setUsername('anonymous');
         }
       }
@@ -184,20 +160,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         );
       }
 
-      // Handle initialization
       if (actualMessage.type === 'INIT_RESPONSE') {
-        console.log('INIT_RESPONSE received:', actualMessage);
-
         if (gameIdRef.current) {
-          console.log('Using gameId from props:', gameIdRef.current);
           setGameId(gameIdRef.current);
           window.parent.postMessage(
             { type: 'GET_GAME_ID', data: { gameId: gameIdRef.current } },
             '*'
           );
         } else if (actualMessage.data?.gameId) {
-          // Only proceed if propGameId wasn't already set
-          console.log('Using gameId from INIT_RESPONSE:', actualMessage.data.gameId);
           setGameId(actualMessage.data.gameId);
           window.parent.postMessage(
             { type: 'GET_GAME_ID', data: { gameId: actualMessage.data.gameId } },
@@ -208,9 +178,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
 
-      // Handle random game result
       if (actualMessage.type === 'GET_RANDOM_GAME_RESULT') {
-        console.log('GET_RANDOM_GAME_RESULT received:', actualMessage);
         setIsLoading(false);
 
         if (actualMessage.success && actualMessage.result && actualMessage.result.game) {
@@ -220,7 +188,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             !Array.isArray(randomGameData.gifs) ||
             randomGameData.gifs.length === 0
           ) {
-            console.log('Game has no valid GIFs, requesting another game');
             requestRandomGame();
             return;
           }
@@ -233,7 +200,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setGifHintCount(1);
           setIsCorrect(null);
 
-          // Add to played games
           addToPlayedGames(randomGameData.id);
         } else {
           setIsLoading(false);
@@ -241,14 +207,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
 
-      // Handle game state loading
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
-        console.log('GET_GAME_STATE_RESULT received:', actualMessage);
-
         if (actualMessage.success && actualMessage.state?.playerState) {
           const playerState = actualMessage.state.playerState;
 
-          // Restore game state
           if (typeof playerState.gifHintCount === 'number') {
             setGifHintCount(playerState.gifHintCount);
           }
@@ -265,7 +227,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             setGameFlowState('completed');
             setGameCompleted(true);
 
-            // Load leaderboard for completed game
             window.parent.postMessage(
               {
                 type: 'GET_GAME_LEADERBOARD',
@@ -278,28 +239,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
 
       if (actualMessage.type === 'MARK_GAME_COMPLETED_RESULT') {
-        console.log('MARK_GAME_COMPLETED_RESULT received:', actualMessage);
-
         if (actualMessage.success) {
-          // Successfully marked as completed on the server
           setGameCompleted(true);
-
-          // Additional actions after successful marking as completed
-          console.log('Game marked as completed successfully');
-        } else {
-          console.error('Failed to mark game as completed:', actualMessage.error);
         }
       }
 
-      // Handle score calculation
       if (actualMessage.type === 'CALCULATE_SCORE_RESULT') {
-        console.log('CALCULATE_SCORE_RESULT received:', actualMessage);
-
         if (actualMessage.success && actualMessage.result) {
           const score = actualMessage.result;
-          console.log('💾 [DEBUG] Saving score for username:', username);
-
-          // Use the server-calculated score
           setFinalScore({
             username: username || 'anonymous',
             gameId: gameData?.id || '',
@@ -310,7 +257,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             timestamp: Date.now(),
           });
 
-          // Save the score
           window.parent.postMessage(
             {
               type: 'SAVE_SCORE',
@@ -326,15 +272,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
 
-      // Handle score saving
       if (actualMessage.type === 'SAVE_SCORE_RESULT') {
-        console.log('SAVE_SCORE_RESULT received:', actualMessage);
         setIsScoreSaving(false);
 
         if (actualMessage.success) {
-          console.log('Score saved successfully');
-
-          // Get leaderboard
           window.parent.postMessage(
             {
               type: 'GET_GAME_LEADERBOARD',
@@ -342,15 +283,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             },
             '*'
           );
-        } else {
-          console.error('Error saving score:', actualMessage.error);
         }
       }
 
-      // Handle leaderboard data
       if (actualMessage.type === 'GET_GAME_LEADERBOARD_RESULT') {
-        console.log('GET_GAME_LEADERBOARD_RESULT received:', actualMessage);
-
         if (
           actualMessage.success &&
           actualMessage.result &&
@@ -361,17 +297,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
       if (actualMessage.type === 'HAS_USER_COMPLETED_GAME_RESULT') {
-        console.log('HAS_USER_COMPLETED_GAME_RESULT received:', actualMessage);
-
         if (actualMessage.success && actualMessage.completed) {
-          // User has already completed this game
           setGameCompleted(true);
           setGameFlowState('completed');
-
-          // You may want to show a message or redirect
-          console.log('This game has already been completed by the user');
-
-          // Optionally load the leaderboard
           window.parent.postMessage(
             {
               type: 'GET_GAME_LEADERBOARD',
@@ -384,25 +312,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     };
 
     window.addEventListener('message', handleMessage);
-    console.log('Message event listener added');
 
-    // Cleanup the event listener on unmount
     return () => {
       cancelAnimationFrame(animationTimeout);
       window.removeEventListener('message', handleMessage);
-      console.log('Message event listener removed');
     };
   }, [propGameId]);
 
-  // Save game state when it changes
-  // Replace or update your existing game state saving useEffect
   useEffect(() => {
-    // Only save state if we have both game data and username
     if (gameData && username) {
-      // Convert Set to Array for storage
       const revealedLettersArray = Array.from(revealedLetters);
-
-      // Create state object that matches our backend structure
       const playerState = {
         gifHintCount,
         revealedLetters: revealedLettersArray,
@@ -411,7 +330,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         isCompleted: gameFlowState === 'won' || gameFlowState === 'completed',
       };
 
-      // Send save state message
       window.parent.postMessage(
         {
           type: 'SAVE_GAME_STATE',
@@ -444,7 +362,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             setGifVisibility(newVisibility);
             setUsedGifHints(playerState.gifHintCount);
           }
-
           if (
             Array.isArray(playerState.revealedLetters) &&
             playerState.revealedLetters.length > 0
@@ -541,16 +458,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   useEffect(() => {
     if (isCorrect === true) {
-      console.log('Correct answer detected! Showing celebration');
       handleCorrectGuess();
     }
     if (isCorrect === false) {
-      console.log('Incorrect answer detected! Showing shake animation');
       handleIncorrectGuess();
     }
   }, [isCorrect]);
 
-  // Helper functions
   const animatePageElements = () => {
     setTimeout(() => {
       if (headerRef.current) {
@@ -615,7 +529,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       try {
         setPlayedGameIds(JSON.parse(savedGameIds));
       } catch (e) {
-        console.error('Error parsing playedGameIds from localStorage:', e);
         localStorage.removeItem('playedGameIds');
       }
     }
@@ -624,23 +537,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const addToPlayedGames = (newGameId: string) => {
     if (!newGameId) return;
 
-    // Add to played games list and save to localStorage
     const updatedGameIds = [...playedGameIds, newGameId];
     setPlayedGameIds(updatedGameIds);
 
     try {
       localStorage.setItem('playedGameIds', JSON.stringify(updatedGameIds));
-    } catch (e) {
-      console.error('Error saving playedGameIds to localStorage:', e);
-    }
+    } catch (e) {}
   };
 
-  // Add this to your GamePage component
   const requestRandomGame = () => {
-    console.log('Requesting a random game with valid GIFs');
     setIsLoading(true);
-
-    // Request a random game that the user hasn't completed
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
@@ -656,19 +562,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const handleCorrectGuess = () => {
     if (gameData) {
       const currentUsername = username || 'anonymous';
-      console.log('🏆 [DEBUG] Marking game completed for:', currentUsername);
-
       setGameFlowState('won');
-
-      // Calculate hints used for scoring
       const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
       const originalRevealedLettersSize = revealedLetters.size;
 
-      // Determine if it's a word or phrase for correct hint type labeling
       const isPhrase = gameData.word.includes(' ');
       const hintTypeLabel = isPhrase ? 'Phrase' : 'Word';
 
-      // 1. Save game state as completed
       const playerState = {
         gifHintCount,
         revealedLetters: Array.from(revealedLetters),
@@ -684,16 +584,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         const wordLength = cleanWord.length;
 
         if (wordLength >= 5 && wordLength <= 7) {
-          // For 5-7 letter words, each hint reveals 2 letters
           wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
         } else if (wordLength >= 8 && wordLength <= 10) {
-          // For 8-10 letter words, each hint reveals 2 letters
           wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
         } else if (wordLength >= 11 && wordLength <= 15) {
-          // For 11-15 letter words, each hint reveals 2 letters
           wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
         } else if (wordLength >= 16) {
-          // For 16+ letter words, each hint reveals 3 letters
           wordHintsUsed = Math.ceil(originalRevealedLettersSize / 3);
         }
       }
@@ -710,7 +606,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
 
-      // 2. Mark as completed (this will update completed games list)
       window.parent.postMessage(
         {
           type: 'MARK_GAME_COMPLETED',
@@ -738,17 +633,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
 
-      // Apply green background to answer boxes
       const boxes = document.querySelectorAll('.answer-box');
       boxes.forEach((box) => {
         (box as HTMLElement).style.backgroundColor = '#86efac'; // Light green
         (box as HTMLElement).style.transition = 'background-color 0.5s ease';
       });
-
-      // Create confetti
       createConfetti();
-
-      // Show success message
       setTimeout(() => {
         window.alert('Congratulations! You guessed the secret word!');
       }, 100);
@@ -756,52 +646,37 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleIncorrectGuess = () => {
-    // Create animated modal for incorrect guess
     showToastNotification();
 
-    // Apply vibration animation to answer boxes with stronger effect
     const container = document.getElementById('answer-boxes-container');
     if (container) {
-      // Remove previous animation classes
       container.classList.remove('animate-vibrate');
 
-      // Force reflow to reset animation
       void container.offsetWidth;
-
-      // Apply new animation with stronger effect
       container.style.animation = 'vibrate 0.6s cubic-bezier(.36,.07,.19,.97) both';
 
-      // Try browser vibration API
-      try {
-        if (navigator.vibrate) {
-          navigator.vibrate([100, 50, 100]);
-        }
-      } catch (e) {
-        console.log('Vibration not supported');
+      if (navigator.vibrate) {
+        navigator.vibrate([100, 50, 100]);
       }
 
-      // Clean up animation after it completes
       setTimeout(() => {
         container.style.animation = 'none';
       }, 600);
     }
 
-    // Apply red background to answer boxes
     const boxes = document.querySelectorAll('.answer-box');
     boxes.forEach((box, index) => {
       setTimeout(() => {
-        // Flash effect
         (box as HTMLElement).style.backgroundColor = '#f87171'; // Brighter red
         (box as HTMLElement).style.transform = 'scale(1.1)';
         (box as HTMLElement).style.transition = 'all 0.2s cubic-bezier(.36,.07,.19,.97)';
 
-        // Fade to lighter red
         setTimeout(() => {
           (box as HTMLElement).style.backgroundColor = '#fecaca'; // Light red
           (box as HTMLElement).style.transform = 'scale(1)';
           (box as HTMLElement).style.transition = 'all 0.3s ease';
         }, 200);
-      }, index * 30); // Staggered timing for wave effect
+      }, index * 30);
     });
   };
 
@@ -827,21 +702,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       confetti.style.left = `${Math.random() * 100}%`;
       confetti.style.top = '-10px';
 
-      // Set inline animation style
       confetti.style.animation = 'confetti-fall 4s linear forwards';
       confetti.style.animationDelay = `${Math.random() * 2}s`;
 
       confettiContainer.appendChild(confetti);
     }
 
-    // Clean up
     setTimeout(() => {
       if (document.body.contains(confettiContainer)) {
-        // Fade out
         confettiContainer.style.opacity = '0';
         confettiContainer.style.transition = 'opacity 1s ease';
 
-        // Then remove
         setTimeout(() => {
           if (document.body.contains(confettiContainer)) {
             document.body.removeChild(confettiContainer);
@@ -854,7 +725,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const answer = gameData ? gameData.word.toUpperCase() : '';
 
   const handleBackClick = () => {
-    // Fade out elements before navigating
     if (headerRef.current) {
       transitions.fadeOut(headerRef.current, { duration: 300 });
     }
@@ -875,7 +745,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       transitions.fadeOut(bottomBarRef.current, { duration: 300, delay: 200 });
     }
 
-    // Navigate after animations complete
     setTimeout(() => {
       onNavigate('landing');
     }, 600);
@@ -885,16 +754,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const newGuess = e.target.value.toUpperCase();
     setGuess(newGuess);
 
-    console.log('Guess changed to:', newGuess);
-
-    // Reset previous guess result states
     setIsCorrect(null);
     setIsShaking(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && gameData && !isLoading && guess.length > 0) {
-      console.log('Enter key pressed, triggering guess');
       handleGuess();
     }
   };
@@ -904,13 +769,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
     const indices = answer.split('').map((_, i) => i);
     const unrevealed = indices.filter((i) => answer[i] !== ' ' && !revealedLetters.has(i));
-
     if (unrevealed.length === 0) return;
-
     const cleanWord = answer.replace(/\s+/g, '');
     const wordLength = cleanWord.length;
 
-    let revealCount = 2; // Default for most cases
+    let revealCount = 2;
     let maxHints = 1;
 
     if (wordLength >= 5 && wordLength <= 7) {
@@ -926,18 +789,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       revealCount = 3;
       maxHints = 3;
     }
-
-    // Count how many hints were already used (divide by revealCount to get hint count)
     const hintsUsedSoFar = Math.ceil(revealedLetters.size / revealCount);
-
-    // Check if we've used all allowed hints
     if (hintsUsedSoFar >= maxHints) {
-      // Optional: Show a message that no more hints are available
       window.alert(`No more letter hints available for this word length (${wordLength} letters).`);
       return;
     }
 
-    // Reveal only the specified number of letters
     const newRevealed = new Set(revealedLetters);
     revealCount = Math.min(revealCount, unrevealed.length);
 
@@ -951,12 +808,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleGuess = () => {
-    console.log('handleGuess called');
-
     setGuessCount((prevCount) => prevCount + 1);
 
     if (!gameData || !gameData.word) {
-      console.log('No game data available');
       return;
     }
 
@@ -964,20 +818,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const cleanedAnswer = gameData.word.replace(/\s+/g, '').toUpperCase();
 
     if (cleanedGuess === cleanedAnswer) {
-      console.log('CORRECT ANSWER!');
-
       const originalRevealedCount = revealedLetters.size;
       setIsCorrect(true);
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 3000);
-
-      // Just update game state to completed
       setGameFlowState('won');
-
-      // No more client-side score calculation here
-      // handleCorrectGuess will be called due to the gameFlowState change
-
-      // Reveal all letters for UI
       const allIndices = new Set<number>();
       for (let i = 0; i < gameData.word.length; i++) {
         if (gameData.word[i] !== ' ') {
@@ -1000,10 +845,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
     } else {
-      console.log('INCORRECT ANSWER!');
       setIsCorrect(false);
-
-      // Show error popup
       setShowErrorPopup(true);
       setTimeout(() => setShowErrorPopup(false), 2000);
     }
@@ -1016,35 +858,26 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       gameData.gifs.length > 1 &&
       gifHintCount < gameData.gifs.length
     ) {
-      // Create variable to reference GIF container
       const gifContainer = document.querySelector('.gif-container');
-
-      // Apply fadeOut transition to GIF area
       if (gifContainer) {
-        // First fade out
         gifContainer.classList.add('opacity-0');
         (gifContainer as HTMLElement).style.transition = 'opacity 0.3s ease-out';
 
-        // After fadeOut is complete, update state and fade back in
         setTimeout(() => {
           setGifHintCount((current) => current + 1);
           unlockGifHint(gifHintCount - 1);
 
-          // After state update, fade back in
           setTimeout(() => {
             gifContainer.classList.remove('opacity-0');
           }, 50);
         }, 300);
       } else {
-        // Fallback if container isn't found
         setGifHintCount((current) => current + 1);
       }
     }
   };
 
   const renderGifArea = () => {
-    console.log('Game data:', gameData);
-    console.log('GIF URLs:', gameData?.gifs);
     if (!gameData) {
       return (
         <div className="flex h-56 items-center justify-center md:h-64 lg:h-72">
@@ -1069,25 +902,23 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       <div className="gif-container relative grid h-56 w-full max-w-md grid-cols-2 grid-rows-2 gap-2 transition-all duration-500 ease-in-out md:h-64 lg:h-72">
         {(() => {
           if (gifHintCount === 1) {
-            // 1) First GIF occupies entire 2×2 area
             return (
               <img
                 src={gifUrls[0]}
                 alt="GIF 1"
-                className="col-span-2 row-span-2 h-full w-full rounded-xl object-cover"
+                className="col-span-2 row-span-2 h-full w-full rounded-2xl object-contain"
                 onError={(e) => {
                   e.currentTarget.src = '/create-page/fallback.gif';
                 }}
               />
             );
           } else if (gifHintCount === 2) {
-            // 2) Two GIFs side by side
             return (
               <>
                 <img
                   src={gifUrls[0]}
                   alt="GIF 1"
-                  className="col-span-1 row-span-2 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-2 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1095,7 +926,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <img
                   src={gifUrls[1]}
                   alt="GIF 2"
-                  className="col-span-1 row-span-2 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-2 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1103,14 +934,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               </>
             );
           } else if (gifHintCount === 3) {
-            // 3) "Y shape": top row = first two, bottom row = 3rd spanning both columns
             return (
               <>
-                {/* Top row */}
                 <img
                   src={gifUrls[0]}
                   alt="GIF 1"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1118,18 +947,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <img
                   src={gifUrls[1]}
                   alt="GIF 2"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
                 />
-                {/* Bottom row: 3rd GIF spanning both columns with styling to match size of top GIFs */}
                 <div className="col-span-2 row-span-1 flex items-center justify-center">
                   <div className="flex h-full w-1/2 items-center justify-center">
                     <img
                       src={gifUrls[2]}
                       alt="GIF 3"
-                      className="h-full w-full rounded-xl object-cover"
+                      className="h-full w-full rounded-xl object-contain"
                       onError={(e) => {
                         e.currentTarget.src = '/create-page/fallback.gif';
                       }}
@@ -1139,13 +967,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               </>
             );
           } else {
-            // 4) Full 2×2: each GIF in its own cell (like Windows logo)
             return (
               <>
                 <img
                   src={gifUrls[0]}
                   alt="GIF 1"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1153,7 +980,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <img
                   src={gifUrls[1]}
                   alt="GIF 2"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1161,7 +988,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <img
                   src={gifUrls[2]}
                   alt="GIF 3"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1169,7 +996,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 <img
                   src={gifUrls[3]}
                   alt="GIF 4"
-                  className="col-span-1 row-span-1 h-full w-full rounded-xl object-cover"
+                  className="col-span-1 row-span-1 h-full w-full rounded-2xl object-contain"
                   onError={(e) => {
                     e.currentTarget.src = '/create-page/fallback.gif';
                   }}
@@ -1184,11 +1011,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   const renderAnswerBoxes = () => {
     if (!answer) return null;
-
     const guessChars = guess.replace(/\s+/g, '').toUpperCase().split('');
-
-    // Log animation state
-    console.log('Animation states:', { isShaking });
 
     return (
       <div
@@ -1201,11 +1024,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           if (ch === ' ') return <div key={`space-${idx}`} className="w-4" />;
 
           const isRevealed = revealedLetters.has(idx);
-          // Count non-space characters before this index to match with guess index
           const nonSpacesBefore = answer.substring(0, idx).replace(/\s+/g, '').length;
           const guessChar = guessChars[nonSpacesBefore];
 
-          // Determine what to display in the box
           let displayChar = '';
           if (isRevealed) {
             displayChar = ch;
@@ -1215,7 +1036,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             displayChar = ch;
           }
 
-          // Determine box color
           let bgColor = 'bg-gray-200';
           if (isCorrect === true) {
             bgColor = 'bg-green-200';
@@ -1241,16 +1061,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const showToastNotification = () => {
-    // Create container
     const notificationContainer = document.createElement('div');
     notificationContainer.className =
       'fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-gradient-to-r from-red-600 to-red-500 p-4 rounded-lg shadow-lg z-50 opacity-0 transition-all duration-300';
     document.body.appendChild(notificationContainer);
-
-    // Create React root
     const root = createRoot(notificationContainer);
 
-    // Render with React
     root.render(
       <div className="flex items-center gap-3">
         <span className="text-2xl">❌</span>
@@ -1265,23 +1081,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       </div>
     );
 
-    // Show with animation
     setTimeout(() => {
       notificationContainer.classList.add('opacity-100');
       notificationContainer.classList.add('animate-vibrate');
 
-      // Hide after delay
       setTimeout(() => {
         notificationContainer.classList.remove('opacity-100');
         notificationContainer.classList.add('opacity-0');
 
-        // Remove from DOM
         setTimeout(() => {
           if (document.body.contains(notificationContainer)) {
-            // Unmount React component
             root.unmount();
 
-            // Remove container
             document.body.removeChild(notificationContainer);
           }
         }, 300);
@@ -1290,90 +1101,72 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const renderContent = () => {
-    if (isLoading) {
-      return (
-        <div className="flex h-56 flex-col items-center justify-center md:h-64 lg:h-72">
-          <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-          <ComicText size={0.6} color={colors.primary}>
-            Loading game...
-          </ComicText>
-        </div>
-      );
-    }
+    // if (isLoading) {
+    //   return (
+    //     <div className="flex h-56 flex-col items-center justify-center md:h-64 lg:h-72">
+    //       <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+    //       <ComicText size={0.6} color={colors.primary}>
+    //         Loading game...
+    //       </ComicText>
+    //     </div>
+    //   );
+    // }
 
-    if (error) {
-      return (
-        <div className="flex h-56 flex-col items-center justify-center space-y-4 md:h-64 lg:h-72">
-          <ComicText size={0.6} color="red">
-            {error}
-          </ComicText>
-          <button
-            onClick={() => onNavigate('landing')}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white transition-all hover:-translate-y-1 hover:bg-blue-700"
-          >
-            <ComicText size={0.6} color="white">
-              Back to Home
-            </ComicText>
-          </button>
-        </div>
-      );
-    }
+    // if (error) {
+    //   return (
+    //     <div className="flex h-56 flex-col items-center justify-center space-y-4 md:h-64 lg:h-72">
+    //       <ComicText size={0.6} color="red">
+    //         {error}
+    //       </ComicText>
+    //       <button
+    //         onClick={() => onNavigate('landing')}
+    //         className="rounded-lg bg-blue-600 px-4 py-2 text-white transition-all hover:-translate-y-1 hover:bg-blue-700"
+    //       >
+    //         <ComicText size={0.6} color="white">
+    //           Back to Home
+    //         </ComicText>
+    //       </button>
+    //     </div>
+    //   );
+    // }
 
-    if (!gameData || !gameData.gifs || gameData.gifs.length === 0) {
-      return (
-        <div className="flex h-56 flex-col items-center justify-center space-y-4 p-4 text-center md:h-64 lg:h-72">
-          <div className="text-4xl">🎮</div>
-          <ComicText size={0.8} color="#fff">
-            No games available right now!
-          </ComicText>
-          <ComicText size={0.6} color="#aaa">
-            Why not create your own fun challenge?
-          </ComicText>
-          <button
-            onClick={() => onNavigate('create')}
-            className="mt-4 cursor-pointer rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2 text-white shadow-lg transition-all hover:-translate-y-1 hover:scale-105 hover:shadow-xl"
-          >
-            <div className="flex items-center gap-2">
-              <span>✨</span>
-              <ComicText size={0.7} color="white">
-                Create a Game
-              </ComicText>
-            </div>
-          </button>
-        </div>
-      );
-    }
+    // if (!gameData || !gameData.gifs || gameData.gifs.length === 0) {
+    //   return (
+    //     <div className="flex h-56 flex-col items-center justify-center space-y-4 p-4 text-center md:h-64 lg:h-72">
+    //       <div className="text-4xl">🎮</div>
+    //       <ComicText size={0.8} color="#fff">
+    //         No games available right now!
+    //       </ComicText>
+    //       <ComicText size={0.6} color="#aaa">
+    //         Why not create your own fun challenge?
+    //       </ComicText>
+    //       <button
+    //         onClick={() => onNavigate('create')}
+    //         className="mt-4 cursor-pointer rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2 text-white shadow-lg transition-all hover:-translate-y-1 hover:scale-105 hover:shadow-xl"
+    //       >
+    //         <div className="flex items-center gap-2">
+    //           <span>✨</span>
+    //           <ComicText size={0.7} color="white">
+    //             Create a Game
+    //           </ComicText>
+    //         </div>
+    //       </button>
+    //     </div>
+    //   );
+    // }
 
     return renderGifArea();
   };
 
   const handleNewGame = () => {
     onNavigate('landing');
-    // Option 2: Direct fetch of a new unplayed game
-    // if (username) {
-    //   window.parent.postMessage(
-    //     {
-    //       type: 'GET_RANDOM_GAME',
-    //       data: {
-    //         username: username || 'anonymous',
-    //         preferUserCreated: true,
-    //         // No need to specify excludeIds as the backend will handle this
-    //       },
-    //     },
-    //     '*'
-    //   );
-    // }
   };
 
   if (gameFlowState === 'won') {
     return (
       <>
-        {/* Backdrop overlay with blur */}
         <div className="bg-opacity-60 fixed inset-0 z-40 bg-black backdrop-blur-sm transition-all duration-500"></div>
-
-        {/* Modal container */}
         <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
-          {/* Floating celebration elements */}
           <div
             className="animate-float-up absolute h-8 w-8 rounded-full bg-yellow-400 opacity-30"
             style={{ left: '20%', top: '30%' }}
@@ -1395,21 +1188,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             style={{ left: '40%', top: '20%', animationDelay: '0.8s' }}
           ></div>
 
-          {/* Modal card */}
           <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-md overflow-hidden rounded-xl border-2 border-blue-600 bg-gradient-to-b from-gray-900 to-blue-900 shadow-2xl">
-            {/* Header */}
             <div className="relative border-b border-blue-800 p-6 text-center">
-              {/* Background glow - Changed to darker color that contrasts better with gold text */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="bg-opacity-70 h-36 w-36 rounded-full bg-blue-900 blur-xl"></div>
               </div>
 
-              {/* Emoji */}
               <div className="mb-2 inline-block -rotate-3 transform">
                 <div className="mb-1 text-5xl">🎉</div>
               </div>
-              
-              {/* Header text - Added text shadow and background for better visibility */}
+
               <div className="relative z-10">
                 <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-4 py-2 shadow-lg">
                   <ComicText size={1.6} color="#FFD700">
@@ -1423,9 +1211,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 </div>
               </div>
             </div>
-            {/* Content */}
             <div className="p-6 text-center">
-              {/* Answer display */}
               <div className="bg-opacity-50 mb-6 rounded-lg border border-blue-700 bg-blue-900 p-4">
                 <ComicText size={0.7} color="#fff">
                   The answer was:
@@ -1435,7 +1221,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 </div>
               </div>
 
-              {/* Loading or buttons */}
               {isScoreSaving ? (
                 <div className="flex flex-col items-center justify-center p-4">
                   <div className="mb-3 h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
@@ -1761,7 +1546,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
         `}
       </style>
-      {/* Header */}
       <header
         ref={headerRef}
         className="mb-5 flex w-full max-w-4xl translate-y-4 transform items-center justify-between opacity-0 transition-all duration-500"
@@ -1782,7 +1566,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText>
         </div>
       </header>
-      {/* Question */}
       {!isLoading && !error && gameData && (
         <div
           ref={questionRef}
@@ -1794,7 +1577,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText> */}
         </div>
       )}
-      {/* GIF Content or Loading/Error */}
       <div
         ref={gifAreaRef}
         className="flex w-full flex-1 translate-y-4 transform flex-col items-center justify-center opacity-0 transition-all duration-500"
@@ -1814,10 +1596,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         >
           <ComicText size={0.6} color="white">
             {gifHintCount === 1 && (gameData?.gifs?.length ?? 0) > 1
-              ? // Initial state before any clicks
-                'GIF Hint'
-              : // After first click, show the counter
-                `GIF Hint (${gifHintCount}/${gameData?.gifs?.length || 4})`}
+              ? 'GIF Hint'
+              : `GIF Hint (${gifHintCount}/${gameData?.gifs?.length || 4})`}
           </ComicText>
         </button>
       </div>
@@ -1838,14 +1618,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </ComicText>
         </div>
       )}
-      {/* Answer Boxes */}
       <div
         ref={answerBoxesContainerRef}
         className="mt-2 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
       >
         {renderAnswerBoxes()}
       </div>
-      {/* Bottom Bar */}
       <div
         ref={bottomBarRef}
         className="mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
@@ -1875,10 +1653,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             </div>
           </div>
         </div>
-
         <button
           onClick={() => {
-            console.log('Guess button clicked');
             handleGuess();
           }}
           disabled={!gameData || isLoading || guess.length === 0}
@@ -1929,7 +1705,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 </div>
               </div>
             ) : (
-              // Show a placeholder if score calculation failed
               <div className="mb-4 rounded-lg bg-blue-50 p-4">
                 <h3 className="mb-2 text-xl font-semibold text-blue-700">Score Calculation</h3>
                 <p className="text-sm text-gray-600">Score details are not available.</p>

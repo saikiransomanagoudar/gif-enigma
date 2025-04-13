@@ -1,4 +1,3 @@
-// types.ts
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
 export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
 
@@ -177,7 +176,6 @@ export interface TenorGifResult {
   content_description: string;
 }
 
-// Message payload types
 export interface PreviewMessagePayload {
   type: 'previewUpdate' | 'previewRequest';
   data: {
@@ -204,7 +202,6 @@ export type APIResponse<T = any> =
   | { success: true; data: T }
   | ErrorResponse;
 
-// Type guards
 export function isGameData(obj: any): obj is GameData {
   return obj && typeof obj === 'object' && 'word' in obj && 'gifs' in obj;
 }
@@ -213,7 +210,6 @@ export function isPreviewData(obj: any): obj is GamePreviewData {
   return obj && typeof obj === 'object' && 'maskedWord' in obj && 'gifUrls' in obj;
 }
 
-// In types.ts
 export function isLeaderboardEntry(obj: any): obj is LeaderboardEntry {
   return obj && typeof obj === 'object' && 'username' in obj && 'score' in obj;
 }

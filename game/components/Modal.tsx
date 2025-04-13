@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { colors } from '../lib/styles';
-import { ComicText } from '../lib/Fonts';
+import { ComicText } from '../lib/fonts';
 
 interface ModalProps {
   title: string;
@@ -24,20 +24,20 @@ export const Modal: React.FC<ModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-  
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         onConfirm();
       }
     };
-  
+
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onConfirm]);
-  
+
   useEffect(() => {
     if (isOpen) {
       setVisible(true);

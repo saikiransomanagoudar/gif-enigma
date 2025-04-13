@@ -1,14 +1,14 @@
 export const colors = {
     // background: "#E8E5DA",
-    cardBackground: "#272729", // Slightly lighter background for cards
-    primary: "#FF4500",       // Reddit orange
-    secondary: "#0079D3",     // Reddit blue
-    textPrimary: "#D7DADC",   // Light text
-    textSecondary: "#818384", // Gray text
-    border: "#343536",        // Border color
-    success: "#46D160",       // Green for success
-    error: "#FF585B",         // Red for errors
-    warning: "#FFB000",       // Yellow for warnings
+    cardBackground: "#272729",
+    primary: "#FF4500",
+    secondary: "#0079D3",
+    textPrimary: "#D7DADC",
+    textSecondary: "#818384",
+    border: "#343536",
+    success: "#46D160",
+    error: "#FF585B",
+    warning: "#FFB000",
   };
   
   export const spacing = {

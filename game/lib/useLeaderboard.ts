@@ -31,14 +31,9 @@ export const useLeaderboard = ({
     error: null,
   });
 
-  // Fetch leaderboard data
-  // In useLeaderboard.ts
   const fetchLeaderboards = useCallback(() => {
-    console.log('useLeaderboard: Fetching leaderboard data...');
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    // Use window.postMessage directly
-    console.log('useLeaderboard: Sending GET_GLOBAL_LEADERBOARD message');
     window.parent.postMessage(
       {
         type: 'devvit-message',
@@ -50,7 +45,6 @@ export const useLeaderboard = ({
       '*'
     );
 
-    console.log('useLeaderboard: Sending GET_CUMULATIVE_LEADERBOARD message');
     window.parent.postMessage(
       {
         type: 'devvit-message',
@@ -63,17 +57,13 @@ export const useLeaderboard = ({
     );
   }, [limit]);
 
-  // Initial fetch
   useEffect(() => {
-    console.log('useLeaderboard: Initial fetch triggered');
     fetchLeaderboards();
   }, [fetchLeaderboards]);
 
   // Auto refresh if enabled
   useEffect(() => {
     if (!autoRefresh) return;
-
-    console.log(`useLeaderboard: Setting up auto-refresh every ${refreshInterval}ms`);
     const intervalId = setInterval(() => {
       fetchLeaderboards();
     }, refreshInterval);
@@ -83,28 +73,15 @@ export const useLeaderboard = ({
 
   // Handle messages
   useEffect(() => {
-    console.log('useLeaderboard: Setting up message listener');
-
     const handleMessage = (event: MessageEvent) => {
-      console.log('LEADERBOARD-RAW:', event.data);
-      // Unwrap devvit-message (same as your snippet)
       let msg = event.data;
       if (msg?.type === 'devvit-message' && msg.data?.message) {
         msg = msg.data.message;
-        console.log('LEADERBOARD-UNWRAPPED-1:', msg);
       } else if (msg?.type === 'devvit-message') {
         msg = msg.data;
-        console.log('LEADERBOARD-UNWRAPPED-2:', msg);
       }
-      console.log('LEADERBOARD-FINAL:', msg?.type);
       if (!msg || typeof msg !== 'object') return;
-      
-
-      console.log('useLeaderboard: Received unwrapped message:', msg.type);
-
-      // Handle global leaderboard response
       if (msg.type === 'GET_GLOBAL_LEADERBOARD_RESULT') {
-        console.log('useLeaderboard: Processing global leaderboard result:', msg.success);
         if (msg.success) {
           setState((prev) => ({
             ...prev,
@@ -112,7 +89,6 @@ export const useLeaderboard = ({
             isLoading: prev.cumulativeLeaderboard.length === 0, // Only stop loading if both are done
           }));
         } else {
-          console.error('useLeaderboard: Global leaderboard error:', msg.error);
           setState((prev) => ({
             ...prev,
             error: msg.error || 'Failed to fetch global leaderboard',
@@ -121,23 +97,15 @@ export const useLeaderboard = ({
         }
       }
 
-      // Handle cumulative leaderboard response
       if (msg.type === 'GET_CUMULATIVE_LEADERBOARD_RESULT') {
-        console.log('useLeaderboard: Processing cumulative leaderboard result:', msg.success);
         if (msg.success) {
           const cumulativeData = msg.result?.leaderboard || [];
           let userStats = null;
 
           // Find current user's stats
           if (username) {
-            console.log(`useLeaderboard: Looking for user ${username} in leaderboard`);
             userStats =
               cumulativeData.find((entry: LeaderboardEntry) => entry.username === username) || null;
-            if (userStats) {
-              console.log('useLeaderboard: Found user stats:', userStats);
-            } else {
-              console.log('useLeaderboard: User not found in leaderboard');
-            }
           }
 
           setState((prev) => ({
@@ -147,7 +115,6 @@ export const useLeaderboard = ({
             isLoading: prev.globalLeaderboard.length === 0, // Only stop loading if both are done
           }));
         } else {
-          console.error('useLeaderboard: Cumulative leaderboard error:', msg.error);
           setState((prev) => ({
             ...prev,
             error: msg.error || 'Failed to fetch cumulative leaderboard',
@@ -158,15 +125,12 @@ export const useLeaderboard = ({
     };
 
     window.addEventListener('message', handleMessage);
-    console.log('useLeaderboard: Message listener registered');
 
     return () => {
-      console.log('useLeaderboard: Removing message listener');
       window.removeEventListener('message', handleMessage);
     };
   }, [username]);
 
-  // Return data and methods
   return {
     ...state,
     refresh: fetchLeaderboards,

@@ -58,16 +58,12 @@ export interface CreatePageProps extends NavigationProps {
 }
 
 export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = 'General' }) => {
-  // Word/phrase & category
   const [inputType, setInputType] = useState<'word' | 'phrase'>('word');
   const [currentCategory, setCurrentCategory] = useState<CategoryType>(category);
 
-  // Recommendation states
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [currentRecIndex, setCurrentRecIndex] = useState<number>(0);
   const [secretInput, setSecretInput] = useState<string>('');
-
-  // Synonyms for progressive hints
   const [synonyms, setSynonyms] = useState<string[][]>([]);
 
   // GIF states
@@ -92,11 +88,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isCreating, setIsCreating] = useState<boolean>(false);
-  // const [uploadedGifUrls, setUploadedGifUrls] = useState<{ [gifId: string]: string }>({});
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
 
-  // Add refs for elements to animate
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
@@ -111,7 +105,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setCurrentCategory(category);
     }
     fetchRecommendations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCategory, inputType]);
 
   const fetchRecommendations = async () => {
@@ -138,12 +131,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     );
   };
 
-  // Update your getNextRecommendation function to animate both the secret word and the hints
   const getNextRecommendation = () => {
     const secretElement = document.querySelector('.secret-word-container');
     const hintElements = document.querySelectorAll('.hint-text');
 
-    // Add fade out transition to secret word and hints
     if (secretElement) {
       secretElement.classList.add('opacity-0', 'translate-y-2');
     }
@@ -153,19 +144,16 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     });
 
     setTimeout(() => {
-      // Update content
       const nextIndex = (currentRecIndex + 1) % recommendations.length;
       setCurrentRecIndex(nextIndex);
       setSecretInput(recommendations[nextIndex]);
       fetchSynonyms(recommendations[nextIndex]);
 
-      // Fade back in after a short delay to ensure state has updated
       setTimeout(() => {
         if (secretElement) {
           secretElement.classList.remove('opacity-0', 'translate-y-2');
         }
 
-        // Fade in hints with a slight delay for staggered effect
         hintElements.forEach((element, index) => {
           setTimeout(() => {
             (element as HTMLElement).classList.remove('opacity-0', 'translate-y-2');
@@ -176,7 +164,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   useEffect(() => {
-    // Animation setup
     setIsPageLoaded(true);
 
     if (titleRef.current) {
@@ -187,7 +174,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       });
     }
 
-    // Animate header elements
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
         duration: 400,
@@ -196,7 +182,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       });
     }
 
-    // Animate main content with delay
     if (mainContentRef.current) {
       transitions.animateElement(mainContentRef.current, {
         duration: 500,
@@ -205,7 +190,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       });
     }
 
-    // Animate GIF grid with longer delay
     if (gifGridRef.current) {
       transitions.animateElement(gifGridRef.current, {
         duration: 500,
@@ -214,7 +198,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       });
     }
 
-    // Animate submit button last
     if (submitButtonRef.current) {
       transitions.animateElement(submitButtonRef.current, {
         duration: 500,
@@ -244,7 +227,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             fetchSynonyms(filtered[0]);
           }
         } else {
-          console.error('Gemini recs error:', msg.error);
           setRecommendations([]);
           setSecretInput('');
         }
@@ -254,7 +236,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         if (msg.success && Array.isArray(msg.result)) {
           setSynonyms(msg.result);
         } else {
-          console.error('Gemini synonyms error:', msg.error);
           setSynonyms([]);
         }
       }
@@ -263,27 +244,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setIsSearching(false);
         if (msg.success && Array.isArray(msg.results)) {
           setGifs(msg.results);
-          // msg.results.forEach((gif: TenorGifResult) => {
-          //   window.parent.postMessage(
-          //     {
-          //       type: 'UPLOAD_TENOR_GIF',
-          //       data: { tenorGifUrl: getGifUrl(gif), gifId: gif.id },
-          //     },
-          //     '*'
-          //   );
-          // });
         } else {
           setGifs([]);
         }
       }
-
-      // if (msg.type === 'UPLOAD_TENOR_GIF_RESULT') {
-      //   if (msg.success && msg.mediaUrl && msg.gifId) {
-      //     setUploadedGifUrls((prev) => ({ ...prev, [msg.gifId]: msg.mediaUrl }));
-      //   } else {
-      //     console.error(`Failed to upload GIF ${msg.gifId}: ${msg.error}`);
-      //   }
-      // }
 
       if (msg.type === 'SAVE_GAME_RESULT') {
         setIsCreating(false);
@@ -305,7 +269,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     };
   }, []);
 
-  // Handle Tenor GIF search
   const searchGifs = async (term: string) => {
     if (!term) return;
     setGifs([]);
@@ -330,7 +293,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setMessageType('error');
       }, 8000);
     } catch (error) {
-      console.error('Error initiating search:', error);
       setIsSearching(false);
       setMessage('Error starting search. Please try again.');
       setMessageType('error');
@@ -353,7 +315,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   //   );
   // };
 
-  // Back button click handler
   const handleBackClick = () => {
     // Fade out elements before navigating
     if (headerRef.current) {
@@ -363,13 +324,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       transitions.fadeOut(mainContentRef.current, { duration: 300, delay: 100 });
     }
 
-    // Navigate after animations
     setTimeout(() => {
       onNavigate('category');
     }, 400);
   };
 
-  // Select a GIF for a slot
   const selectGifForSlot = (gif: TenorGifResult) => {
     if (selectedGifIndex !== null && selectedGifIndex >= 0 && selectedGifIndex < 4) {
       const gifUrl = getGifUrl(gif);
@@ -433,9 +392,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         throw new Error('One or more selected GIFs have invalid URLs');
       }
 
-      console.log('🔍 [DEBUG] Submitting game with category:', currentCategory);
-
-      // Post message to parent
       window.parent.postMessage(
         {
           type: 'SAVE_GAME',
@@ -460,15 +416,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const [isDarkMode, setIsDarkMode] = useState(false);
   useEffect(() => {
-      // Detect dark mode
-      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      setIsDarkMode(darkModeQuery.matches);
-      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-      darkModeQuery.addEventListener('change', handleThemeChange);
-      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-    }, []);
+    // Detect dark mode
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+  }, []);
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
-  const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black' ;
+  const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black';
   const renderGifGrid = () => (
     <div className="mb-4" ref={gifGridRef}>
       <div className="mb-2 flex items-center justify-between">
@@ -530,7 +486,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     <ComicText size={0.6} color={colors.textSecondary}>
                       {defaultSynonym ? (
                         <span className="hint-text transition-all duration-300 ease-in-out">
-                          Hint: <span className={`text-yellow-400 ${categoryColor}`}>{defaultSynonym}</span>
+                          Hint:{' '}
+                          <span className={`text-yellow-400 ${categoryColor}`}>
+                            {defaultSynonym}
+                          </span>
                         </span>
                       ) : (
                         `Add GIF #${index + 1}`
@@ -588,7 +547,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   return (
     <div
-      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <Modal
@@ -653,14 +612,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                             e.currentTarget.style.display = 'none';
                             const container = e.currentTarget.closest('.gif-container');
                             if (container) container.remove();
-                            // e.currentTarget.parentElement?.parentElement?.remove();
                             const fallback = document.createElement('div');
                             fallback.className = 'gif-fallback';
                             fallback.textContent = '🎬 GIF not available';
                             e.currentTarget.parentNode?.appendChild(fallback);
                           }}
                           onLoad={(e) => {
-                            // Optional: Add fade-in animation
                             e.currentTarget.style.opacity = '1';
                           }}
                           style={{ opacity: 0, transition: 'opacity 0.3s' }}
@@ -688,7 +645,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   alt="Selected GIF"
                   className="h-24 object-contain"
                   onError={(e) => {
-                    console.error('Failed to load selected GIF preview');
                     e.currentTarget.src = 'https://via.placeholder.com/150?text=GIF+Error';
                   }}
                 />
@@ -698,7 +654,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         </div>
       </Modal>
 
-      {/* Header */}
       <header
         ref={headerRef}
         className="optacity-0 mb-5 flex w-full max-w-4xl items-center justify-between"
@@ -713,7 +668,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:mt-[15px]">
+        <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:mt-[15px] md:pr-12 lg:pr-20">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-500 max-sm:mt-[15px]"
@@ -725,7 +680,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         </div>
       </header>
 
-      {/* Main Content */}
       <main ref={mainContentRef} className="optacity-0 flex flex-1 flex-col items-center px-4">
         <div className="mx-auto flex w-full max-w-xl flex-col items-center">
           {/* Row 1: Category and Word/Phrase toggle */}
@@ -763,7 +717,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   <span className="inline-block transition-all duration-300" key={inputType}>
                     Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
                   </span>{' '}
-                  <span style={{fontWeight: 'bold' }} className={`${categoryColor}`}>
+                  <span style={{ fontWeight: 'bold' }} className={`${categoryColor}`}>
                     {secretInput.toUpperCase()}
                   </span>
                 </ComicText>
@@ -796,7 +750,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
           {renderGifGrid()}
 
-          {/* Success Modal */}
           {showSuccessModal && (
             <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm transition-all duration-300">
               <div className="animate-bounce-slow rounded-xl bg-gray-800 p-6 shadow-lg">
@@ -810,10 +763,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={() => {
-                      // First close the modal
                       setShowSuccessModal(false);
 
-                      // Then fade out page elements
                       if (headerRef.current) {
                         transitions.fadeOut(headerRef.current, { duration: 300 });
                       }
@@ -821,7 +772,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         transitions.fadeOut(mainContentRef.current, { duration: 300 });
                       }
 
-                      // Navigate after a consistent delay
                       setTimeout(() => {
                         onNavigate('landing');
                       }, 400);

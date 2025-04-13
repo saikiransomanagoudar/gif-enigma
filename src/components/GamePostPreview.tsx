@@ -1,9 +1,8 @@
 import { Devvit, Context, useAsync, useState } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
-import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../../game/shared.js';
+import { BlocksToWebviewMessage } from '../../game/shared.js';
 import { Page } from '../../game/lib/types.js';
 import { hasUserCompletedGame } from '../../game/server/gameHandler.js';
-import { preview } from 'vite';
 
 interface GamePostPreviewProps {
   context: Context;
@@ -288,6 +287,8 @@ export const GamePostPreview = ({
           pendingNavigation.page
         );
 
+        setPendingNavigation(null);
+
         // Send the navigation message
         sendNavigation(pendingNavigation.page, pendingNavigation.gameId);
 
@@ -420,9 +421,13 @@ export const GamePostPreview = ({
   if (isLoading) {
     return (
       <vstack height="100%" width="100%" alignment="center middle">
-        <text style="heading" size="medium">
-          Loading GIF Enigma...
-        </text>
+        <vstack alignment="center middle">
+          <image 
+            url="loading.gif"
+            imageWidth={50}
+            imageHeight={50}
+          />
+        </vstack>
       </vstack>
     );
   }
@@ -441,12 +446,6 @@ export const GamePostPreview = ({
     );
   }
 
-  console.log('[DEBUG-CRITICAL] GamePostPreview rendering with:');
-  console.log(`- gameId: ${previewData.gameId}`);
-  console.log(`- username: ${username}`);
-  console.log(`- hasCompletedGame: ${hasCompletedGame}`);
-
-  console.log('[DEBUG-UI] GamePostPreview: Rendering with hasCompletedGame =', hasCompletedGame);
   const firstGif = getFirstGif();
 
   if (previewData.gameId && username) {
@@ -471,12 +470,12 @@ export const GamePostPreview = ({
       </vstack>
 
       {/* Main content area */}
-      <vstack padding="small" gap="small" grow alignment="center middle">
+      <vstack width="100%" padding="small" gap="small" grow alignment="center middle">
         {/* First GIF clue */}
         {firstGif && (
           <vstack
             height={100}
-            width="50%"
+            width="80%"
             backgroundColor="#0a1020"
             cornerRadius="large"
             padding="xsmall"
@@ -493,11 +492,8 @@ export const GamePostPreview = ({
         )}
       </vstack>
 
-      {/* Buttons based on game completion status */}
       <vstack padding="medium" alignment="center middle" gap="medium">
-        {/* CRITICAL FIX: Force explicit check of hasCompletedGame */}
         {hasCompletedGame === false ? (
-          // User hasn't completed the game - show Decode the GIF and How This Game Works buttons
           <hstack gap="medium" alignment="center middle">
             <hstack
               cornerRadius="full"

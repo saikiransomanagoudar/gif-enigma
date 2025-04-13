@@ -1,35 +1,29 @@
 import { Devvit, ScheduledJobEvent, JobContext, Context } from '@devvit/public-api';
 import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server.js';
 import { searchTenorGifs } from './tenorApi.server.js';
-import { saveGame, saveScore, saveGameState } from './gameHandler.server.js';
+import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server.js';
 import type { CategoryType } from '../shared.js';
 
 const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'General'];
 const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-const SYSTEM_USERNAME = 'gif-enigma';
-
 Devvit.addSchedulerJob({
   name: 'auto_create_post',
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
-    const context = rawContext as unknown as Context; // ✅ force cast
-
-    console.log('⏱️ Running auto_create_post...');
+    const context = rawContext as unknown as Context;
 
     const category = pickRandom(categories);
     const inputType = pickRandom(inputTypes);
 
     const recResult = await fetchGeminiRecommendations(context, category, inputType, 10);
     if (!recResult.success || !recResult.recommendations?.length) {
-      console.error('❌ Gemini recommendations failed:', recResult.error);
       return;
     }
 
     const word = recResult.recommendations[0];
     const synResult = await fetchGeminiSynonyms(context, word);
     if (!synResult.success || !synResult.synonyms?.length) {
-      console.error('❌ Gemini synonyms failed:', synResult.error);
       return;
     }
 
@@ -42,10 +36,8 @@ Devvit.addSchedulerJob({
     }
 
     if (gifUrls.length !== 4) {
-      console.error('❌ Not enough GIFs found:', gifUrls);
       return;
     }
-
     const maskedWord = word
       .split('')
       .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -56,7 +48,7 @@ Devvit.addSchedulerJob({
         ? 'Can you guess the phrase from these GIF clues?'
         : 'Can you guess the word from these GIF clues?';
 
-    const saveResult = await saveGame(
+    await saveGame(
       {
         word,
         maskedWord,
@@ -67,47 +59,15 @@ Devvit.addSchedulerJob({
       },
       context
     );
+  },
+});
 
-    if (saveResult.success) {
-      console.log(`✅ Game created and posted with ID: ${saveResult.gameId}`);
-      try {
-        // First create a game state for the system user
-        const timestamp = Date.now();
-
-        await saveGameState(
-          {
-            gameId: saveResult.gameId || 'unknown',
-            username: SYSTEM_USERNAME,
-            playerState: {
-              gifHintCount: 0,  // System didn't use hints
-              revealedLetters: [],
-              guess: word,
-              lastPlayed: timestamp,
-              isCompleted: true  // Mark as completed
-            }
-          },
-          context
-        );
-        
-        await saveScore(
-          {
-            username: SYSTEM_USERNAME,
-            gameId: saveResult.gameId || 'unknown',
-            score: 10,
-            gifPenalty: 0,
-            wordPenalty: 0,
-            timeTaken: 0,
-            timestamp: timestamp
-          },
-          context
-        );
-        
-        console.log(`✅ Registered system completion and score for game: ${saveResult.gameId}`);
-      } catch (error) {
-        console.error('❌ Error registering system completion:', error);
-      }
-    } else {
-      console.error('❌ Failed to save game:', saveResult.error);
-    }
+Devvit.addSchedulerJob({
+  name: 'clean_leaderboards',
+  onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
+    const context = rawContext as unknown as Context;
+    console.log('⏱️ Running leaderboard cleanup...');
+    
+    await removeSystemUsersFromLeaderboard(context);
   },
 });

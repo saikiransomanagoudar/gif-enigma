@@ -14,10 +14,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
-
     setIsInitialLoading(true);
-
-    // Hide loading indicator after a small delay
     const animationTimeout = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         setIsInitialLoading(false);
@@ -40,18 +37,17 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
 
   return (
     <PageTransition>
-      {isInitialLoading && (
+      {/* {isInitialLoading && (
         <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
         </div>
-      )}
+      )} */}
       <motion.div
         className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
       >
-        {/* Header */}
         <motion.header
           className="mb-6 flex items-center justify-between border-b-2 border-gray-400 pb-6"
           initial={{ opacity: 0, y: -20 }}
@@ -75,14 +71,12 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           <div className="flex-1" />
         </motion.header>
 
-        {/* Main Content */}
         <motion.div
           className={`${textColor} space-y-10`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4 }}
         >
-          {/* Play Mode Section */}
           <section>
             <motion.h3
               className="text-primary mb-4 text-center text-2xl font-bold"
@@ -109,11 +103,11 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Solve either user generated or system generated GIF enigmas in the feed. Each question will have 4 hidden GIFs as hints.',
-                        'First GIF is shown initially. Further GIFs are revealed as progressive hints that closely matches the secret word, but this comes at a cost of losing points.',
-                        'There are also word/phrase hints that reveal letters (costs more than GIF hints). If you need help, reveal more GIFs or word/phrase as hints.',
+                        'Each question has 4 hidden GIFs as clues.',
+                        'Initially, only the first GIF is shown.',
+                        'If you need help, reveal more GIFs/letters as hints.',
                         'Type your guess in the input field and submit.',
-                        'If you guess correctly, you will earn points based on the number of hints used. Higher the hints, lower the points.',
+                        'Score points and Win.',
                       ][index]
                     }
                   </ComicText>
@@ -122,7 +116,6 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             </div>
           </section>
 
-          {/* Create Mode Section */}
           <motion.section
             className="mt-8"
             initial={{ opacity: 0 }}
@@ -134,7 +127,6 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1.6 }}
-              
             >
               <ComicText size={1.25} className="">
                 Create Mode
@@ -153,7 +145,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Select a secret word/phrase from the recommended list of words/phrases for others to guess. You can cycle through the list.',
+                        'Select a secret word/phrase for others to guess.',
                         'Your selected word/phrase will come with synonyms that serve as search query for GIFs.',
                         'Select 4 GIFs (from Abstract to Direct match) for your secret word (choose wisely!).',
                         'Create a game, and let others guess your word/phrase!',
@@ -166,7 +158,6 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           </motion.section>
         </motion.div>
 
-        {/* Footer Call-to-Action */}
         <motion.div
           className="mt-10 flex flex-col items-center space-y-4"
           initial={{ opacity: 0, y: 20 }}

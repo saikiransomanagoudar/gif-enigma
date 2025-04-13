@@ -175,7 +175,7 @@ export const CustomPostPreview = ({
         <vstack
           backgroundColor="#c6c6e1"
           cornerRadius="large"
-          width={isSmallScreen ? '90%' : '50%'}
+          width={isSmallScreen ? '95%' : '50%'}
           padding="medium"
           alignment="center middle"
           border="thin"

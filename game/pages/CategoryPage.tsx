@@ -17,7 +17,6 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   const [hoverCategory, setHoverCategory] = useState<CategoryType | null>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
 
-  // Refs for elements we'll animate
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const subtitleRef = useRef<HTMLDivElement>(null);
@@ -27,22 +26,12 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
   useEffect(() => {
-      // Detect dark mode
-      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      setIsDarkMode(darkModeQuery.matches);
-      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-      darkModeQuery.addEventListener('change', handleThemeChange);
-      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-    }, []);
-
-  useEffect(() => {
-      // Detect dark mode
-      const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      setIsDarkMode(darkModeQuery.matches);
-      const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-      darkModeQuery.addEventListener('change', handleThemeChange);
-      return () => darkModeQuery.removeEventListener('change', handleThemeChange);
-    }, []);
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+  }, []);
 
   const categories: {
     type: CategoryType;
@@ -76,12 +65,8 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
     },
   ];
 
-  // Setup initial animations when component mounts
   useEffect(() => {
-    // Mark page as loaded
     setIsPageLoaded(true);
-
-    // Animate header elements with a staggered delay
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
         duration: 400,
@@ -114,7 +99,6 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       });
     }
 
-    // Animate category cards with staggered delay
     setTimeout(() => {
       const categoryCards = document.querySelectorAll('.category-card');
       categoryCards.forEach((card, index) => {
@@ -129,12 +113,10 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   }, []);
 
   const handleBackClick = () => {
-    // Fade out elements before navigating
     if (headerRef.current) {
       transitions.fadeOut(headerRef.current, { duration: 300 });
     }
 
-    // Fade out category cards with staggered effect
     const categoryCards = document.querySelectorAll('.category-card');
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
@@ -143,18 +125,15 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       });
     });
 
-    // Navigate after animations complete
     setTimeout(() => {
       onNavigate('landing');
-    }, 450); // Allow time for animations to finish
+    }, 450);
   };
 
   const handleCategorySelect = (category: CategoryType) => {
-    // Add exit animation before navigating
     const categoryCards = document.querySelectorAll('.category-card');
     const header = headerRef.current;
 
-    // Fade out category cards first
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
         duration: 300,
@@ -162,7 +141,6 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       });
     });
 
-    // Then fade out header
     if (header) {
       transitions.fadeOut(header, {
         duration: 300,
@@ -170,7 +148,6 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       });
     }
 
-    // Wait for animations to complete before navigating
     setTimeout(() => {
       if (onCategorySelect) {
         onCategorySelect(category);
@@ -181,10 +158,9 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
   return (
     <div
-      className={`${backgroundColor} select-none flex min-h-screen flex-col items-center p-5 transition-opacity duration-500`}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
-      {/* Header section */}
       <header
         ref={headerRef}
         className="mb-5 flex w-full max-w-4xl translate-y-4 transform items-center justify-between opacity-0 transition-all duration-500"
@@ -192,15 +168,15 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
         <button
           ref={backButtonRef}
           onClick={handleBackClick}
-          className={`${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
-          style={{ backgroundColor: colors.primary }}         
+          className={`${isDarkMode ? 'bg-[#FF4500] text-white' : `bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+          style={{ backgroundColor: colors.primary }}
         >
           <span className="mr-1 text-sm text-white">👈</span>
           <ComicText size={0.5} color="white">
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:mt-[-20px] max-sm:ml-[12px]">
+        <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:mt-[-20px] max-sm:ml-[12px] md:pr-12 lg:pr-20">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-500"
@@ -225,14 +201,17 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4">
-      <div ref={categoryGridRef} className="grid grid-cols-1 gap-4 max-sm:gap-1 max-sm:mt-[-20px] max-sm:gap-1 max-sm:mt-[-20px] sm:grid-cols-2 lg:grid-cols-2">
+        <div
+          ref={categoryGridRef}
+          className="grid grid-cols-1 gap-4 max-sm:mt-[-20px] max-sm:gap-1 sm:grid-cols-2 lg:grid-cols-2"
+        >
           {categories.map((category) => (
             <button
               key={category.type}
               onClick={() => handleCategorySelect(category.type)}
               onMouseEnter={() => setHoverCategory(category.type)}
               onMouseLeave={() => setHoverCategory(null)}
-              className="max-sm:h-4/5 max-sm:h-4/5 category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
+              className="category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg max-sm:h-4/5"
               style={{
                 overflow: 'hidden',
                 transform:

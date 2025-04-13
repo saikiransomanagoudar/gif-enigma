@@ -30,17 +30,13 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
 
-  // In your LandingPage component
   useEffect(() => {
-    // Request Reddit username
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
     const handleMessage = (event: MessageEvent) => {
       if (event.data.type === 'GET_CURRENT_USER_RESULT') {
         if (event.data.success) {
           setRedditUsername(event.data.user?.username || '');
         } else {
-          console.error('Error fetching user:', event.data.error);
-          // Set a default or anonymous username
           setRedditUsername('');
         }
       }
@@ -51,37 +47,33 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   const handlePlayClick = () => {
     setIsLoading(true);
-  
+
     const handleGameResponse = (event: MessageEvent) => {
-      // Unwrap the message if needed
       let message = event.data;
       if (message && message.type === 'devvit-message' && message.data?.message) {
         message = message.data.message;
       } else if (message && message.type === 'devvit-message' && message.data) {
         message = message.data;
       }
-  
-      // Process random game result
+
       if (message.type === 'GET_RANDOM_GAME_RESULT') {
         window.removeEventListener('message', handleGameResponse);
-        
-        // Check if we have a valid game with a post ID
+
         let redditPostId = null;
-  
+
         if (message.success && message.result && message.result.success && message.result.game) {
           redditPostId = message.result.game.redditPostId;
         }
-  
-        // If we have a post ID, navigate to it
+
         if (redditPostId) {
           window.parent.postMessage(
             {
               type: 'NAVIGATE_TO_POST',
-              data: { postId: redditPostId }
+              data: { postId: redditPostId },
             },
             '*'
           );
-          
+
           setTimeout(() => {
             if (isMounted.current) setIsLoading(false);
           }, 2000);
@@ -91,11 +83,10 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }
       }
     };
-  
-    // Add event listener and request random game
+
     window.removeEventListener('message', handleGameResponse);
     window.addEventListener('message', handleGameResponse);
-  
+
     window.parent.postMessage(
       {
         type: 'GET_RANDOM_GAME',
@@ -106,7 +97,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       },
       '*'
     );
-  
+
     setTimeout(() => {
       if (isMounted.current) {
         window.removeEventListener('message', handleGameResponse);
@@ -116,7 +107,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    // Hide loading spinner after component is fully mounted
     const timer = setTimeout(() => {
       setIsInitialLoading(false);
     }, 1000);
@@ -168,15 +158,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             </span>
           </motion.button>
 
-          {/* Center Container for Icons and Title */}
           <div className="mt-5 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none">
-            {/* Icons */}
             <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
               <span className="text-3xl">🎬</span>
               <span className="text-3xl">❓</span>
             </div>
 
-            {/* Title */}
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -188,7 +175,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h2>
 
-            {/* Welcome Message */}
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -206,9 +192,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Main Action Buttons */}
         <div className="mb-[15px] flex flex-row items-center justify-center gap-5 max-sm:mt-[20px]">
-          {/* Play GIF */}
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
             onClick={handlePlayClick}
@@ -231,7 +215,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             )} */}
           </motion.div>
 
-          {/* Create GIF */}
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
             onClick={() => onNavigate('category')}
@@ -250,14 +233,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </motion.div>
         </div>
 
-        {/* Secondary Action Buttons */}
         <motion.div
           className="mt-3 text-center"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 1.6 }}
         >
-          {/* Secondary Action Buttons */}
           <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
             <button
               className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}

@@ -120,6 +120,8 @@ function App() {
     synonyms: false,
     search: false,
   });
+  const [navigationReceived, setNavigationReceived] = useState<boolean>(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
 
   // Log whenever currentPage changes
   useEffect(() => {
@@ -182,20 +184,33 @@ function App() {
     console.log('Frontend: Requesting navigation state');
     window.parent.postMessage({ type: 'requestNavigationState' }, '*');
 
-    const lastPage = localStorage.getItem('lastPage');
-    const lastGameId = localStorage.getItem('lastGameId');
+    const fallbackTimer = setTimeout(() => {
+      console.log(
+        '[DEBUG-CRITICAL] App.tsx: Navigation state request timed out, proceeding with default page'
+      );
 
-    if (lastPage && lastGameId && lastPage === 'game') {
-      console.log('[DEBUG-CRITICAL] App.tsx: Recovering navigation state:', {
-        lastPage,
-        lastGameId,
-      });
-      setGameId(lastGameId);
-      setCurrentPage(lastPage as Page);
-    } else if (lastPage) {
-      console.log('[DEBUG-CRITICAL] App.tsx: Recovering page only:', lastPage);
-      setCurrentPage(lastPage as Page);
-    }
+      // Only set navigation received if it hasn't been set already
+      if (!navigationReceived) {
+        const lastPage = localStorage.getItem('lastPage');
+        const lastGameId = localStorage.getItem('lastGameId');
+
+        if (lastPage && lastGameId && lastPage === 'game') {
+          console.log('[DEBUG-CRITICAL] App.tsx: Using cached navigation state:', {
+            lastPage,
+            lastGameId,
+          });
+          setGameId(lastGameId);
+          setCurrentPage(lastPage as Page);
+        } else if (lastPage) {
+          console.log('[DEBUG-CRITICAL] App.tsx: Using cached page only:', lastPage);
+          setCurrentPage(lastPage as Page);
+        }
+
+        setNavigationReceived(true);
+      }
+
+      setInitialLoadComplete(true);
+    }, 2000);
 
     // Helper to handle the *unwrapped* message
     function handleUnwrappedMessage(message: any) {
@@ -344,6 +359,8 @@ function App() {
                 );
                 setCurrentPage(typedMessage.data.page);
               }
+              setNavigationReceived(true);
+              setInitialLoadComplete(true);
             }
             break;
 
@@ -559,6 +576,7 @@ function App() {
     window.addEventListener('message', handleMessage);
 
     return () => {
+      clearTimeout(fallbackTimer);
       window.removeEventListener('message', handleMessage);
     };
   }, []);

@@ -121,7 +121,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
                 <span className="font-semibold">
                   {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index === 3 ? "🏅" : index === 4 ? "🎖️" : ""}
                 </span>
-                <ComicText><span className="truncate">{entry.username}</span></ComicText>
+                <ComicText><span className="truncate max-sm:text-sm max-sm:ml-[-15px]">{entry.username}</span></ComicText>
                 <ComicText><span className="font-bold text-green-600 max-sm:ml-[15px]">{entry.bestScore}</span></ComicText>
               </div>
             ))

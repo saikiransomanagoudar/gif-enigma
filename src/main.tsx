@@ -16,6 +16,7 @@ import {
   getRandomGame,
   postCompletionComment,
   hasUserCompletedGame,
+  removeSystemUsersFromLeaderboard,
 } from '../game/server/gameHandler.server.js';
 import { Page } from '../game/lib/types.js';
 import {
@@ -1017,6 +1018,7 @@ Devvit.addCustomPostType({
                 error: String(error),
               });
             }
+            
             break;
 
           case 'REFRESH_POST_PREVIEW':
@@ -1655,15 +1657,24 @@ Devvit.addMenuItem({
   },
 });
 
+Devvit.addMenuItem({
+  label: '🧹 Clean Leaderboards',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    await removeSystemUsersFromLeaderboard(context);
+    context.ui.showToast('Leaderboards cleaned of system users!');
+  },
+});
+
 Devvit.addTrigger({
   event: 'AppInstall',
   onEvent: async (_event, context) => {
     const jobId = await context.scheduler.runJob({
       name: 'auto_create_post',
-      cron: '0 */4 * * *',
-      // cron: '*/1 * * * *',
+      cron: '0 12 * * *', // Run at 12:00 UTC every day
     });
-    console.log('✅ Scheduled auto_create_post job to run every 4hours:', jobId);
+    console.log('✅ Scheduled auto_create_post job to run once daily at 12:00 UTC:', jobId);
   },
 });
 
