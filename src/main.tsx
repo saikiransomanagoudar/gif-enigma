@@ -1626,14 +1626,6 @@ Devvit.addMenuItem({
     const post = await reddit.submitPost({
       title: 'GIF Enigma Game',
       subredditName: subreddit.name,
-      // preview: (
-      //   <CustomPostPreview
-      //     context={context}
-      //     onMount={() => {}}
-      //     postMessage={() => {}}
-      //     isWebViewReady={false}
-      //   />
-      // ),
       preview: <Preview />,
     });
 
