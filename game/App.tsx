@@ -27,11 +27,6 @@ type DevvitMessage =
       gameId?: string;
       error?: string;
     }
-  // | {
-  //     type: 'NAVIGATION';
-  //     page: Page;
-  //     gameId?: string;
-  //   }
   | {
       type: 'GET_GEMINI_RECOMMENDATIONS_RESULT';
       success: boolean;

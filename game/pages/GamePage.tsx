@@ -878,25 +878,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const renderGifArea = () => {
-    if (!gameData) {
-      return (
-        <div className="flex h-56 items-center justify-center md:h-64 lg:h-72">
-          <ComicText size={0.6} color="#fff">
-            No GIFs available, please create a game.
-          </ComicText>
-        </div>
-      );
-    }
+    if (!gameData || !gameData.gifs) return null;
     const gifUrls = gameData.gifs;
-    if (!gifUrls || gifUrls.length === 0) {
-      return (
-        <div className="flex h-56 items-center justify-center md:h-64 lg:h-72">
-          <ComicText size={0.6} color="#fff">
-            No GIFs available, please create a game.
-          </ComicText>
-        </div>
-      );
-    }
 
     return (
       <div className="gif-container relative grid h-56 w-full max-w-md grid-cols-2 grid-rows-2 gap-2 transition-all duration-500 ease-in-out md:h-64 lg:h-72">
@@ -1099,65 +1082,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }, 2000);
     }, 100);
   };
-
-  const renderContent = () => {
-    // if (isLoading) {
-    //   return (
-    //     <div className="flex h-56 flex-col items-center justify-center md:h-64 lg:h-72">
-    //       <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-    //       <ComicText size={0.6} color={colors.primary}>
-    //         Loading game...
-    //       </ComicText>
-    //     </div>
-    //   );
-    // }
-
-    // if (error) {
-    //   return (
-    //     <div className="flex h-56 flex-col items-center justify-center space-y-4 md:h-64 lg:h-72">
-    //       <ComicText size={0.6} color="red">
-    //         {error}
-    //       </ComicText>
-    //       <button
-    //         onClick={() => onNavigate('landing')}
-    //         className="rounded-lg bg-blue-600 px-4 py-2 text-white transition-all hover:-translate-y-1 hover:bg-blue-700"
-    //       >
-    //         <ComicText size={0.6} color="white">
-    //           Back to Home
-    //         </ComicText>
-    //       </button>
-    //     </div>
-    //   );
-    // }
-
-    // if (!gameData || !gameData.gifs || gameData.gifs.length === 0) {
-    //   return (
-    //     <div className="flex h-56 flex-col items-center justify-center space-y-4 p-4 text-center md:h-64 lg:h-72">
-    //       <div className="text-4xl">🎮</div>
-    //       <ComicText size={0.8} color="#fff">
-    //         No games available right now!
-    //       </ComicText>
-    //       <ComicText size={0.6} color="#aaa">
-    //         Why not create your own fun challenge?
-    //       </ComicText>
-    //       <button
-    //         onClick={() => onNavigate('create')}
-    //         className="mt-4 cursor-pointer rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2 text-white shadow-lg transition-all hover:-translate-y-1 hover:scale-105 hover:shadow-xl"
-    //       >
-    //         <div className="flex items-center gap-2">
-    //           <span>✨</span>
-    //           <ComicText size={0.7} color="white">
-    //             Create a Game
-    //           </ComicText>
-    //         </div>
-    //       </button>
-    //     </div>
-    //   );
-    // }
-
-    return renderGifArea();
-  };
-
+  
   const handleNewGame = () => {
     onNavigate('landing');
   };
@@ -1581,7 +1506,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         ref={gifAreaRef}
         className="flex w-full flex-1 translate-y-4 transform flex-col items-center justify-center opacity-0 transition-all duration-500"
       >
-        {renderContent()}
+        {renderGifArea()}
       </div>
       {/* GIF Hint Button */}
       <div

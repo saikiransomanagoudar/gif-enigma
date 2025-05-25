@@ -1659,16 +1659,16 @@ Devvit.addMenuItem({
   },
 });
 
-Devvit.addTrigger({
-  event: 'AppInstall',
-  onEvent: async (_event, context) => {
-    const jobId = await context.scheduler.runJob({
-      name: 'auto_create_post',
-      cron: '0 12 * * *', // Run at 12:00 UTC every day
-    });
-    console.log('✅ Scheduled auto_create_post job to run once daily at 12:00 UTC:', jobId);
-  },
-});
+// Devvit.addTrigger({
+//   event: 'AppInstall',
+//   onEvent: async (_event, context) => {
+//     const jobId = await context.scheduler.runJob({
+//       name: 'auto_create_post',
+//       cron: '0 12 * * *', // Run at 12:00 UTC every day
+//     });
+//     console.log('✅ Scheduled auto_create_post job to run once daily at 12:00 UTC:', jobId);
+//   },
+// });
 
 export function getAppVersion(context: Context): string {
   return context.appVersion || '1.0.0.0';

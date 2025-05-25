@@ -76,7 +76,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
           setTimeout(() => {
             if (isMounted.current) setIsLoading(false);
-          }, 2000);
+          }, 5000);
         } else {
           setIsLoading(false);
           alert('Could not find a game post to navigate to. Please try again later.');
@@ -109,7 +109,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitialLoading(false);
-    }, 1000);
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, []);
