@@ -37,21 +37,30 @@ export function calculateScore(params: {
     }
   }
 
-  // Update the word penalty section in calculateScore
+  // Word/Phrase Hint Reveal Penalties based on word length
   if (revealedLetterCount > 0 && wordLength >= 5) {
     let hintsUsed = 0;
+    let lettersPerHint = 2; // Default for most cases
 
-    if (wordLength <= 7) {
-      hintsUsed = Math.ceil(revealedLetterCount / 2);
+    if (wordLength >= 5 && wordLength <= 7) {
+      // 5-7 characters: 1 hint available, 2 letters per reveal, 50 points penalty
+      lettersPerHint = 2;
+      hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
       wordPenalty = hintsUsed * 50;
-    } else if (wordLength <= 10) {
-      hintsUsed = Math.ceil(revealedLetterCount / 2);
+    } else if (wordLength >= 8 && wordLength <= 10) {
+      // 8-10 characters: 2 hints available, 2 letters per reveal, 25 points penalty
+      lettersPerHint = 2;
+      hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
       wordPenalty = hintsUsed * 25;
-    } else if (wordLength <= 15) {
-      hintsUsed = Math.ceil(revealedLetterCount / 2);
+    } else if (wordLength >= 11 && wordLength <= 15) {
+      // 11-15 characters: 3 hints available, 2 letters per reveal, 15 points penalty
+      lettersPerHint = 2;
+      hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
       wordPenalty = hintsUsed * 15;
-    } else {
-      hintsUsed = Math.ceil(revealedLetterCount / 3);
+    } else if (wordLength >= 16 && wordLength <= 25) {
+      // 16-25 characters: 3 hints available, 3 letters per reveal, 10 points penalty
+      lettersPerHint = 3;
+      hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
       wordPenalty = hintsUsed * 10;
     }
   }

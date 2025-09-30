@@ -125,7 +125,7 @@ export async function postCompletionComment(
 ): Promise<PostCommentResponse> {
   try {
     console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
-    const { gameId, username, numGuesses, gifHints, wordHints, hintTypeLabel, redditPostId } =
+    const { gameId, username, numGuesses, gifHints, redditPostId } =
       params;
 
     // First, check if a comment has already been posted for this user on this game
@@ -153,27 +153,20 @@ export async function postCompletionComment(
     let hintsDescription = 'no hints';
 
     // Only override the default text if there are actual hints
-    if (gifHints > 0 || wordHints > 0) {
-      const hintParts = [];
-
-      if (gifHints > 0) {
-        hintParts.push(`${gifHints} GIF hint${gifHints !== 1 ? 's' : ''}`);
-      }
-
-      if (wordHints > 0) {
-        hintParts.push(`${wordHints} ${hintTypeLabel} hint${wordHints !== 1 ? 's' : ''}`);
-      }
-
-      hintsDescription = hintParts.join(' and ');
+    if (gifHints > 0) {
+        hintsDescription = `${gifHints} extra GIF hint${gifHints !== 1 ? 's' : ''}`;
+      // if (wordHints > 0) {
+      //   hintsDescription += ` and ${wordHints} ${hintTypeLabel} hint${wordHints !== 1 ? 's' : ''}`;
+      // }
     }
 
     // Build the final comment text
     let completionText = '';
 
     if (numGuesses === 1) {
-      completionText = `I cracked it on my **first attempt** with **${hintsDescription}**!`;
+      completionText = `I cracked it on my **first attempt** with **${hintsDescription}**! 🎉`;
     } else {
-      completionText = `I cracked it in **${numGuesses} attempts** with **${hintsDescription}**!`;
+      completionText = `I cracked it in **${numGuesses} attempts** with **${hintsDescription}**.`;
     }
 
     console.log(`📝 [DEBUG] Comment to post: "${completionText}"`);

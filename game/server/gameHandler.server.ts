@@ -216,7 +216,10 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
       'gif-enigma',
       'anonymous', 
       'GIFEnigmaBot', 
-      'system'
+      'system',
+      'Most-Client-2219',
+      'steve-sid',
+      'seamless_ghost'
     ];
     
     // Remove from cumulative leaderboard
