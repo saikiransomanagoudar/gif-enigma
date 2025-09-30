@@ -165,7 +165,7 @@ export const CustomPostPreview = ({
           wrap={true}
           alignment="center"
         >
-          Hi {username}, ready to unravel the secret word/phrase from GIFs?
+          Hi {username}, ready to find the secret word/phrase from GIFs?
         </text>
         <spacer size="medium" />
       </vstack>
