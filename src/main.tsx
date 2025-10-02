@@ -552,41 +552,64 @@ Devvit.addCustomPostType({
                 return;
               }
 
-              // First get the user's rank in the cumulative leaderboard
-              const cumulativeResult = await getCumulativeLeaderboard({ limit: 100 }, context);
+              const username = event.data.username as string;
 
-              if (!cumulativeResult.success) {
-                postMessage({
-                  type: 'GET_USER_STATS_RESULT',
-                  success: false,
-                  error: cumulativeResult.error || 'Failed to fetch leaderboard data',
+              // Try to compute rank directly from Redis to avoid top-N truncation issues
+              // Compute rank by scanning the leaderboard ordered by score (high → low)
+              let rank: number | undefined = undefined;
+              try {
+                const members = await context.redis.zRange('cumulativeLeaderboard', '-inf', '+inf', {
+                  by: 'score',
+                  reverse: true,
                 });
-                return;
+                const orderedUsernames = members.map((m: any) => (typeof m === 'string' ? m : m.member));
+                const idx = orderedUsernames.indexOf(username);
+                if (idx !== -1) {
+                  rank = idx + 1;
+                }
+              } catch (scanErr) {
+                console.warn('[DEBUG] Rank zRange scan failed:', scanErr);
               }
 
-              // Find the user in the leaderboard to get their rank
-              const userRank = cumulativeResult.leaderboard?.findIndex(
-                (entry) => entry.username === event.data.username
-              );
+              // Fetch user stats hash directly; fall back to score from sorted set
+              let stats: any = null;
+              try {
+                const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
+                if (userStats && Object.keys(userStats).length > 0) {
+                  stats = {
+                    username,
+                    score: Number(userStats.totalScore || 0),
+                    bestScore: Number(userStats.bestScore || 0),
+                    averageScore: Number(userStats.averageScore || 0),
+                    gamesPlayed: Number(userStats.gamesPlayed || 0),
+                    gamesWon: Number(userStats.gamesWon || 0),
+                    timestamp: Number(userStats.lastPlayed || 0),
+                  };
+                }
+              } catch (statsErr) {
+                console.warn('[DEBUG] Failed to read userStats hash, will rely on leaderboard:', statsErr);
+              }
 
-              // Get the user's entry if found
-              const userEntry =
-                userRank !== -1 && cumulativeResult?.leaderboard
-                  ? cumulativeResult.leaderboard?.[userRank as number]
-                  : null;
+              // Avoid fetching a large leaderboard snapshot to compute rank.
+              // We intentionally skip any top-N scans so this scales with number of users.
 
-              // If user was found, include their rank
-              if (userEntry) {
-                if (userRank !== undefined) {
-                  userEntry.rank = userRank + 1; // Convert from 0-based index to 1-based rank
+              // As a final fallback for score, read the zset score
+              if (!stats || typeof stats.score !== 'number') {
+                try {
+                  // @ts-ignore - Devvit redis supports zScore
+                  const zScore = await context.redis.zScore('cumulativeLeaderboard', username);
+                  if (!stats) stats = { username };
+                  stats.score = typeof zScore === 'number' ? zScore : 0;
+                } catch (zErr) {
+                  console.warn('[DEBUG] Failed to read zScore for user:', zErr);
                 }
               }
 
               postMessage({
                 type: 'GET_USER_STATS_RESULT',
                 success: true,
-                stats: userEntry || null,
-                rank: userRank !== undefined && userRank !== -1 ? userRank + 1 : undefined,
+                stats: stats || null,
+                rank,
               });
             } catch (error) {
               console.error('Error getting user stats:', error);

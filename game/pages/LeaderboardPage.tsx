@@ -119,7 +119,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
             leaderboard.map((entry, index) => (
               <div key={index} className="grid grid-cols-3 text-center py-3 border-b dark:border-gray-700">
                 <span className="font-semibold">
-                  {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index === 3 ? "🏅" : index === 4 ? "🎖️" : ""}
+                  {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index === 3 ? "🏅" : index === 4 ? "🎖️" : index === 5 ? "🏆" : index === 6 ? "🏆" : index === 7 ? "🏆" : index === 8 ? "🏆" : index === 9 ? "🏆" : ""}
                 </span>
                 <ComicText><span className="truncate max-sm:text-sm max-sm:ml-[-15px]">{entry.username}</span></ComicText>
                 <ComicText><span className="font-bold text-green-600 max-sm:ml-[15px]">{entry.bestScore}</span></ComicText>
