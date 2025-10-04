@@ -32,6 +32,7 @@ interface UserStatsCardProps {
     totalScore?: number;
     gamesPlayed?: number;
     gamesWon?: number;
+    gamesCreated?: number;
     averageScore?: number;
     rank?: number;
     lastPlayed?: number;
@@ -101,6 +102,12 @@ export const UserStatsCard: React.FC<UserStatsCardProps> = ({
                   label="Games Won"
                   value={stats.gamesWon || 0}
                   color="text-blue-600 dark:text-blue-400"
+                />
+                <StatItem
+                  icon="🎨"
+                  label="Games Created"
+                  value={stats.gamesCreated || 0}
+                  color="text-orange-600 dark:text-orange-400"
                 />
                 <StatItem
                   icon="🏅"

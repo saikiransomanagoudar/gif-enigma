@@ -64,6 +64,7 @@ export interface GameSessionData {
 export interface UserStats {
   gamesPlayed: number;
   gamesWon: number;
+  gamesCreated: number;
   bestScore: number;
   averageScore: number;
   totalScore: number;
@@ -82,6 +83,7 @@ export interface LeaderboardEntry {
   timestamp: number;
   gamesPlayed?: number;
   gamesWon?: number;
+  gamesCreated?: number;
   bestScore?: number;
   totalScore?: number;
   averageScore?: number;

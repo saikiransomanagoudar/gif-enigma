@@ -9,6 +9,7 @@ import {
   PostCommentResponse,
   PlayerGameState,
 } from '../lib/types';
+import { awardCreationBonus } from './scoringService';
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
@@ -100,6 +101,14 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       }
     }
 
+    // Award creation bonus XP to the creator
+    try {
+      await awardCreationBonus(username, context);
+    } catch (bonusError) {
+      console.error('⚠️ [DEBUG] Failed to award creation bonus (non-critical):', bonusError);
+      // Don't fail the game creation if bonus awarding fails
+    }
+
     return {
       success: true,
       gameId,
@@ -125,8 +134,13 @@ export async function postCompletionComment(
 ): Promise<PostCommentResponse> {
   try {
     console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
-    const { gameId, username, numGuesses, gifHints, redditPostId } =
-      params;
+    const { 
+      gameId, 
+      username, 
+      numGuesses, 
+      gifHints, 
+      redditPostId 
+    } = params;
 
     // First, check if a comment has already been posted for this user on this game
     const commentKey = `comment:${gameId}:${username}`;
@@ -149,15 +163,12 @@ export async function postCompletionComment(
       return { success: false, error: 'No Reddit post ID found for this game' };
     }
 
-    // Create the completion message with improved hint text formatting
+    // Create the completion message with GIF hints only
     let hintsDescription = 'no hints';
 
-    // Only override the default text if there are actual hints
+    // Only show GIF hints in the comment
     if (gifHints > 0) {
-        hintsDescription = `${gifHints} extra GIF hint${gifHints !== 1 ? 's' : ''}`;
-      // if (wordHints > 0) {
-      //   hintsDescription += ` and ${wordHints} ${hintTypeLabel} hint${wordHints !== 1 ? 's' : ''}`;
-      // }
+      hintsDescription = `${gifHints} extra GIF hint${gifHints !== 1 ? 's' : ''}`;
     }
 
     // Build the final comment text

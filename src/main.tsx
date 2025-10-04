@@ -583,6 +583,7 @@ Devvit.addCustomPostType({
                     averageScore: Number(userStats.averageScore || 0),
                     gamesPlayed: Number(userStats.gamesPlayed || 0),
                     gamesWon: Number(userStats.gamesWon || 0),
+                    gamesCreated: Number(userStats.gamesCreated || 0),
                     timestamp: Number(userStats.lastPlayed || 0),
                   };
                 }

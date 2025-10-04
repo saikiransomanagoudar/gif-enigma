@@ -1,10 +1,10 @@
 import { Context } from '@devvit/public-api';
 import { ScoreData, LeaderboardEntry } from '../lib/types';
 
-/**
- * Calculate score based on the game state and user actions
- */
-// Update the calculateScore function in scoringService.ts
+// Bonus XP awarded for creating a game
+export const CREATION_BONUS_XP = 20;
+
+//Calculate score based on the game state and user actions
 export function calculateScore(params: {
   word: string;
   gifHintCount: number;
@@ -76,9 +76,7 @@ export function calculateScore(params: {
   return { score, gifPenalty, wordPenalty, timeTaken };
 }
 
-/**
- * Save a user's score to Redis
- */
+// Save a user's score to Redis
 export async function saveScore(
   params: ScoreData,
   context: Context
@@ -135,6 +133,7 @@ export async function saveScore(
       if (!userStats || Object.keys(userStats).length === 0) {
         await context.redis.hSet(`userStats:${username}`, {
           gamesPlayed: '0',
+          gamesCreated: '0',
           totalScore: '0',
           bestScore: '0',
           averageScore: '0'
@@ -179,9 +178,7 @@ export async function saveScore(
   }
 }
 
-/**
- * Get game leaderboard from Redis
- */
+// Get game leaderboard from Redis
 export async function getGameLeaderboard(
   params: { gameId: string; limit?: number },
   context: Context
@@ -236,9 +233,7 @@ export async function getGameLeaderboard(
   }
 }
 
-/**
- * Get global leaderboard from Redis
- */
+// Get global leaderboard from Redis
 export async function getGlobalLeaderboard(
   params: { limit?: number },
   context: Context
@@ -290,9 +285,7 @@ export async function getGlobalLeaderboard(
   }
 }
 
-/**
- * Get user's scores from Redis
- */
+// Get user's scores from Redis
 export async function getUserScores(
   params: { username: string; limit?: number },
   context: Context
@@ -386,6 +379,7 @@ export async function getCumulativeLeaderboard(
           score: Number(userStats.totalScore ?? item.score),
           gamesPlayed: Number(userStats.gamesPlayed || 0),
           gamesWon: Number(userStats.gamesWon || 0),
+          gamesCreated: Number(userStats.gamesCreated || 0),
           bestScore: Number(userStats.bestScore || 0),
           averageScore: Number(userStats.averageScore || 0),
           timestamp: Number(userStats.lastPlayed || 0),
@@ -398,6 +392,50 @@ export async function getCumulativeLeaderboard(
     return { success: true, leaderboard };
   } catch (error) {
     console.error('❌ [DEBUG] Error getting cumulative leaderboard:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// Award creation bonus XP when a user creates a game
+export async function awardCreationBonus(
+  username: string,
+  context: Context
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log(`🎨 [DEBUG] Awarding creation bonus to ${username}: ${CREATION_BONUS_XP} XP`);
+    
+    // Get or initialize user stats
+    let userStats: any = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
+    
+    if (!userStats || Object.keys(userStats).length === 0) {
+      await context.redis.hSet(`userStats:${username}`, {
+        gamesPlayed: '0',
+        gamesCreated: '0',
+        totalScore: '0',
+        bestScore: '0',
+        averageScore: '0'
+      });
+      userStats = await context.redis.hGetAll(`userStats:${username}`);
+    }
+    
+    // Update stats with creation bonus
+    const gamesCreated = Number(userStats.gamesCreated || 0) + 1;
+    const totalScore = Number(userStats.totalScore || 0) + CREATION_BONUS_XP;
+    
+    await context.redis.hSet(`userStats:${username}`, {
+      ...userStats,
+      gamesCreated: gamesCreated.toString(),
+      totalScore: totalScore.toString(),
+      lastPlayed: Date.now().toString(),
+    });
+    
+    // Update cumulative leaderboard with bonus
+    await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
+    
+    console.log(`✅ [DEBUG] Creation bonus awarded: ${username} now has ${gamesCreated} games created, total: ${totalScore}`);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [DEBUG] Error awarding creation bonus:', error);
     return { success: false, error: String(error) };
   }
 }

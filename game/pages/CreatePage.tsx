@@ -757,9 +757,33 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <ComicText size={1} color={colors.primary} className="mb-2 text-center">
                   Game Created Successfully!
                 </ComicText>
-                <ComicText size={0.7} color="white" className="mb-4 text-center">
+                <ComicText size={0.7} color="white" className="mb-2 text-center">
                   Your GIF Enigma is ready to play!
                 </ComicText>
+                
+                {/* XP Bonus Display */}
+                <div className="mt-6 mb-4 flex items-center justify-center">
+                  <div className="animate-pulse rounded-lg border-2 border-yellow-400 bg-gradient-to-r from-yellow-500 to-orange-500 px-4 py-2 shadow-lg">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-lg">✨</span>
+                      <div className="text-center">
+                        <ComicText size={0.5} color="white">
+                          Creation Bonus
+                        </ComicText>
+                        <div className="flex items-center justify-center gap-0.5">
+                          <ComicText size={1} color="white">
+                            +20
+                          </ComicText>
+                          <ComicText size={0.6} color="white">
+                            XP
+                          </ComicText>
+                        </div>
+                      </div>
+                      <span className="text-lg">✨</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={() => {
