@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import * as transitions from '../../src/utils/transitions';
@@ -30,17 +30,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
-  const [gameCompleted, setGameCompleted] = useState<boolean>(false);
   const gameIdRef = useRef(propGameId);
   gameIdRef.current = propGameId;
   // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
-  const [currentGuess, setCurrentGuess] = useState<string>('');
-  const [maskedWord, setMaskedWord] = useState<string>('');
-  const [gifVisibility, setGifVisibility] = useState<boolean[]>([]);
-  const [usedGifHints, setUsedGifHints] = useState<number>(0);
-  // @ts-ignore
-  const [usedLetterHints, setUsedLetterHints] = useState<number>(0);
 
   // game score
   const [gameStartTime, setGameStartTime] = useState<number>(Date.now());
@@ -117,9 +110,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           const loadedGameData = actualMessage.game;
           setGameData(loadedGameData);
           setGameFlowState('playing');
-          setRevealedLetters(new Set());
-          setGuess('');
-          setGifHintCount(1);
+          // Don't reset state here - let GET_GAME_STATE_RESULT handle it
           setIsCorrect(null);
 
           addToPlayedGames(loadedGameData.id);
@@ -134,30 +125,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         } else {
           setUsername('anonymous');
         }
-      }
-
-      if (username && gameData?.id) {
-        window.parent.postMessage(
-          {
-            type: 'GET_GAME_STATE',
-            data: {
-              gameId: gameData.id,
-              username,
-            },
-          },
-          '*'
-        );
-
-        window.parent.postMessage(
-          {
-            type: 'HAS_USER_COMPLETED_GAME',
-            data: {
-              gameId: gameData.id,
-              username,
-            },
-          },
-          '*'
-        );
       }
 
       if (actualMessage.type === 'INIT_RESPONSE') {
@@ -208,15 +175,28 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
 
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
+        console.log('🔍 [DEBUG] GET_GAME_STATE_RESULT received:', actualMessage);
+        
         if (actualMessage.success && actualMessage.state?.playerState) {
           const playerState = actualMessage.state.playerState;
 
+          // Restore GIF hint count - maintains which GIFs were revealed
+          // gifHintCount starts at 1 (first GIF always shown), increments with each hint used
           if (typeof playerState.gifHintCount === 'number') {
-            setGifHintCount(playerState.gifHintCount);
+            const restoredGifHintCount = playerState.gifHintCount > 0 ? playerState.gifHintCount : 1;
+            console.log('🔍 [DEBUG] Restoring gifHintCount:', restoredGifHintCount);
+            setGifHintCount(restoredGifHintCount);
+          } else {
+            setGifHintCount(1);
           }
 
-          if (Array.isArray(playerState.revealedLetters)) {
+          // Restore revealed letters - maintains exact letter indices that were revealed
+          // This ensures the same letters stay revealed across sessions (not random)
+          if (Array.isArray(playerState.revealedLetters) && playerState.revealedLetters.length > 0) {
+            console.log('🔍 [DEBUG] Restoring revealed letters:', playerState.revealedLetters);
             setRevealedLetters(new Set(playerState.revealedLetters));
+          } else {
+            setRevealedLetters(new Set());
           }
 
           if (playerState.guess) {
@@ -225,7 +205,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
           if (playerState.isCompleted) {
             setGameFlowState('completed');
-            setGameCompleted(true);
 
             window.parent.postMessage(
               {
@@ -235,12 +214,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               '*'
             );
           }
-        }
-      }
-
-      if (actualMessage.type === 'MARK_GAME_COMPLETED_RESULT') {
-        if (actualMessage.success) {
-          setGameCompleted(true);
+        } else {
+          // No saved state - use defaults
+          console.log('🔍 [DEBUG] No saved state, using defaults');
+          setGifHintCount(1);
+          setRevealedLetters(new Set());
+          setGuess('');
         }
       }
 
@@ -298,7 +277,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
       if (actualMessage.type === 'HAS_USER_COMPLETED_GAME_RESULT') {
         if (actualMessage.success && actualMessage.completed) {
-          setGameCompleted(true);
           setGameFlowState('completed');
           window.parent.postMessage(
             {
@@ -319,6 +297,35 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     };
   }, [propGameId]);
 
+  // Request game state once we have both username and gameData
+  useEffect(() => {
+    if (gameData?.id && username && username !== 'anonymous') {
+      console.log('🔍 [DEBUG] Requesting game state for:', gameData.id, username);
+      window.parent.postMessage(
+        {
+          type: 'GET_GAME_STATE',
+          data: {
+            gameId: gameData.id,
+            username,
+          },
+        },
+        '*'
+      );
+
+      window.parent.postMessage(
+        {
+          type: 'HAS_USER_COMPLETED_GAME',
+          data: {
+            gameId: gameData.id,
+            username,
+          },
+        },
+        '*'
+      );
+    }
+  }, [gameData?.id, username]);
+
+  // Save game state whenever it changes
   useEffect(() => {
     if (gameData && username) {
       const revealedLettersArray = Array.from(revealedLetters);
@@ -344,117 +351,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState]);
 
-  useEffect(() => {
-    const handleMessage = (event: { data: any }) => {
-      const message = event.data;
-
-      if (message.type === 'GET_GAME_STATE_RESULT' && message.success) {
-        if (message.state?.playerState) {
-          const { playerState } = message.state;
-
-          if (playerState.guess) setCurrentGuess(playerState.guess);
-
-          if (typeof playerState.gifHintCount === 'number') {
-            const newVisibility = Array(gameData?.gifs?.length || 4).fill(false);
-            for (let i = 0; i < playerState.gifHintCount; i++) {
-              if (i < newVisibility.length) newVisibility[i] = true;
-            }
-            setGifVisibility(newVisibility);
-            setUsedGifHints(playerState.gifHintCount);
-          }
-          if (
-            Array.isArray(playerState.revealedLetters) &&
-            playerState.revealedLetters.length > 0
-          ) {
-            setRevealedLetters(playerState.revealedLetters);
-
-            if (gameData?.word) {
-              let newMaskedWord = gameData.maskedWord;
-              if (typeof newMaskedWord === 'string') {
-                const maskedArray = newMaskedWord.split('');
-                playerState.revealedLetters.forEach((index: number) => {
-                  if (index >= 0 && index < gameData.word.length) {
-                    maskedArray[index] = gameData.word[index];
-                  }
-                });
-                setMaskedWord(maskedArray.join(''));
-              }
-            }
-
-            setUsedLetterHints(playerState.revealedLetters.length);
-          }
-
-          if (typeof playerState.isCompleted === 'boolean') {
-            setGameCompleted(playerState.isCompleted);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [gameData]);
-
-  useEffect(() => {
-    if (!gameId || !username) return;
-
-    const playerState = {
-      gifHintCount: usedGifHints,
-      revealedLetters: revealedLetters,
-      guess: currentGuess,
-      lastPlayed: Date.now(),
-      isCompleted: gameCompleted,
-    };
-
-    const timeoutId = setTimeout(() => {
-      window.parent.postMessage(
-        {
-          type: 'SAVE_GAME_STATE',
-          data: { gameId, username, playerState },
-        },
-        '*'
-      );
-    }, 1000);
-
-    return () => clearTimeout(timeoutId);
-  }, [gameId, username, usedGifHints, revealedLetters, currentGuess, gameCompleted]);
-
-  // @ts-ignore
-  const unlockGifHint = useCallback(
-    (index: number) => {
-      if (!gameData || index < 0 || index >= gameData.gifs.length) return;
-
-      const newVisibility = [...gifVisibility];
-      newVisibility[index] = true;
-      setGifVisibility(newVisibility);
-      setUsedGifHints((prev) => prev + 1);
-    },
-    [gameData, gifVisibility]
-  );
-
-  // @ts-ignore
-  const revealLetterHint = useCallback(() => {
-    if (!gameData?.word) return;
-
-    const unrevealedIndices = [];
-    for (let i = 0; i < gameData.word.length; i++) {
-      if (gameData.word[i] === ' ' || revealedLetters.has(i)) continue;
-      unrevealedIndices.push(i);
-    }
-
-    if (unrevealedIndices.length === 0) return;
-
-    const randomIndex = Math.floor(Math.random() * unrevealedIndices.length);
-    const letterIndexToReveal = unrevealedIndices[randomIndex];
-
-    setRevealedLetters((prev) => new Set(prev).add(letterIndexToReveal));
-
-    const newMaskedWordArray = maskedWord.split('');
-    newMaskedWordArray[letterIndexToReveal] = gameData.word[letterIndexToReveal];
-    setMaskedWord(newMaskedWordArray.join(''));
-
-    setUsedLetterHints((prev) => prev + 1);
-  }, [gameData, maskedWord, revealedLetters]);
 
   useEffect(() => {
     if (isCorrect === true) {
@@ -764,12 +660,40 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   };
 
+  // Deterministic shuffle function using word as seed
+  const getDeterministicIndices = (word: string, allIndices: number[]): number[] => {
+    // Create a simple hash from the word to use as seed
+    let seed = 0;
+    for (let i = 0; i < word.length; i++) {
+      seed = ((seed << 5) - seed) + word.charCodeAt(i);
+      seed = seed & seed; // Convert to 32-bit integer
+    }
+    
+    // Seeded random number generator
+    const seededRandom = (index: number) => {
+      const x = Math.sin(seed + index) * 10000;
+      return x - Math.floor(x);
+    };
+    
+    // Fisher-Yates shuffle with seeded random
+    const shuffled = [...allIndices];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(seededRandom(i) * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    
+    return shuffled;
+  };
+
   const handleWordHint = () => {
-    if (!answer) return;
+    if (!answer || !gameData) return;
 
     const indices = answer.split('').map((_, i) => i);
-    const unrevealed = indices.filter((i) => answer[i] !== ' ' && !revealedLetters.has(i));
+    const nonSpaceIndices = indices.filter((i) => answer[i] !== ' ');
+    const unrevealed = nonSpaceIndices.filter((i) => !revealedLetters.has(i));
+    
     if (unrevealed.length === 0) return;
+    
     const cleanWord = answer.replace(/\s+/g, '');
     const wordLength = cleanWord.length;
 
@@ -789,19 +713,25 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       revealCount = 3;
       maxHints = 3;
     }
+    
     const hintsUsedSoFar = Math.ceil(revealedLetters.size / revealCount);
     if (hintsUsedSoFar >= maxHints) {
       window.alert(`No more letter hints available for this word length (${wordLength} letters).`);
       return;
     }
 
+    // Get deterministic order of indices for this word
+    const deterministicOrder = getDeterministicIndices(gameData.word, nonSpaceIndices);
+    
+    // Filter to only unrevealed letters, maintaining deterministic order
+    const unrevealedInOrder = deterministicOrder.filter((i) => !revealedLetters.has(i));
+    
+    // Take the first N letters from the deterministic order
     const newRevealed = new Set(revealedLetters);
-    revealCount = Math.min(revealCount, unrevealed.length);
-
-    for (let i = 0; i < revealCount; i++) {
-      const randIndex = Math.floor(Math.random() * unrevealed.length);
-      newRevealed.add(unrevealed[randIndex]);
-      unrevealed.splice(randIndex, 1);
+    const toReveal = Math.min(revealCount, unrevealedInOrder.length);
+    
+    for (let i = 0; i < toReveal; i++) {
+      newRevealed.add(unrevealedInOrder[i]);
     }
 
     setRevealedLetters(newRevealed);
@@ -865,7 +795,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
         setTimeout(() => {
           setGifHintCount((current) => current + 1);
-          unlockGifHint(gifHintCount - 1);
 
           setTimeout(() => {
             gifContainer.classList.remove('opacity-0');
