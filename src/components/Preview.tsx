@@ -1,6 +1,6 @@
 import { Devvit } from '@devvit/public-api';
 
-export const Preview: Devvit.BlockComponent<{ text?: string }> = ({ text = 'Loading...' }) => {
+export const Preview: Devvit.BlockComponent = () => {
   return (
     <zstack width={'100%'} height={'100%'} alignment="center middle">
       <vstack width={'100%'} height={'100%'} alignment="center middle">

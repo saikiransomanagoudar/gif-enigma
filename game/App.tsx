@@ -116,7 +116,7 @@ function App() {
     search: false,
   });
   const [navigationReceived, setNavigationReceived] = useState<boolean>(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
+  const [_initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
 
   // Log whenever currentPage changes
   useEffect(() => {
@@ -229,9 +229,6 @@ function App() {
 
         // Handle random game result specifically
         if (typedMessage.type === 'GET_RANDOM_GAME_RESULT') {
-          console.log('[DEBUG-CRITICAL] App.tsx: GET_RANDOM_GAME_RESULT received:', typedMessage);
-
-          // Extract game data from different possible formats
           let gameData = null;
 
           if (typedMessage.success && typedMessage.result && typedMessage.result.game) {
@@ -248,7 +245,7 @@ function App() {
           if (gameData && gameData.id) {
             console.log('[DEBUG-CRITICAL] App.tsx: Extracted game ID:', gameData.id);
             setGameId(gameData.id);
-            setCurrentPage('game');
+            // setCurrentPage('game');
           }
           return;
         }
@@ -435,17 +432,9 @@ function App() {
 
               // Check for a game command specifically in the nested message
               if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
-                console.log(
-                  '[DEBUG-CRITICAL] App.tsx: Found game data in nested message:',
-                  message.data.message.game
-                );
                 if (message.data.message.game && message.data.message.game.id) {
-                  console.log(
-                    '[DEBUG-CRITICAL] App.tsx: Setting gameId from nested game data:',
-                    message.data.message.game.id
-                  );
                   setGameId(message.data.message.game.id);
-                  setCurrentPage('game'); // MOVE THIS INSIDE THE IF BLOCK
+                  // setCurrentPage('game'); 
                 }
               }
 

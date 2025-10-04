@@ -26,8 +26,8 @@ export const GamePostPreview = ({
   }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState('there');
-  const [gifLoaded, setGifLoaded] = useState(true); // Start with true since we can't track loading
-  const [letterBoxes, setLetterBoxes] = useState<string[]>([]);
+  const [gifLoaded, _setGifLoaded] = useState(true); // Start with true since we can't track loading
+  const [_letterBoxes, setLetterBoxes] = useState<string[]>([]);
   const [pendingNavigation, setPendingNavigation] = useState<{
     page: Page;
     gameId?: string;
@@ -418,33 +418,33 @@ export const GamePostPreview = ({
     return null;
   };
 
-  if (isLoading) {
-    return (
-      <vstack height="100%" width="100%" alignment="center middle">
-        <vstack alignment="center middle">
-          <image 
-            url="loading.gif"
-            imageWidth={50}
-            imageHeight={50}
-          />
-        </vstack>
-      </vstack>
-    );
-  }
+  // if (isLoading) {
+  //   return (
+  //     <vstack height="100%" width="100%" alignment="center middle">
+  //       <vstack alignment="center middle">
+  //         <image 
+  //           url="loading.gif"
+  //           imageWidth={50}
+  //           imageHeight={50}
+  //         />
+  //       </vstack>
+  //     </vstack>
+  //   );
+  // }
 
-  // If no game data was found, show an error
-  if (!previewData.maskedWord || !previewData.gifs || previewData.gifs.length === 0) {
-    return (
-      <vstack height="100%" width="100%" alignment="center middle" padding="large" gap="medium">
-        <text style="heading" size="medium">
-          GIF Enigma
-        </text>
-        <text alignment="center">
-          This game appears to be missing data. Try creating a new game instead.
-        </text>
-      </vstack>
-    );
-  }
+  // // If no game data was found, show an error
+  // if (!previewData.maskedWord || !previewData.gifs || previewData.gifs.length === 0) {
+  //   return (
+  //     <vstack height="100%" width="100%" alignment="center middle" padding="large" gap="medium">
+  //       <text style="heading" size="medium">
+  //         GIF Enigma
+  //       </text>
+  //       <text alignment="center">
+  //         This game appears to be missing data. Try creating a new game instead.
+  //       </text>
+  //     </vstack>
+  //   );
+  // }
 
   const firstGif = getFirstGif();
 

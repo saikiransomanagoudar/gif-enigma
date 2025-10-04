@@ -14,10 +14,44 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
   useEffect(() => {
+    setIsLoading(false);
+    setShowSuccessMessage(false);
     return () => {
       isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[DEBUG] Landing page became visible, resetting states');
+        setIsLoading(false);
+        setShowSuccessMessage(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Also listen for focus events (when user returns to the app)
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('[DEBUG] Window focused, resetting loading states');
+      setIsLoading(false);
+      setShowSuccessMessage(false);
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
@@ -47,6 +81,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   const handlePlayClick = () => {
     setIsLoading(true);
+    setShowSuccessMessage(false);
 
     const handleGameResponse = (event: MessageEvent) => {
       let message = event.data;
@@ -66,19 +101,23 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }
 
         if (redditPostId) {
-          window.parent.postMessage(
-            {
-              type: 'NAVIGATE_TO_POST',
-              data: { postId: redditPostId },
-            },
-            '*'
-          );
-
+          setShowSuccessMessage(true);
           setTimeout(() => {
-            if (isMounted.current) setIsLoading(false);
-          }, 5000);
+            window.parent.postMessage(
+              {
+                type: 'NAVIGATE_TO_POST',
+                data: { postId: redditPostId },
+              },
+              '*'
+            );
+          }, 1000);
+
+          // setTimeout(() => {
+          //   if (isMounted.current) setIsLoading(false);
+          // }, 5000);
         } else {
           setIsLoading(false);
+          setShowSuccessMessage(false);
           alert('Could not find a game post to navigate to. Please try again later.');
         }
       }
@@ -102,14 +141,15 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       if (isMounted.current) {
         window.removeEventListener('message', handleGameResponse);
         setIsLoading(false);
+        setShowSuccessMessage(false);
       }
-    }, 5000);
+    }, 10000);
   };
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitialLoading(false);
-    }, 3000);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, []);
@@ -122,6 +162,32 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
           <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
           {/* <img src="/landing-page/loading.gif" alt="Loading..." className="h-16 w-16 animate-spin" /> */}
+        </div>
+      )}
+      {isLoading && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black">
+          {!showSuccessMessage ? (
+            <>
+              <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
+              <div className="mt-4">
+                <ComicText size={0.8} color="white">
+                  Finding a game for you...
+                </ComicText>
+              </div>
+            </>
+          ) : (
+            <div className="animate-bounce text-center">
+              <div className="mb-4 text-6xl">🎊</div>
+              <ComicText size={1.2} color="#4ade80">
+                Found a new game!
+              </ComicText>
+              <div className="mt-2">
+                <ComicText size={0.7} color="white">
+                  Loading game...
+                </ComicText>
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div
@@ -141,9 +207,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             }}
             onMouseEnter={() => setHover('btn1')}
             onMouseLeave={() => setHover(null)}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
           >
             <span className={`mt-1 inline-flex items-center`}>
               <div className={`${isboardOpen ? 'text-2xl' : ''}`}>🏆</div>
@@ -167,7 +233,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
               className="mt-[-35px] mb-[15px] cursor-default select-none"
             >
               <ComicText size={3} color={colors.primary}>
@@ -178,7 +244,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 1 }}
+              transition={{ duration: 0.4, delay: 0.4 }}
             >
               {/* <ComicText
                 size={0.8}
@@ -196,9 +262,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
             onClick={handlePlayClick}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 1.2 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
           >
             <img
               src="/landing-page/lets-play.gif"
@@ -208,19 +274,14 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
               {isLoading ? 'Loading...' : 'Tap to Play →'}
             </div>
-            {/* {isLoading && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-t-transparent border-blue-500"></div>
-              </div>
-            )} */}
           </motion.div>
 
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
             onClick={() => onNavigate('category')}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 1.4 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.6 }}
           >
             <img
               src="/landing-page/lets-build.gif"
@@ -235,9 +296,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
         <motion.div
           className="mt-3 text-center"
-          initial={{ opacity: 0, y: -20 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 1.6 }}
+          transition={{ duration: 0.4, delay: 0.7 }}
         >
           <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
             <button

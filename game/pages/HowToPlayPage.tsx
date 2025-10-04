@@ -10,7 +10,7 @@ export interface HowToPlayPageProps extends NavigationProps {
 
 export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [_isInitialLoading, setIsInitialLoading] = useState(true);
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
@@ -36,12 +36,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const textColor = isDarkMode ? 'text-[#E8E5DA]' : 'text-gray-900';
 
   return (
-    <PageTransition>
-      {/* {isInitialLoading && (
-        <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black">
-          <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-        </div>
-      )} */}
+    <PageTransition>      
       <motion.div
         className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
         initial={{ opacity: 0 }}
@@ -103,11 +98,11 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText className="text-lg">
                     {
                       [
-                        'Each question has 4 hidden GIFs as clues.',
+                        'Each question contains 4 GIFs as clues.',
                         'Initially, only the first GIF is shown.',
                         'If you need help, reveal more GIFs/letters as hints.',
-                        'Type your guess in the input field and submit.',
-                        'Score points and Win.',
+                        'Type your guess in the input field to guess the word/phrase.',
+                        'Score points and compete on the leaderboard.',
                       ][index]
                     }
                   </ComicText>

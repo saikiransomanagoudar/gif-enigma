@@ -474,8 +474,6 @@ Devvit.addCustomPostType({
 
           case 'SAVE_SCORE':
             try {
-              console.log('💾 [DEBUG] Saving score with data:', event.data);
-
               const result = await saveScore(event.data, context);
 
               postMessage({
@@ -553,24 +551,26 @@ Devvit.addCustomPostType({
               }
 
               const username = event.data.username as string;
-
-              // Try to compute rank directly from Redis to avoid top-N truncation issues
-              // Compute rank by scanning the leaderboard ordered by score (high → low)
               let rank: number | undefined = undefined;
+              // Check if user exists in the cumulative leaderboard
+              const userScore = await context.redis.zScore('cumulativeLeaderboard', username);              
+              // Get ALL members from the cumulative leaderboard, no limit
+              let members;
               try {
-                const members = await context.redis.zRange('cumulativeLeaderboard', '-inf', '+inf', {
-                  by: 'score',
+                members = await context.redis.zRange('cumulativeLeaderboard', 0, -1, {
+                  by: 'rank',
                   reverse: true,
                 });
-                const orderedUsernames = members.map((m: any) => (typeof m === 'string' ? m : m.member));
-                const idx = orderedUsernames.indexOf(username);
-                if (idx !== -1) {
-                  rank = idx + 1;
-                }
-              } catch (scanErr) {
-                console.warn('[DEBUG] Rank zRange scan failed:', scanErr);
+              } catch (err) {
+                members = await context.redis.zRange('cumulativeLeaderboard', 0, -1);
               }
-
+              
+              const orderedUsernames = members.map((m: any) => (typeof m === 'string' ? m : m.member));
+              const idx = orderedUsernames.indexOf(username);
+              if (idx !== -1) {
+                rank = idx + 1;
+              }
+              
               // Fetch user stats hash directly; fall back to score from sorted set
               let stats: any = null;
               try {
@@ -605,6 +605,7 @@ Devvit.addCustomPostType({
                 }
               }
 
+              console.log(`[DEBUG] Final GET_USER_STATS_RESULT for ${username}:`, { stats, rank });
               postMessage({
                 type: 'GET_USER_STATS_RESULT',
                 success: true,
@@ -1611,6 +1612,18 @@ Devvit.addCustomPostType({
           },
         }
       );
+
+      if (isLoading) {
+        return (
+          <vstack height="100%" width="100%" alignment="center middle">
+            <image 
+              url="eyebrows.gif"
+              imageWidth={50}
+              imageHeight={50}
+            />
+          </vstack>
+        );
+      }
 
       return isGame ? (
         <GamePostPreview
