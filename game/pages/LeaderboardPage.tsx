@@ -43,11 +43,11 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
 
       if (msg?.type === 'GET_TOP_SCORES_RESULT') {
         if (msg.success && Array.isArray(msg.scores)) {
-          const top5 = msg.scores
+          const top10 = msg.scores
             .sort((a: { bestScore: number }, b: { bestScore: number }) => b.bestScore - a.bestScore)
-            .slice(0, 5);
+            .slice(0, 10);
 
-          setLeaderboard(top5);
+          setLeaderboard(top10);
         }
         setIsLoading(false);
       }
@@ -97,7 +97,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
   };
 
   return (
-    <div className={`flex w-full flex-col gap-6 p-6 md:p-10 rounded-lg ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
+    <div className={`flex w-full flex-col gap-6 p-6 md:p-10 pb-24 rounded-lg ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
       <button
         ref={backButtonRef}
         onClick={handleBackClick}
@@ -120,20 +120,32 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
         </div>
       ) : (
         <div className="rounded-lg shadow-md overflow-hidden">
-          <div className="grid grid-cols-3 text-center font-bold dark:bg-gray-800 py-4 mt-[-12px]">
-            <span><ComicText>Rank</ComicText></span>
-            <span><ComicText>Player</ComicText></span>
-            <span><ComicText>Total Score</ComicText></span>
+          <div className="grid font-bold dark:bg-gray-800 py-4 mt-[-12px] gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr auto' }}>
+            <div className="flex justify-start pl-2"><ComicText>Rank</ComicText></div>
+            <div className="flex justify-start"><ComicText>Player</ComicText></div>
+            <div className="flex justify-end pr-2"><ComicText>Total Score</ComicText></div>
           </div>
 
           {leaderboard.length > 0 ? (
             leaderboard.map((entry, index) => (
-              <div key={index} className="grid grid-cols-3 text-center py-3 border-b dark:border-gray-700">
-                <span className="font-semibold">
-                  {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index === 3 ? "🏅" : index === 4 ? "🎖️" : index === 5 ? "🏆" : index === 6 ? "🏆" : index === 7 ? "🏆" : index === 8 ? "🏆" : index === 9 ? "🏆" : ""}
-                </span>
-                <ComicText><span className="truncate max-sm:text-sm max-sm:ml-[-15px]">{entry.username}</span></ComicText>
-                <ComicText><span className="font-bold text-green-600 max-sm:ml-[15px]">{entry.bestScore}</span></ComicText>
+              <div key={index} className="grid py-3 border-b dark:border-gray-700 items-center gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr auto' }}>
+                <div className="flex justify-start items-center pl-2">
+                  {index === 0 ? (
+                    <span className="text-base leading-none inline-block w-5 text-center">🥇</span>
+                  ) : index === 1 ? (
+                    <span className="text-base leading-none inline-block w-5 text-center">🥈</span>
+                  ) : index === 2 ? (
+                    <span className="text-base leading-none inline-block w-5 text-center">🥉</span>
+                  ) : (
+                    <ComicText><span className="font-semibold inline-block w-5 text-left">{index + 1}</span></ComicText>
+                  )}
+                </div>
+                <div className="flex justify-start">
+                  <ComicText><span className="max-sm:text-sm">{entry.username}</span></ComicText>
+                </div>
+                <div className="flex justify-end pr-2">
+                  <ComicText><span className="font-bold text-green-600">{entry.bestScore.toLocaleString()}</span></ComicText>
+                </div>
               </div>
             ))
           ) : (
@@ -144,39 +156,32 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
         </div>
       )}
 
-      <div className="flex flex-col gap-4 rounded-lg p-4 shadow-md dark:bg-gray-800">
-        <span className="text-lg font-bold text-[#FF4500]">
-          <ComicText>Your Stats</ComicText>
-        </span>
-        {userStats ? (
-          <>
-            <div className="flex justify-between text-xs">
-              <span><ComicText>Your Total Score:</ComicText></span>
-              <span className="font-bold text-green-600"><ComicText>{userStats.totalScore}</ComicText></span>
+      {/* Sticky Bottom Bar for User Stats */}
+      <div className={`fixed bottom-0 left-0 right-0 ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-300"} border-t-2 shadow-lg z-50`}>
+        <div className="flex items-center justify-between px-3 py-3 max-w-full gap-2">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-base sm:text-lg">📊</span>
+            <ComicText size={0.65}>
+              <span className={`${isDarkMode ? "text-gray-300" : "text-gray-700"} whitespace-nowrap`}>Your Stats:</span>
+            </ComicText>
+          </div>
+          {userStats ? (
+            <div className="flex items-center gap-2 sm:gap-4 flex-shrink min-w-0">
+              <ComicText size={0.65}>
+                <span className="font-bold text-green-600 truncate">{userStats.totalScore.toLocaleString()} pts</span>
+              </ComicText>
+              <span className={`${isDarkMode ? "text-gray-400" : "text-gray-500"} flex-shrink-0`}>|</span>
+              <ComicText size={0.65}>
+                <span className="font-bold text-[#FF4500] truncate">#{userStats.rank.toLocaleString()}</span>
+              </ComicText>
             </div>
-            <div className="flex justify-between text-xs">
-              <span><ComicText>Global Rank:</ComicText></span>
-              <span className="font-bold"><ComicText>#{userStats.rank}</ComicText></span>
-            </div>
-          </>
-        ) : (
-          <ComicText>Loading your stats...</ComicText>
-        )}
-      </div>
-
-      <ComicText>
-        <div className="flex justify-center p-2">
-          <button
-            onClick={() => {
-              setIsLoading(true);
-              fetchLeaderboard();
-            }}
-            className="cursor-pointer rounded-lg bg-[#FF4500] px-6 py-3 text-white shadow-md transition hover:scale-105"
-          >
-            Refresh Leaderboard
-          </button>
+          ) : (
+            <ComicText size={0.65}>
+              <span className={isDarkMode ? "text-gray-400" : "text-gray-500"}>Loading...</span>
+            </ComicText>
+          )}
         </div>
-      </ComicText>
+      </div>
     </div>
   );
 };
