@@ -50,6 +50,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   // @ts-ignore
   const [gameId, setGameId] = useState<string | null>(propGameId || null);
   const [guessCount, setGuessCount] = useState(0);
+  const [isCommentPosting, setIsCommentPosting] = useState(false);
+  const [isCommentPosted, setIsCommentPosted] = useState(false);
 
   // transition refs
   const headerRef = useRef<HTMLDivElement>(null);
@@ -275,6 +277,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setShowLeaderboard(true);
         }
       }
+      if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
+        // Stop loading regardless of success
+        setIsCommentPosting(false);
+        if (actualMessage.success) {
+          setIsCommentPosted(true);
+        } else {
+          // Show a quick error toast/alert
+          try {
+            window.alert(actualMessage.error || 'Failed to post comment');
+          } catch {}
+        }
+      }
       if (actualMessage.type === 'HAS_USER_COMPLETED_GAME_RESULT') {
         if (actualMessage.success && actualMessage.completed) {
           setGameFlowState('completed');
@@ -459,11 +473,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     if (gameData) {
       const currentUsername = username || 'anonymous';
       setGameFlowState('won');
-      const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
-      const originalRevealedLettersSize = revealedLetters.size;
-
-      const isPhrase = gameData.word.includes(' ');
-      const hintTypeLabel = isPhrase ? 'Phrase' : 'Word';
+      // Keep for scoring via revealedLetters directly; no local var needed
 
       const playerState = {
         gifHintCount,
@@ -472,23 +482,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         lastPlayed: Date.now(),
         isCompleted: true,
       };
-
-      let wordHintsUsed = 0;
-
-      if (originalRevealedLettersSize > 0) {
-        const cleanWord = gameData.word.replace(/\s+/g, '');
-        const wordLength = cleanWord.length;
-
-        if (wordLength >= 5 && wordLength <= 7) {
-          wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
-        } else if (wordLength >= 8 && wordLength <= 10) {
-          wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
-        } else if (wordLength >= 11 && wordLength <= 15) {
-          wordHintsUsed = Math.ceil(originalRevealedLettersSize / 2);
-        } else if (wordLength >= 16) {
-          wordHintsUsed = Math.ceil(originalRevealedLettersSize / 3);
-        }
-      }
 
       window.parent.postMessage(
         {
@@ -511,12 +504,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             gifHintCount,
             revealedLetters: Array.from(revealedLetters),
             finalGuess: gameData.word,
-            commentData: {
-              numGuesses: guessCount,
-              gifHints: gifHintsUsed,
-              wordHints: wordHintsUsed,
-              hintTypeLabel,
-            },
           },
         },
         '*'
@@ -616,6 +603,27 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }, 1000);
       }
     }, 8000);
+  };
+
+  const handlePostComment = () => {
+    if (!gameData) return;
+    if (isCommentPosting || isCommentPosted) return;
+    const currentUsername = username || 'anonymous';
+    const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
+
+    setIsCommentPosting(true);
+    window.parent.postMessage(
+      {
+        type: 'POST_COMPLETION_COMMENT',
+        data: {
+          gameId: gameData.id,
+          username: currentUsername,
+          numGuesses: guessCount,
+          gifHints: gifHintsUsed,
+        },
+      },
+      '*'
+    );
   };
 
   const answer = gameData ? gameData.word.toUpperCase() : '';
@@ -1083,27 +1091,48 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </ComicText>
                 </div>
               ) : (
-                <div className="flex justify-center gap-4">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 md:gap-4">
+                  <button
+                    onClick={handlePostComment}
+                    disabled={isCommentPosting || isCommentPosted}
+                    className={`flex cursor-pointer items-center gap-2 rounded-md px-5 py-2.5 text-white transition-all duration-200 md:rounded-lg md:px-5 md:py-2.5 disabled:cursor-not-allowed min-w-[150px] sm:min-w-[170px] justify-center ${
+                      isCommentPosted
+                        ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
+                        : isCommentPosting
+                          ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
+                          : 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
+                    }`}
+                    aria-label={isCommentPosted ? 'Commented!' : 'Comment'}
+                    title={isCommentPosted ? 'Commented!' : 'Comment'}
+                    style={{
+                      boxShadow: isCommentPosted
+                        ? '0 8px 20px rgba(16,185,129,0.35)'
+                        : isCommentPosting
+                          ? '0 6px 16px rgba(99,102,241,0.25)'
+                          : '0 8px 22px rgba(124,58,237,0.35)'
+                    }}
+                  >
+                    <span className="text-lg md:text-xl">
+                      {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
+                    </span>
+                    <span>
+                      <ComicText size={0.7} color="white">
+                        {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment'}
+                      </ComicText>
+                    </span>
+                  </button>
                   <button
                     onClick={() => {
                       onNavigate('leaderboard');
                     }}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-5 py-2.5 text-white transition-all duration-200 md:rounded-lg md:px-5 md:py-2.5 min-w-[150px] sm:min-w-[170px] justify-center bg-gradient-to-r from-sky-600 to-blue-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
+                    aria-label="View Results"
+                    title="View Results"
                   >
-                    <span>🏆</span>
-                    <ComicText size={0.7} color="white">
-                      View Results
-                    </ComicText>
-                  </button>
-
-                  <button
-                    onClick={handleBackClick}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-110 hover:shadow-lg"
-                  >
-                    <span>🏠</span>
-                    <ComicText size={0.7} color="white">
-                      Home
-                    </ComicText>
+                    <span className="text-lg md:text-xl">🏆</span>
+                    <span>
+                      <ComicText size={0.7} color="white">View Results</ComicText>
+                    </span>
                   </button>
                 </div>
               )}

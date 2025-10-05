@@ -150,7 +150,7 @@ export type WebviewToBlockMessage =
         gameId: string;
         username: string;
         numGuesses: number;
-        numHints: number;
+        gifHints: number;
       };
     }
   | {

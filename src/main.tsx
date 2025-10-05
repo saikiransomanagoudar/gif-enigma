@@ -1089,8 +1089,7 @@ Devvit.addCustomPostType({
                   gameId: event.data.gameId,
                   username: event.data.username,
                   numGuesses: event.data.numGuesses || 1,
-                  numHints: event.data.numHints || 0,
-                  otherGuesses: event.data.otherGuesses || [],
+                  gifHints: event.data.gifHints || 0,
                   redditPostId,
                 },
                 context

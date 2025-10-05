@@ -126,21 +126,13 @@ export async function postCompletionComment(
     username: string;
     numGuesses: number;
     gifHints: number;
-    wordHints: number;
-    hintTypeLabel: string;
     redditPostId?: string;
   },
   context: Context
 ): Promise<PostCommentResponse> {
   try {
     console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
-    const { 
-      gameId, 
-      username, 
-      numGuesses, 
-      gifHints, 
-      redditPostId 
-    } = params;
+    const { gameId, username, numGuesses, gifHints, redditPostId } = params;
 
     // First, check if a comment has already been posted for this user on this game
     const commentKey = `comment:${gameId}:${username}`;
