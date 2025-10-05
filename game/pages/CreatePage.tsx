@@ -65,6 +65,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [currentRecIndex, setCurrentRecIndex] = useState<number>(0);
   const [secretInput, setSecretInput] = useState<string>('');
   const [synonyms, setSynonyms] = useState<string[][]>([]);
+  const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(false);
 
   // GIF states
   // @ts-ignore
@@ -104,6 +105,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (category) {
       setCurrentCategory(category);
     }
+    // Clear synonyms immediately when input type changes to avoid delay
+    setSynonyms([]);
+    setIsLoadingSynonyms(false);
     fetchRecommendations();
   }, [currentCategory, inputType]);
 
@@ -122,6 +126,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const fetchSynonyms = async (word: string) => {
+    setIsLoadingSynonyms(true);
     window.parent.postMessage(
       {
         type: 'GET_GEMINI_SYNONYMS',
@@ -132,11 +137,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const getNextRecommendation = () => {
-    const secretElement = document.querySelector('.secret-word-container');
+    const secretWordElement = document.querySelector('.secret-word-value');
     const hintElements = document.querySelectorAll('.hint-text');
 
-    if (secretElement) {
-      secretElement.classList.add('opacity-0', 'translate-y-2');
+    if (secretWordElement) {
+      secretWordElement.classList.add('opacity-0', 'translate-y-2');
     }
 
     hintElements.forEach((element) => {
@@ -150,8 +155,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       fetchSynonyms(recommendations[nextIndex]);
 
       setTimeout(() => {
-        if (secretElement) {
-          secretElement.classList.remove('opacity-0', 'translate-y-2');
+        if (secretWordElement) {
+          secretWordElement.classList.remove('opacity-0', 'translate-y-2');
         }
 
         hintElements.forEach((element, index) => {
@@ -224,15 +229,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setCurrentRecIndex(0);
           if (filtered.length > 0) {
             setSecretInput(filtered[0]);
+            // Fetch synonyms immediately for the new recommendation
             fetchSynonyms(filtered[0]);
           }
         } else {
           setRecommendations([]);
           setSecretInput('');
+          // Clear synonyms if no recommendations
+          setSynonyms([]);
         }
       }
 
       if (msg.type === 'GET_GEMINI_SYNONYMS_RESULT') {
+        setIsLoadingSynonyms(false);
         if (msg.success && Array.isArray(msg.result)) {
           setSynonyms(msg.result);
         } else {
@@ -470,32 +479,40 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               ) : (
                 <button
                   onClick={() => {
-                    setSelectedGifIndex(index);
-                    setShowSearchInput(true);
-                    setSearchTerm(defaultSynonym);
-                    setMessage('');
-                    setMessageType('info');
-                    searchGifs(defaultSynonym);
+                    if (!isLoadingSynonyms && defaultSynonym) {
+                      setSelectedGifIndex(index);
+                      setShowSearchInput(true);
+                      setSearchTerm(defaultSynonym);
+                      setMessage('');
+                      setMessageType('info');
+                      searchGifs(defaultSynonym);
+                    }
                   }}
-                  className="flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 hover:scale-105"
+                  className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${
+                    isLoadingSynonyms && !defaultSynonym ? 'cursor-not-allowed opacity-60' : 'hover:scale-105'
+                  }`}
                 >
                   <div className="mb-1 text-2xl transition-transform duration-300 hover:rotate-12">
-                    ➕
+                    {isLoadingSynonyms && !defaultSynonym ? '⏳' : '➕'}
                   </div>
-                  <div className="transition-all duration-300">
-                    <ComicText size={0.6} color={colors.textSecondary}>
-                      {defaultSynonym ? (
-                        <span className="hint-text transition-all duration-300 ease-in-out">
-                          Hint:{' '}
-                          <span className={`text-yellow-400 ${categoryColor}`}>
-                            {defaultSynonym}
-                          </span>
-                        </span>
-                      ) : (
-                        `Add GIF #${index + 1}`
-                      )}
-                    </ComicText>
-                  </div>
+                   <div className="transition-all duration-300">
+                     <ComicText size={0.6} color={colors.textSecondary}>
+                       {isLoadingSynonyms && !defaultSynonym ? (
+                         <span className="hint-text transition-all duration-300 ease-in-out">
+                           Loading synonyms...
+                         </span>
+                       ) : defaultSynonym ? (
+                         <>
+                           <span className="inline-block">Synonym:</span>{' '}
+                           <span className={`hint-text transition-all duration-300 ease-in-out text-yellow-400 ${categoryColor}`}>
+                             {defaultSynonym}
+                           </span>
+                         </>
+                       ) : (
+                         `Add GIF #${index + 1}`
+                       )}
+                     </ComicText>
+                   </div>
                 </button>
               )}
             </div>
@@ -580,12 +597,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }}
       >
         <div className="flex flex-col gap-4">
-          {isSearching && (
-            <div className="flex flex-col items-center justify-center py-4">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
-              <div className="mt-2 text-center text-sm text-blue-400">Searching for GIFs...</div>
-            </div>
-          )}
+           {isSearching && (
+             <div className="flex flex-col items-center justify-center py-4">
+               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+               <ComicText size={0.7} color="#60A5FA" className="mt-5 text-center">
+                 Searching for GIFs...
+               </ComicText>
+             </div>
+           )}
           {!isSearching && gifs.length > 0 && (
             <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
               <div className="grid grid-cols-2 gap-2">
@@ -710,24 +729,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             </div>
           </div>
 
-          <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2">
-            <div className="secret-word-container transition-all duration-300">
-              {secretInput ? (
-                <ComicText size={0.7} color={colors.primary}>
-                  <span className="inline-block transition-all duration-300" key={inputType}>
-                    Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
-                  </span>{' '}
-                  <span style={{ fontWeight: 'bold' }} className={`${categoryColor}`}>
-                    {secretInput.toUpperCase()}
-                  </span>
-                </ComicText>
-              ) : (
-                <ComicText size={0.6} color={colors.textSecondary}>
-                  Loading...
-                </ComicText>
-              )}
-            </div>
-          </div>
+           <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2">
+             <div className="secret-word-container">
+               {secretInput ? (
+                 <ComicText size={0.7} color={colors.primary}>
+                   <span className="inline-block">
+                     Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
+                   </span>{' '}
+                   <span 
+                     className={`secret-word-value transition-all duration-300 ${categoryColor}`}
+                     style={{ fontWeight: 'bold' }}
+                   >
+                     {secretInput.toUpperCase()}
+                   </span>
+                 </ComicText>
+               ) : (
+                 <ComicText size={0.6} color={colors.textSecondary}>
+                   Loading...
+                 </ComicText>
+               )}
+             </div>
+           </div>
           <div className="group items-left relative justify-center">
             <button
               onClick={getNextRecommendation}
