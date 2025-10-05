@@ -66,6 +66,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [secretInput, setSecretInput] = useState<string>('');
   const [synonyms, setSynonyms] = useState<string[][]>([]);
   const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(false);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
+  
+  // Cache for recommendations to avoid repeated API calls
+  const recommendationsCache = useRef<{ [key: string]: string[] }>({});
+  const synonymsCache = useRef<{ [key: string]: string[][] }>({});
 
   // GIF states
   // @ts-ignore
@@ -108,10 +113,51 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     // Clear synonyms immediately when input type changes to avoid delay
     setSynonyms([]);
     setIsLoadingSynonyms(false);
+    // Clear cache when input type changes to avoid wrong data
+    const cacheKey = `${currentCategory}-${inputType}`;
+    delete recommendationsCache.current[cacheKey];
     fetchRecommendations();
   }, [currentCategory, inputType]);
 
+  const getFallbackRecommendations = () => {
+    const fallbacks = {
+      'General': {
+        word: ['ELEPHANT', 'BUTTERFLY', 'RAINBOW', 'MOUNTAIN', 'OCEAN', 'FOREST', 'CASTLE', 'DRAGON', 'MAGIC', 'DREAM'],
+        phrase: ['ONCE UPON A TIME', 'HAPPY BIRTHDAY', 'GOOD MORNING', 'SEE YOU LATER', 'THANK YOU VERY MUCH', 'I LOVE YOU', 'HOW ARE YOU', 'WHAT TIME IS IT', 'HAVE A NICE DAY', 'GOOD NIGHT']
+      },
+      'Movies': {
+        word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN', 'FROZEN', 'TOYSTORY', 'PIRATES', 'WIZARD', 'GHOSTBUSTERS'],
+        phrase: ['MAY THE FORCE BE WITH YOU', 'I AM YOUR FATHER', 'TO INFINITY AND BEYOND', 'HERE IS JOHNNY', 'I WILL BE BACK', 'SHOW ME THE MONEY', 'ELEMENTARY MY DEAR WATSON', 'LIFE IS LIKE A BOX OF CHOCOLATES', 'I AM SPARTACUS', 'HOUSTON WE HAVE A PROBLEM']
+      },
+      'Gaming': {
+        word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE', 'MINECRAFT', 'POKEMON', 'PACMAN', 'TETRIS', 'DONKEYKONG'],
+        phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE', 'PLAYER ONE READY', 'CONTINUE GAME', 'SAVE GAME', 'LOAD GAME', 'PAUSE GAME', 'RESUME GAME', 'QUIT GAME']
+      },
+      'Books': {
+        word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA', 'FRANKENSTEIN', 'ALICE', 'WONDERLAND', 'ROBINHOOD', 'MULAN'],
+        phrase: ['ONCE UPON A TIME', 'THE END', 'CHAPTER ONE', 'TO BE CONTINUED', 'THE ADVENTURE BEGINS', 'THE MYSTERY DEEPENS', 'THE FINAL CHAPTER', 'THE LEGEND LIVES ON', 'THE STORY CONTINUES', 'THE TALE IS TOLD']
+      }
+    };
+
+    const categoryData = fallbacks[currentCategory] || fallbacks['General'];
+    return categoryData[inputType] || categoryData['word'];
+  };
+
   const fetchRecommendations = async () => {
+    const cacheKey = `${currentCategory}-${inputType}`;
+    
+    // Check cache first
+    if (recommendationsCache.current[cacheKey]) {
+      const cachedData = recommendationsCache.current[cacheKey];
+      setRecommendations(cachedData);
+      setCurrentRecIndex(0);
+      setSecretInput(cachedData[0]);
+      fetchSynonyms(cachedData[0]);
+      return;
+    }
+    
+    setIsLoadingRecommendations(true);
+    
     window.parent.postMessage(
       {
         type: 'GET_GEMINI_RECOMMENDATIONS',
@@ -123,9 +169,47 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
+
+    // Set a shorter timeout and use fallback data
+    setTimeout(() => {
+      if (isLoadingRecommendations && !secretInput) {
+        setIsLoadingRecommendations(false);
+        const fallbackData = getFallbackRecommendations();
+        setRecommendations(fallbackData);
+        setCurrentRecIndex(0);
+        setSecretInput(fallbackData[0]);
+        fetchSynonyms(fallbackData[0]);
+      }
+    }, 5000); // 5 second timeout
+  };
+
+  const getFallbackSynonyms = (word: string) => {
+    const synonymMap: { [key: string]: string[][] } = {
+      'ELEPHANT': [['animal', 'large', 'trunk', 'gray'], ['mammal', 'big', 'ivory', 'herd'], ['creature', 'huge', 'tusk', 'safari'], ['beast', 'massive', 'memory', 'zoo']],
+      'BUTTERFLY': [['insect', 'wings', 'colorful', 'fly'], ['caterpillar', 'metamorphosis', 'beautiful', 'flutter'], ['pollinate', 'delicate', 'spring', 'garden'], ['transform', 'graceful', 'pattern', 'flower']],
+      'RAINBOW': [['colors', 'rain', 'sky', 'arc'], ['spectrum', 'prism', 'light', 'beautiful'], ['seven', 'vibrant', 'nature', 'hope'], ['weather', 'bright', 'magical', 'end']],
+      'MOUNTAIN': [['peak', 'high', 'climb', 'rock'], ['summit', 'elevation', 'hiking', 'snow'], ['range', 'altitude', 'view', 'nature'], ['hill', 'slope', 'adventure', 'trail']],
+      'OCEAN': [['sea', 'water', 'waves', 'blue'], ['deep', 'vast', 'marine', 'salt'], ['current', 'tide', 'shore', 'fish'], ['aquatic', 'huge', 'surf', 'boat']],
+      'STARWARS': [['space', 'lightsaber', 'force', 'jedi'], ['galaxy', 'darth', 'vader', 'rebel'], ['yoda', 'luke', 'princess', 'leia'], ['death', 'star', 'empire', 'hope']],
+      'POKEMON': [['pikachu', 'catch', 'trainer', 'battle'], ['ash', 'gym', 'evolution', 'pokeball'], ['gotta', 'catch', 'em', 'all'], ['monster', 'creature', 'adventure', 'friend']],
+      'HARRY': [['potter', 'wizard', 'hogwarts', 'magic'], ['spell', 'wand', 'voldemort', 'hermione'], ['ron', 'weasley', 'quidditch', 'dumbledore'], ['gryffindor', 'invisibility', 'cloak', 'phoenix']]
+    };
+
+    return synonymMap[word.toUpperCase()] || [
+      ['think', 'guess', 'solve', 'answer'],
+      ['brain', 'mind', 'logic', 'reason'], 
+      ['puzzle', 'mystery', 'riddle', 'challenge'],
+      ['find', 'discover', 'reveal', 'uncover']
+    ];
   };
 
   const fetchSynonyms = async (word: string) => {
+    // Check cache first
+    if (synonymsCache.current[word]) {
+      setSynonyms(synonymsCache.current[word]);
+      return;
+    }
+    
     setIsLoadingSynonyms(true);
     window.parent.postMessage(
       {
@@ -134,6 +218,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
+
+    // Fallback for synonyms too
+    setTimeout(() => {
+      if (isLoadingSynonyms) {
+        setIsLoadingSynonyms(false);
+        const fallbackSynonyms = getFallbackSynonyms(word);
+        // Cache the fallback synonyms
+        synonymsCache.current[word] = fallbackSynonyms;
+        setSynonyms(fallbackSynonyms);
+      }
+    }, 3000); // 3 second timeout
   };
 
   const getNextRecommendation = () => {
@@ -223,8 +318,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
 
       if (msg.type === 'GET_GEMINI_RECOMMENDATIONS_RESULT') {
+        setIsLoadingRecommendations(false);
         if (msg.success && Array.isArray(msg.result)) {
           const filtered = msg.result.filter((r: string) => r.length >= 5);
+          const cacheKey = `${currentCategory}-${inputType}`;
+          recommendationsCache.current[cacheKey] = filtered;
           setRecommendations(filtered);
           setCurrentRecIndex(0);
           if (filtered.length > 0) {
@@ -243,6 +341,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (msg.type === 'GET_GEMINI_SYNONYMS_RESULT') {
         setIsLoadingSynonyms(false);
         if (msg.success && Array.isArray(msg.result)) {
+          // Cache successful synonyms response
+          if (secretInput) {
+            synonymsCache.current[secretInput] = msg.result;
+          }
           setSynonyms(msg.result);
         } else {
           setSynonyms([]);
@@ -495,24 +597,36 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   <div className="mb-1 text-2xl transition-transform duration-300 hover:rotate-12">
                     {isLoadingSynonyms && !defaultSynonym ? '⏳' : '➕'}
                   </div>
-                   <div className="transition-all duration-300">
-                     <ComicText size={0.6} color={colors.textSecondary}>
-                       {isLoadingSynonyms && !defaultSynonym ? (
-                         <span className="hint-text transition-all duration-300 ease-in-out">
-                           Loading synonyms...
-                         </span>
-                       ) : defaultSynonym ? (
-                         <>
-                           <span className="inline-block">Synonym:</span>{' '}
-                           <span className={`hint-text transition-all duration-300 ease-in-out text-yellow-400 ${categoryColor}`}>
-                             {defaultSynonym}
-                           </span>
-                         </>
-                       ) : (
-                         `Add GIF #${index + 1}`
-                       )}
-                     </ComicText>
-                   </div>
+                  <div className="transition-all duration-300">
+                    <ComicText size={0.6} color={colors.textSecondary}>
+                      {isLoadingSynonyms && !defaultSynonym ? (
+                        <span className="hint-text transition-all duration-300 ease-in-out">
+                          Loading synonyms...
+                        </span>
+                      ) : (
+                        <>
+                          {/* {secretInput && (
+                            <span className="block">
+                              <span className="inline-block">{inputType === 'word' ? 'Word:' : 'Phrase:'}</span>{' '}
+                              <span className={`hint-text transition-all duration-300 ease-in-out ${categoryColor}`}>
+                                {secretInput}
+                              </span>
+                            </span>
+                          )} */}
+                          {defaultSynonym ? (
+                            <span className="block mt-1">
+                              <span className="inline-block">Synonym:</span>{' '}
+                              <span className={`hint-text transition-all duration-300 ease-in-out text-yellow-400 ${categoryColor}`}>
+                                {defaultSynonym}
+                              </span>
+                            </span>
+                          ) : (
+                            !secretInput && `Add GIF #${index + 1}`
+                          )}
+                        </>
+                      )}
+                    </ComicText>
+                  </div>
                 </button>
               )}
             </div>
@@ -745,7 +859,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                  </ComicText>
                ) : (
                  <ComicText size={0.6} color={colors.textSecondary}>
-                   Loading...
+                   {isLoadingRecommendations ? 'Loading recommendations...' : 'No recommendations available'}
                  </ComicText>
                )}
              </div>
