@@ -24,7 +24,7 @@ export const GamePostPreview = ({
     gifs?: string[];
     gameId?: string;
   }>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [_isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState('there');
   const [gifLoaded, _setGifLoaded] = useState(true); // Start with true since we can't track loading
   const [_letterBoxes, setLetterBoxes] = useState<string[]>([]);
@@ -32,11 +32,11 @@ export const GamePostPreview = ({
     page: Page;
     gameId?: string;
   } | null>(null);
-  const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
+  const [_isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
   const [hasCompletedGame, setHasCompletedGame] = useState(false);
-  const [isWebViewMounted, setIsWebViewMounted] = useState(false);
+  const [_isWebViewMounted, setIsWebViewMounted] = useState(false);
   const [usernameRetryCount, setUsernameRetryCount] = useState(0);
-
+  const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
   // Add this useAsync block to reset state when postId changes
   useAsync(
     async () => {
@@ -464,7 +464,7 @@ export const GamePostPreview = ({
     >
       {/* Header */}
       <vstack alignment="center middle" padding="xsmall">
-        <ComicText size={0.6} color="#FF4500">
+        <ComicText size={isSmallScreen ? 0.5 : 0.6} color="#FF4500">
           GIF Enigma
         </ComicText>
       </vstack>
@@ -502,9 +502,14 @@ export const GamePostPreview = ({
               onPress={handlePlayGame}
               alignment="center middle"
             >
-              <text color="#FFFFFF" weight="bold">
-                Decode the GIF 🔍
-              </text>
+              <vstack alignment="center middle">
+                <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
+                  Decode the GIF  
+                </ComicText>
+              </vstack>
+              <vstack alignment="center middle">
+                <text color="white" size="large">🔍</text>
+              </vstack>
             </hstack>
             <hstack
               cornerRadius="full"
@@ -513,9 +518,15 @@ export const GamePostPreview = ({
               onPress={handleHowToPlay}
               alignment="center middle"
             >
-              <text color="#FFFFFF" weight="bold">
-                How To Play? 🤔
-              </text>
+              <vstack alignment="center middle">
+              <spacer size="xsmall" />
+                <ComicText size={isSmallScreen ? 0.13 : 0.14} color="white" bold>
+                  How To Play?  
+                </ComicText>
+              </vstack>
+              <vstack alignment="center middle">
+                <text color="white" size="large">🤔</text>
+              </vstack>
             </hstack>
           </hstack>
         ) : (
@@ -529,9 +540,15 @@ export const GamePostPreview = ({
                 onPress={handleHowToPlay}
                 alignment="center middle"
               >
-                <text color="#FFFFFF" weight="bold">
-                  How To Play? 🤔
-                </text>
+                <vstack alignment="center middle">
+                <spacer size="xsmall" />
+                  <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
+                    How To Play?  
+                  </ComicText>
+                </vstack>
+                <vstack alignment="center middle">
+                  <text color="white" size="large">🤔</text>
+                </vstack>
               </hstack>
               <hstack
                 cornerRadius="full"
@@ -540,9 +557,14 @@ export const GamePostPreview = ({
                 onPress={handleShowResults}
                 alignment="center middle"
               >
-                <text color="#FFFFFF" weight="bold">
-                  Show Results 📊
-                </text>
+                <vstack alignment="center middle">
+                  <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
+                    View Results  
+                  </ComicText>
+                </vstack>
+                <vstack alignment="center middle">
+                  <text color="white" size="large">📊</text>
+                </vstack>
               </hstack>
             </hstack>
           </vstack>

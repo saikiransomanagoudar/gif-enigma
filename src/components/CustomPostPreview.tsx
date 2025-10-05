@@ -143,7 +143,8 @@ export const CustomPostPreview = ({
     });
   };
 
-  const isSmallScreen = (context.dimensions?.width ?? 0) < 300;
+  const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
+  console.log('[DEBUG] Block width:', context.dimensions?.width);
 
   return (
     <vstack height="100%" width="100%" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA">
@@ -151,22 +152,27 @@ export const CustomPostPreview = ({
 
       {/* title */}
       <vstack alignment="center middle" padding="medium">
-        <ComicText size={0.7} color="#FF4500">
+        <ComicText size={isSmallScreen ? 0.5 : 0.6} color="#FF4500">
           GIF Enigma
         </ComicText>
       </vstack>
       {/* Intro text */}
       <vstack alignment="center middle" padding="medium" width="100%">
         <spacer size="large" />
-        <text
-          color="orangered-500"
-          size={isSmallScreen ? 'small' : 'xlarge'}
-          weight="bold"
-          wrap={true}
-          alignment="center"
-        >
-          Hi {username}, ready to find the secret word/phrase from GIFs?
-        </text>
+        {isSmallScreen ? (
+            <vstack alignment="center middle">
+            <ComicText size={0.21} color="#FF4500" bold>
+              Ready to crack the GIF code,
+            </ComicText>
+            <ComicText size={0.21} color="#FF4500" bold>
+              {`${username}?`}
+            </ComicText>
+          </vstack>
+        ) : (
+          <ComicText size={0.21} color="#FF4500" bold>
+            {`Ready to crack the GIF code, ${username}?`}
+          </ComicText>
+        )}
         <spacer size="medium" />
       </vstack>
 
@@ -190,9 +196,27 @@ export const CustomPostPreview = ({
             />
           </vstack>
           <spacer size="medium" />
-          <button appearance="primary" size="large" icon="play" onPress={handlePlayGame}>
-            Start Playing 👉
-          </button>
+          <vstack 
+            backgroundColor="#6A0DAD" 
+            cornerRadius="full" 
+            padding="medium"
+            onPress={handlePlayGame}
+          >
+            <hstack gap="small" alignment="center middle">
+              <vstack alignment="center middle">
+                <icon name="play" color="white" size="medium" />
+              </vstack>
+              <vstack alignment="center middle">
+                <spacer size="xsmall" />
+                <ComicText size={0.16} color="white" bold>
+                  Play Now
+                </ComicText>
+              </vstack>
+              <vstack alignment="center middle">
+                <text color="white" size="large">👉</text>
+              </vstack>
+            </hstack>
+          </vstack>
           <spacer size="small" />
         </vstack>
       </hstack>

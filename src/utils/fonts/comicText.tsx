@@ -12,17 +12,20 @@ interface ComicTextProps {
   children: string;
   size?: number;
   color?: string;
+  key?: number | string;
+  bold?: boolean;
 }
 
 export function ComicText(props: ComicTextProps): JSX.Element { 
-  const { children, size = 2, color = 'black' } = props; 
-  const text = children[0]; 
+  const { children, size = 2, color = 'black', bold = false } = props; 
+  // Handle children as either string or array
+  const text = Array.isArray(children) ? children.join('') : String(children);
   const line = text.split(''); 
   const gap = 1; 
 
   const glyphData = line.map((ch) => { 
     if (ch === ' ') { 
-      return { path: '', width: 6, height: 0 }; 
+      return { path: '', width: 20, height: 0 };
     } 
     const glyph = Glyphs[ch as SupportedGlyphs]; 
     return glyph || { path: '', width: 0, height: 0 }; 
@@ -65,7 +68,8 @@ export function ComicText(props: ComicTextProps): JSX.Element {
         d="${g.path}" 
         transform="translate(${xOffset} ${yOffset})" 
         fill-rule="evenodd" 
-        clip-rule="evenodd" 
+        clip-rule="evenodd"
+        ${bold ? `stroke="${color}" stroke-width="2" stroke-linejoin="round"` : ''} 
       /> 
     `); 
     xOffset += g.width + gap; 
