@@ -38,32 +38,64 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
       return JSON.parse(cachedFormats);
     }
 
-    // 2. Upload and cache ALL formats
+    // 2. Upload and cache only essential formats first (gif, tinygif) for speed
     const uploadedFormats: Record<string, TenorGifFormat> = {};
-    
-    // Process formats in quality order
-    const formats = ['gif', 'mediumgif', 'tinygif', 'nanogif'] as const;
-    
-    for (const format of formats) {
-      const originalFormat = tenorGif.media_formats[format];
-      if (!originalFormat?.url) continue;
 
-      try {
-        // Upload to Reddit media
-        const uploadResult = await context.media.upload({
-          url: originalFormat.url,
-          type: 'gif',
-        });
-
-        uploadedFormats[format] = {
-          ...originalFormat,
-          url: uploadResult.mediaUrl,
-        };
-      } catch (error) {
-        console.error(`Failed to upload ${format} for ${tenorGif.id}:`, error);
-        uploadedFormats[format] = originalFormat; // Fallback to original
+    // Helper: upload with timeout and limited retries
+    const uploadWithTimeoutAndRetry = async (
+      url: string,
+      timeoutMs: number,
+      maxRetries: number
+    ): Promise<string> => {
+      let attempt = 0;
+      let lastError: unknown = undefined;
+      while (attempt <= maxRetries) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), timeoutMs);
+          // context.media.upload doesn't accept AbortSignal; emulate timeout by racing
+          const uploadPromise = context.media.upload({ url, type: 'gif' });
+          const result = await Promise.race([
+            uploadPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), timeoutMs))
+          ]);
+          clearTimeout(timeout);
+          // @ts-expect-error Result is from uploadPromise
+          return (result.mediaUrl as string) || url;
+        } catch (err) {
+          lastError = err;
+          // brief backoff: 100ms, 250ms, 500ms
+          const backoff = [100, 250, 500][Math.min(attempt, 2)];
+          await new Promise(r => setTimeout(r, backoff));
+          attempt += 1;
+        }
       }
-    }
+      throw lastError ?? new Error('upload-failed');
+    };
+
+    // Run essential uploads in parallel, fall back to original URLs if any fail
+    const essentialFormats = ['gif', 'tinygif'] as const;
+    const essentialUploads = essentialFormats.map(async (format) => {
+      const originalFormat = tenorGif.media_formats[format];
+      if (!originalFormat?.url) return;
+      try {
+        const mediaUrl = await uploadWithTimeoutAndRetry(originalFormat.url, 2000, 2);
+        uploadedFormats[format] = { ...originalFormat, url: mediaUrl };
+      } catch (error) {
+        console.warn(`Upload skipped for ${format} (${tenorGif.id}); using source URL.`, error);
+        uploadedFormats[format] = originalFormat;
+      }
+    });
+
+    await Promise.allSettled(essentialUploads);
+
+    // Non-essential formats keep original URLs (mediumgif, nanogif)
+    (['mediumgif', 'nanogif'] as const).forEach((format) => {
+      const originalFormat = tenorGif.media_formats[format];
+      if (originalFormat?.url) {
+        uploadedFormats[format] = originalFormat;
+      }
+    });
 
     // 3. Create final cached result
     const cachedResult = {
@@ -82,7 +114,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     return cachedResult;
 
   } catch (error) {
-    console.error('Error in cacheTenorGif:', error);
+    console.warn('Non-fatal: cacheTenorGif fallback to original URLs due to error.', error);
     return tenorGif;
   }
 }
