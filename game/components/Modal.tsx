@@ -9,6 +9,7 @@ interface ModalProps {
   onConfirm: () => void;
   children: React.ReactNode;
   shake?: boolean;
+  confirmDisabled?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,6 +19,7 @@ export const Modal: React.FC<ModalProps> = ({
   onConfirm,
   children,
   shake,
+  confirmDisabled = false,
 }) => {
   const [visible, setVisible] = useState(false);
   const [animationComplete, setAnimationComplete] = useState(false);
@@ -102,8 +104,15 @@ export const Modal: React.FC<ModalProps> = ({
           <div className="flex justify-end gap-2">
             <button
               onClick={onConfirm}
-              className="cursor-pointer rounded-full px-3 py-1.5 duration-200 hover:scale-105"
-              style={{ backgroundColor: colors.primary }}
+              disabled={confirmDisabled}
+              className={`rounded-full px-3 py-1.5 duration-200 ${
+                confirmDisabled 
+                  ? 'cursor-not-allowed opacity-50' 
+                  : 'cursor-pointer hover:scale-105'
+              }`}
+              style={{ 
+                backgroundColor: confirmDisabled ? '#6B7280' : colors.primary 
+              }}
             >
               <ComicText size={0.5} color="white">
                 Confirm
