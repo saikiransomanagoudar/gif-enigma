@@ -37,13 +37,71 @@ const fallbackSynonyms = {
 
 Devvit.addSchedulerJob({
   name: 'auto_create_post',
-  onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
+  onRun: async (event: ScheduledJobEvent<{ force?: boolean } | undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
+
+    // Time guard: only proceed at 09:00 and 19:00 America/Chicago
+    try {
+      const now = new Date();
+      const timeStr = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(now);
+      const [hhStr, mmStr] = timeStr.split(':');
+      const hour = Number(hhStr);
+      const minute = Number(mmStr);
+
+      if (!((hour === 9 || hour === 19) && minute === 0)) {
+        return;
+      }
+
+      // Idempotency lock: ensure only one post per allowed CT hour (unless forced)
+      const dateParts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false,
+      })
+        .formatToParts(now)
+        .reduce((acc: any, p) => {
+          if (p.type !== 'literal') acc[p.type] = p.value;
+          return acc;
+        }, {} as any);
+
+      const yyyy = dateParts.year;
+      const mm = dateParts.month;
+      const dd = dateParts.day;
+      const hh = dateParts.hour; // 00-23 in CT
+      const lockKey = `autoPostLock:${yyyy}-${mm}-${dd}:${hh}`;
+
+      const force = Boolean(event?.data && (event.data as any).force);
+      if (!force) {
+        try {
+          // @ts-ignore Devvit Redis supports NX/EX options
+          const setResult = await (context as any).redis.set(lockKey, '1', {
+            nx: true,
+            ex: 7200, // 2 hours expiry to be safe across delays
+          });
+          if (!setResult) {
+            return; // lock already held; another worker posted
+          }
+        } catch (_lockErr) {
+          // If locking fails unexpectedly, fail-open would risk duplicates; returning is safer
+          return;
+        }
+      }
+    } catch (tzErr) {
+      
+    }
 
     const category = pickRandom(categories);
     const inputType = pickRandom(inputTypes);
 
-    console.log(`🤖 Auto-scheduler: Creating game for ${category} ${inputType}`);
+    
 
     let recommendations: string[] = [];
     let synonyms: string[][] = [];
@@ -53,16 +111,16 @@ Devvit.addSchedulerJob({
       const recResult = await fetchGeminiRecommendations(context, category, inputType, 10);
       if (recResult.success && recResult.recommendations?.length) {
         recommendations = recResult.recommendations;
-        console.log(`✅ Auto-scheduler: Got ${recommendations.length} recommendations from API`);
+        
       } else {
         throw new Error('API failed or no recommendations');
       }
     } catch (error) {
-      console.log(`⚠️ Auto-scheduler: API failed, using fallback data. Error: ${error}`);
+      
       // Use fallback data
       const categoryData = fallbackData[category] || fallbackData['General'];
       recommendations = categoryData[inputType] || categoryData['word'];
-      console.log(`🔄 Auto-scheduler: Using ${recommendations.length} fallback recommendations`);
+      
     }
 
     const word = recommendations[0];
@@ -72,12 +130,12 @@ Devvit.addSchedulerJob({
       const synResult = await fetchGeminiSynonyms(context, word);
       if (synResult.success && synResult.synonyms?.length) {
         synonyms = synResult.synonyms;
-        console.log(`✅ Auto-scheduler: Got ${synonyms.length} synonym groups from API`);
+        
       } else {
         throw new Error('API failed or no synonyms');
       }
     } catch (error) {
-      console.log(`⚠️ Auto-scheduler: Synonyms API failed, using fallback. Error: ${error}`);
+      
       // Use fallback synonyms
       synonyms = (fallbackSynonyms as any)[word.toUpperCase()] || [
         ['think', 'guess', 'solve', 'answer'],
@@ -85,7 +143,7 @@ Devvit.addSchedulerJob({
         ['puzzle', 'mystery', 'riddle', 'challenge'],
         ['find', 'discover', 'reveal', 'uncover']
       ];
-      console.log(`🔄 Auto-scheduler: Using fallback synonyms for ${word}`);
+      
     }
 
     const gifUrls: string[] = [];
@@ -97,11 +155,11 @@ Devvit.addSchedulerJob({
     }
 
     if (gifUrls.length !== 4) {
-      console.log(`❌ Auto-scheduler: Only got ${gifUrls.length} GIFs, need 4. Aborting.`);
+      
       return;
     }
 
-    console.log(`✅ Auto-scheduler: Successfully got 4 GIFs, creating game with word: ${word}`);
+    
     const maskedWord = word
       .split('')
       .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -124,7 +182,7 @@ Devvit.addSchedulerJob({
       context
     );
 
-    console.log(`🎉 Auto-scheduler: Successfully created and posted game!`);
+    
   },
 });
 
@@ -132,8 +190,23 @@ Devvit.addSchedulerJob({
   name: 'clean_leaderboards',
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
-    console.log('⏱️ Running leaderboard cleanup...');
     
     await removeSystemUsersFromLeaderboard(context);
+  },
+});
+
+Devvit.addSchedulerJob({
+  name: 'cache_prewarmer',
+  onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
+    const context = rawContext as unknown as Context;
+    
+    console.log('[CACHE_PREWARMER] Scheduled job triggered');
+    
+    try {
+      const { preWarmCache } = await import('./cachePreWarmer.js');
+      await preWarmCache(context);
+    } catch (error) {
+      console.error('[CACHE_PREWARMER] Scheduled job failed:', error);
+    }
   },
 });
