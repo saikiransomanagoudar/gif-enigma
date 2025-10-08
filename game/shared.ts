@@ -253,6 +253,7 @@ export type BlocksToWebviewMessage =
       type: 'GET_GEMINI_SYNONYMS_RESULT';
       success: boolean;
       result?: string[][];
+      word?: string;
       error?: string;
     }
   | {

@@ -34,6 +34,14 @@ import {
 } from '../game/server/scoringService.js';
 import '../game/server/autoCreateGameScheduler.js';
 
+// Disable noisy logs in production
+// eslint-disable-next-line @typescript-eslint/no-empty-function
+const __noop = (..._args: unknown[]) => {};
+// @ts-ignore
+console.log = __noop;
+// @ts-ignore
+console.warn = __noop;
+
 Devvit.addSettings([
   {
     name: 'tenor-api-key',
@@ -67,6 +75,13 @@ Devvit.addSettings([
     label: 'Allow Chat Post Creation',
     type: 'boolean',
     defaultValue: true,
+  },
+  {
+    name: 'enableAutoCron',
+    label: 'Enable Auto-Create Cron (Prod only)',
+    type: 'boolean',
+    defaultValue: false,
+    helpText: 'When enabled, schedules the hourly auto_create_post job. Leave OFF in playtests.',
   },
 ]);
 
@@ -831,15 +846,17 @@ Devvit.addCustomPostType({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: result.success,
                 result: result.synonyms,
+                word: word, // Include the word so frontend knows which word these synonyms belong to
                 error: result.error,
-              });
+              } as BlocksToWebviewMessage);
             } catch (error) {
               console.error('MainApp: Error in GET_GEMINI_SYNONYMS handler:', error);
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: false,
+                word: event.data?.word, // Include word even in error
                 error: String(error),
-              });
+              } as BlocksToWebviewMessage);
             }
             break;
           }
@@ -931,15 +948,28 @@ Devvit.addCustomPostType({
 
           case 'MARK_GAME_COMPLETED':
             try {
-              console.log('🏁 [DEBUG] Marking game as completed:', event.data);
 
-              if (!event.data || !event.data.gameId || !event.data.username) {
+              if (!event.data || !event.data.gameId) {
                 postMessage({
                   type: 'MARK_GAME_COMPLETED_RESULT',
                   success: false,
                   error: 'Missing required data',
                 });
                 return;
+              }
+
+              // Resolve a reliable username server-side. Client may send 'anonymous'.
+              let resolvedUsername: string | null = null;
+              try {
+                const incoming = String(event.data.username || '').trim();
+                if (incoming && incoming.toLowerCase() !== 'anonymous') {
+                  resolvedUsername = incoming.replace(/^u\//i, '');
+                } else {
+                  const fetched = await context.reddit.getCurrentUsername();
+                  if (fetched) resolvedUsername = fetched;
+                }
+              } catch (_e) {
+                // ignore and handle below
               }
 
               // Create a completed player state
@@ -955,7 +985,7 @@ Devvit.addCustomPostType({
               const saveResult = await saveGameState(
                 {
                   gameId: event.data.gameId,
-                  username: event.data.username,
+                  username: resolvedUsername || event.data.username,
                   playerState,
                 },
                 context
@@ -1027,6 +1057,41 @@ Devvit.addCustomPostType({
               } catch (scoreError) {
                 console.error('❌ [DEBUG] Error auto-calculating score:', scoreError);
                 // Don't fail the operation if score calculation fails
+              }
+
+              // Send a one-time welcome/thank-you PM to the user
+              const pmTarget = resolvedUsername || event.data.username;
+              const pmFlagKey = `user:${pmTarget}`;
+              const pmFlagField = 'welcomePMSent';
+              const alreadySent = await context.redis.hGet(pmFlagKey, pmFlagField);
+
+              if (!alreadySent) {
+                const subject = 'Thanks for playing GIF Enigma!';
+                const text =
+                  '**Nice work decoding a GIF Enigma!** 🎉\n\n' +
+                  'If you want more interesting GIF puzzles in your feed **please join us at [r/PlayGIFEnigma](https://www.reddit.com/r/PlayGIFEnigma)**.' +
+                  'And as always, if you have any feedback or ideas, feel free to reply here or contact us via mod mail.';
+
+                // Normalize username input and send with error handling
+                const rawUsername = String(pmTarget || '').trim();
+                const toUsername = rawUsername.replace(/^u\//i, '');
+
+                if (!toUsername) {
+                  console.warn('[PM] Missing username; skipping DM. Raw:', rawUsername);
+                } else {
+                  try {
+                    await context.reddit.sendPrivateMessage({
+                      subject,
+                      text,
+                      to: toUsername,
+                    });
+                    await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
+                    console.log(`[PM] Sent welcome DM to ${toUsername}`);
+                  } catch (pmErr) {
+                    console.error('[PM] sendPrivateMessage failed:', pmErr);
+                    // Intentionally do not set the flag so we can retry later
+                  }
+                }
               }
 
               setPostPreviewRefreshTrigger((prev) => prev + 1);
@@ -1677,7 +1742,7 @@ Devvit.addMenuItem({
   onPress: async (_, context) => {
     await context.scheduler.runJob({
       name: 'auto_create_post',
-      data: undefined,
+      data: { force: true },
       runAt: new Date(),
     });
 
@@ -1695,16 +1760,85 @@ Devvit.addMenuItem({
   },
 });
 
-// Devvit.addTrigger({
-//   event: 'AppInstall',
-//   onEvent: async (_event, context) => {
-//     const jobId = await context.scheduler.runJob({
-//       name: 'auto_create_post',
-//       cron: '0 12 * * *', // Run at 12:00 UTC every day
-//     });
-//     console.log('✅ Scheduled auto_create_post job to run once daily at 12:00 UTC:', jobId);
-//   },
-// });
+// Helper: schedule once using a Redis guard to avoid hitting cron limits during upgrades/playtests
+async function ensureAutoCreateScheduled(context: any): Promise<void> {
+  try {
+    // Only allow scheduling when explicitly enabled in settings
+    const enabled = await context.settings.get('enableAutoCron');
+    if (enabled !== true) {
+      return;
+    }
+
+    const guardKey = 'cron:scheduled:auto_create_post';
+    const versionKey = 'cron:scheduled:auto_create_post:version';
+    const already = await context.redis.get(guardKey);
+    const currentVersion = context.appVersion || 'unknown';
+    const recordedVersion = await context.redis.get(versionKey);
+
+    if (already === '1' && recordedVersion === currentVersion) {
+      return; // already scheduled for this version
+    }
+
+    await context.scheduler.runJob({
+      name: 'auto_create_post',
+      cron: '0 * * * *',
+    });
+
+    // Mark as scheduled with a long expiry (90 days)
+    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    await context.redis.set(guardKey, '1', { expiration: expireAt });
+    await context.redis.set(versionKey, currentVersion, { expiration: expireAt });
+  } catch (err) {
+    // Swallow cron limit errors to avoid crashing build/playtest cycles
+    console.error('[SCHEDULER] ensureAutoCreateScheduled error (ignored):', err);
+  }
+}
+
+// Helper: schedule cache pre-warming job
+async function ensureCachePreWarmerScheduled(context: any): Promise<void> {
+  try {
+    const guardKey = 'cron:scheduled:cache_prewarmer';
+    const versionKey = 'cron:scheduled:cache_prewarmer:version';
+    const already = await context.redis.get(guardKey);
+    const currentVersion = context.appVersion || 'unknown';
+    const recordedVersion = await context.redis.get(versionKey);
+
+    if (already === '1' && recordedVersion === currentVersion) {
+      return; // already scheduled for this version
+    }
+
+    // Schedule to run daily at 3 AM UTC (low traffic hours)
+    await context.scheduler.runJob({
+      name: 'cache_prewarmer',
+      cron: '0 3 * * *',
+    });
+
+    // Mark as scheduled with a long expiry (90 days)
+    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    await context.redis.set(guardKey, '1', { expiration: expireAt });
+    await context.redis.set(versionKey, currentVersion, { expiration: expireAt });
+    
+    console.log('[SCHEDULER] Cache pre-warmer scheduled successfully');
+  } catch (err) {
+    // Silently ignore cron limit errors in development - will work in production
+  }
+}
+
+Devvit.addTrigger({
+  event: 'AppInstall',
+  onEvent: async (_event, context) => {
+    await ensureAutoCreateScheduled(context);
+    await ensureCachePreWarmerScheduled(context);    // Note: Cache pre-warming will run automatically via scheduled job at 3 AM UTC
+  },
+});
+
+Devvit.addTrigger({
+  event: 'AppUpgrade',
+  onEvent: async (_event, context) => {
+    await ensureAutoCreateScheduled(context);
+    await ensureCachePreWarmerScheduled(context);
+  },
+});
 
 export function getAppVersion(context: Context): string {
   return context.appVersion || '1.0.0.0';
