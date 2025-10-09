@@ -58,15 +58,12 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
       }
 
       if (msg?.type === 'GET_USER_STATS_RESULT' && msg.success) {
-        console.log('[DEBUG] Received GET_USER_STATS_RESULT:', msg);
         if (msg.stats && typeof msg.stats.score === 'number' && msg.rank) {
-          console.log('[DEBUG] Setting user stats:', { totalScore: msg.stats.score, rank: msg.rank });
           setUserStats({
             totalScore: msg.stats.score,
             rank: msg.rank,
           });
         } else {
-          console.log('[DEBUG] User stats incomplete:', { stats: msg.stats, rank: msg.rank });
           // fallback
           setUserStats({
             totalScore: 0,

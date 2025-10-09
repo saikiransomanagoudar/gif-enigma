@@ -6,7 +6,6 @@ import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
-  // @ts-ignore
   const [redditUsername, setRedditUsername] = useState<string>('');
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -27,7 +26,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[DEBUG] Landing page became visible, resetting states');
         setIsLoading(false);
         setShowSuccessMessage(false);
       }
@@ -40,10 +38,8 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     };
   }, []);
 
-  // Also listen for focus events (when user returns to the app)
   useEffect(() => {
     const handleFocus = () => {
-      console.log('[DEBUG] Window focused, resetting loading states');
       setIsLoading(false);
       setShowSuccessMessage(false);
     };
@@ -56,7 +52,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    // Detect dark mode
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
     const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
@@ -82,68 +77,81 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const handlePlayClick = () => {
     setIsLoading(true);
     setShowSuccessMessage(false);
+    let retryCount = 0;
+    const maxRetries = 3;
 
-    const handleGameResponse = (event: MessageEvent) => {
-      let message = event.data;
-      if (message && message.type === 'devvit-message' && message.data?.message) {
-        message = message.data.message;
-      } else if (message && message.type === 'devvit-message' && message.data) {
-        message = message.data;
-      }
-
-      if (message.type === 'GET_RANDOM_GAME_RESULT') {
-        window.removeEventListener('message', handleGameResponse);
-
-        let redditPostId = null;
-
-        if (message.success && message.result && message.result.success && message.result.game) {
-          redditPostId = message.result.game.redditPostId;
+    const tryFindGame = () => {
+      const handleGameResponse = (event: MessageEvent) => {
+        let message = event.data;
+        if (message && message.type === 'devvit-message' && message.data?.message) {
+          message = message.data.message;
+        } else if (message && message.type === 'devvit-message' && message.data) {
+          message = message.data;
         }
 
-        if (redditPostId) {
-          setShowSuccessMessage(true);
-          setTimeout(() => {
-            window.parent.postMessage(
-              {
-                type: 'NAVIGATE_TO_POST',
-                data: { postId: redditPostId },
-              },
-              '*'
-            );
-          }, 1000);
+        if (message.type === 'GET_RANDOM_GAME_RESULT') {
+          window.removeEventListener('message', handleGameResponse);
 
-          // setTimeout(() => {
-          //   if (isMounted.current) setIsLoading(false);
-          // }, 5000);
-        } else {
-          setIsLoading(false);
-          setShowSuccessMessage(false);
-          alert('Could not find a game post to navigate to. Please try again later.');
+          if (message.success && message.result && message.result.game) {
+            const game = message.result.game;
+            const redditPostId = game.redditPostId;
+
+            if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
+              setShowSuccessMessage(true);
+              setTimeout(() => {
+                window.parent.postMessage(
+                  {
+                    type: 'NAVIGATE_TO_POST',
+                    data: { postId: redditPostId },
+                  },
+                  '*'
+                );
+              }, 1000);
+            } else if (retryCount < maxRetries) {
+              retryCount++;
+              setTimeout(tryFindGame, 500);
+            } else {
+              setIsLoading(false);
+              setShowSuccessMessage(false);
+              alert('Could not find a valid game to play. Please try again.');
+            }
+          } else if (retryCount < maxRetries) {
+            retryCount++;
+            setTimeout(tryFindGame, 500);
+          } else {
+            setIsLoading(false);
+            setShowSuccessMessage(false);
+            alert('No games available right now. Please try again later or create a new game!');
+          }
         }
-      }
+      };
+
+      window.removeEventListener('message', handleGameResponse);
+      window.addEventListener('message', handleGameResponse);
+
+      window.parent.postMessage(
+        {
+          type: 'GET_RANDOM_GAME',
+          data: {
+            username: redditUsername || 'anonymous',
+            preferUserCreated: true,
+          },
+        },
+        '*'
+      );
+
+      setTimeout(() => {
+        if (isMounted.current) {
+          window.removeEventListener('message', handleGameResponse);
+          if (retryCount >= maxRetries) {
+            setIsLoading(false);
+            setShowSuccessMessage(false);
+          }
+        }
+      }, 10000);
     };
 
-    window.removeEventListener('message', handleGameResponse);
-    window.addEventListener('message', handleGameResponse);
-
-    window.parent.postMessage(
-      {
-        type: 'GET_RANDOM_GAME',
-        data: {
-          username: redditUsername || 'anonymous',
-          preferUserCreated: true,
-        },
-      },
-      '*'
-    );
-
-    setTimeout(() => {
-      if (isMounted.current) {
-        window.removeEventListener('message', handleGameResponse);
-        setIsLoading(false);
-        setShowSuccessMessage(false);
-      }
-    }, 10000);
+    tryFindGame();
   };
 
   useEffect(() => {
@@ -154,14 +162,13 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     return () => clearTimeout(timer);
   }, []);
 
-  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]'; // Dark mode background
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
   return (
     <PageTransition>
       {isInitialLoading && (
         <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
           <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
-          {/* <img src="/landing-page/loading.gif" alt="Loading..." className="h-16 w-16 animate-spin" /> */}
         </div>
       )}
       {isLoading && (
@@ -246,14 +253,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
             >
-              {/* <ComicText
-                size={0.8}
-                // color={textColor}
-                className={`select-none cursor-default mt-[50px] mb-[20px] p-1 text-center ${isDarkMode ? 'bg-gradient-to-t from-[#FFFFFF] to-[#00DDFF] bg-clip-text text-transparent' : 'text-black'}`}
-              >
-                Hi {redditUsername ? `u/${redditUsername}` : 'there'}, are you ready to unravel the
-                secret word/phrase from GIFs?
-              </ComicText> */}
             </motion.h2>
           </div>
         </div>

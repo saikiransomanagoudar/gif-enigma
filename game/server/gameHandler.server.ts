@@ -76,6 +76,15 @@ export async function getRandomGame(
       const gameData = await context.redis.hGetAll(`game:${gameId}`);
       const createdAt = parseInt(gameData.createdAt || '0');
 
+      if (!gameData.redditPostId || !gameData.word) {
+        continue;
+      }
+
+      const isRemoved = gameData.isRemoved === 'true';
+      if (isRemoved) {
+        continue;
+      }
+
       let hasValidGifs = false;
       if (gameData?.gifs) {
         const gifs = JSON.parse(gameData.gifs);
@@ -209,9 +218,6 @@ export async function fetchRequest(
 
 export async function removeSystemUsersFromLeaderboard(context: Context) {
   try {
-    console.log('🧹 [DEBUG] Removing system users from leaderboards...');
-    
-    // List of system usernames to remove from leaderboards
     const systemUsernames = [
       'gif-enigma',
       'anonymous', 
@@ -222,44 +228,32 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
       'seamless_ghost'
     ];
     
-    // Remove from cumulative leaderboard
     for (const username of systemUsernames) {
       await context.redis.zRem('cumulativeLeaderboard', [username]);
-      console.log(`✅ [DEBUG] Removed ${username} from cumulative leaderboard`);
-      
-      // Also delete their user stats
       await context.redis.del(`userStats:${username}`);
-      console.log(`✅ [DEBUG] Deleted user stats for ${username}`);
     }
     
-    // Remove from global leaderboard - a bit trickier since IDs contain gameId:username
     const globalLeaderboardEntries = await context.redis.zRange('globalLeaderboard', 0, -1);
     
     for (const entry of globalLeaderboardEntries) {
       const id = typeof entry === 'string' ? entry : entry.member;
       
-      // Check if this entry contains a system username
       if (systemUsernames.some(username => id.includes(`:${username}`))) {
         await context.redis.zRem('globalLeaderboard', [id]);
-        console.log(`✅ [DEBUG] Removed ${id} from global leaderboard`);
       }
     }
     
-    // Get all game-specific leaderboards
     const leaderboardKeys = await context.redis.hkeys('leaderboard:*');
     
-    // For each game-specific leaderboard
     for (const leaderboardKey of leaderboardKeys) {
       for (const username of systemUsernames) {
         await context.redis.zRem(leaderboardKey, [username]);
-        console.log(`✅ [DEBUG] Removed ${username} from ${leaderboardKey}`);
       }
     }
     
-    console.log('✅ [DEBUG] Successfully cleaned all leaderboards of system users');
     return { success: true };
   } catch (error) {
-    console.error('❌ [DEBUG] Error removing system users from leaderboard:', error);
+    console.error('Error removing system users from leaderboard:', error);
     return { success: false, error: String(error) };
   }
 }

@@ -18,7 +18,6 @@ interface GamePageProps extends NavigationProps {
 }
 
 export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGameId }) => {
-  // game data
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [gameFlowState, setGameFlowState] = useState<GameFlowState>('loading');
   const [gifHintCount, setGifHintCount] = useState(1);
@@ -34,8 +33,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   gameIdRef.current = propGameId;
   // @ts-ignore
   const [gameKey, setGameKey] = useState(Date.now());
-
-  // game score
   const [gameStartTime, setGameStartTime] = useState<number>(Date.now());
   const [finalScore, setFinalScore] = useState<ScoreData | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -52,8 +49,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [guessCount, setGuessCount] = useState(0);
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
-
-  // transition refs
+  const [showGiveUpModal, setShowGiveUpModal] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -112,7 +108,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           const loadedGameData = actualMessage.game;
           setGameData(loadedGameData);
           setGameFlowState('playing');
-          // Don't reset state here - let GET_GAME_STATE_RESULT handle it
           setIsCorrect(null);
 
           addToPlayedGames(loadedGameData.id);
@@ -177,25 +172,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
 
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
-        console.log('🔍 [DEBUG] GET_GAME_STATE_RESULT received:', actualMessage);
-        
         if (actualMessage.success && actualMessage.state?.playerState) {
           const playerState = actualMessage.state.playerState;
 
-          // Restore GIF hint count - maintains which GIFs were revealed
-          // gifHintCount starts at 1 (first GIF always shown), increments with each hint used
           if (typeof playerState.gifHintCount === 'number') {
             const restoredGifHintCount = playerState.gifHintCount > 0 ? playerState.gifHintCount : 1;
-            console.log('🔍 [DEBUG] Restoring gifHintCount:', restoredGifHintCount);
             setGifHintCount(restoredGifHintCount);
           } else {
             setGifHintCount(1);
           }
 
-          // Restore revealed letters - maintains exact letter indices that were revealed
-          // This ensures the same letters stay revealed across sessions (not random)
           if (Array.isArray(playerState.revealedLetters) && playerState.revealedLetters.length > 0) {
-            console.log('🔍 [DEBUG] Restoring revealed letters:', playerState.revealedLetters);
             setRevealedLetters(new Set(playerState.revealedLetters));
           } else {
             setRevealedLetters(new Set());
@@ -217,8 +204,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             );
           }
         } else {
-          // No saved state - use defaults
-          console.log('🔍 [DEBUG] No saved state, using defaults');
           setGifHintCount(1);
           setRevealedLetters(new Set());
           setGuess('');
@@ -278,12 +263,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
       if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
-        // Stop loading regardless of success
         setIsCommentPosting(false);
         if (actualMessage.success) {
           setIsCommentPosted(true);
         } else {
-          // Show a quick error toast/alert
           try {
             window.alert(actualMessage.error || 'Failed to post comment');
           } catch {}
@@ -311,10 +294,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     };
   }, [propGameId]);
 
-  // Request game state once we have both username and gameData
   useEffect(() => {
     if (gameData?.id && username && username !== 'anonymous') {
-      console.log('🔍 [DEBUG] Requesting game state for:', gameData.id, username);
       window.parent.postMessage(
         {
           type: 'GET_GAME_STATE',
@@ -339,7 +320,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   }, [gameData?.id, username]);
 
-  // Save game state whenever it changes
   useEffect(() => {
     if (gameData && username) {
       const revealedLettersArray = Array.from(revealedLetters);
@@ -473,7 +453,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     if (gameData) {
       const currentUsername = username || 'anonymous';
       setGameFlowState('won');
-      // Keep for scoring via revealedLetters directly; no local var needed
 
       const playerState = {
         gifHintCount,
@@ -518,7 +497,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
       const boxes = document.querySelectorAll('.answer-box');
       boxes.forEach((box) => {
-        (box as HTMLElement).style.backgroundColor = '#86efac'; // Light green
+        (box as HTMLElement).style.backgroundColor = '#86efac';
         (box as HTMLElement).style.transition = 'background-color 0.5s ease';
       });
       createConfetti();
@@ -550,12 +529,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const boxes = document.querySelectorAll('.answer-box');
     boxes.forEach((box, index) => {
       setTimeout(() => {
-        (box as HTMLElement).style.backgroundColor = '#f87171'; // Brighter red
+        (box as HTMLElement).style.backgroundColor = '#f87171';
         (box as HTMLElement).style.transform = 'scale(1.1)';
         (box as HTMLElement).style.transition = 'all 0.2s cubic-bezier(.36,.07,.19,.97)';
 
         setTimeout(() => {
-          (box as HTMLElement).style.backgroundColor = '#fecaca'; // Light red
+          (box as HTMLElement).style.backgroundColor = '#fecaca';
           (box as HTMLElement).style.transform = 'scale(1)';
           (box as HTMLElement).style.transition = 'all 0.3s ease';
         }, 200);
@@ -626,6 +605,99 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     );
   };
 
+  const handleGiveUp = () => {
+    if (!gameData) return;
+    
+    const currentUsername = username || 'anonymous';
+    
+    const allIndices = new Set<number>();
+    for (let i = 0; i < gameData.word.length; i++) {
+      if (gameData.word[i] !== ' ') {
+        allIndices.add(i);
+      }
+    }
+    setRevealedLetters(allIndices);
+    setGuess(gameData.word.toUpperCase());
+    
+    setGameFlowState('completed');
+    setFinalScore({
+      username: currentUsername,
+      gameId: gameData.id,
+      score: 0,
+      gifPenalty: 100,
+      wordPenalty: 0,
+      timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+      timestamp: Date.now(),
+    });
+    
+    const playerState = {
+      gifHintCount: 999,
+      revealedLetters: Array.from(allIndices),
+      guess: gameData.word,
+      lastPlayed: Date.now(),
+      isCompleted: true,
+    };
+
+    window.parent.postMessage(
+      {
+        type: 'SAVE_GAME_STATE',
+        data: {
+          username: currentUsername,
+          gameId: gameData.id,
+          playerState,
+        },
+      },
+      '*'
+    );
+
+    window.parent.postMessage(
+      {
+        type: 'MARK_GAME_COMPLETED',
+        data: {
+          gameId: gameData.id,
+          username: currentUsername,
+          gifHintCount: 999,
+          revealedLetters: Array.from(allIndices),
+          finalGuess: gameData.word,
+        },
+      },
+      '*'
+    );
+
+    window.parent.postMessage(
+      {
+        type: 'SAVE_SCORE',
+        data: {
+          score: 0,
+          gifPenalty: 100,
+          wordPenalty: 0,
+          timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+          username: currentUsername,
+          gameId: gameData.id,
+          timestamp: Date.now(),
+        },
+      },
+      '*'
+    );
+
+    window.parent.postMessage(
+      {
+        type: 'GET_GAME_LEADERBOARD',
+        data: { gameId: gameData.id, limit: 10 },
+      },
+      '*'
+    );
+
+    window.parent.postMessage(
+      {
+        type: 'REFRESH_POST_PREVIEW',
+      },
+      '*'
+    );
+    
+    setShowGiveUpModal(true);
+  };
+
   const answer = gameData ? gameData.word.toUpperCase() : '';
 
   const handleBackClick = () => {
@@ -668,22 +740,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   };
 
-  // Deterministic shuffle function using word as seed
   const getDeterministicIndices = (word: string, allIndices: number[]): number[] => {
-    // Create a simple hash from the word to use as seed
     let seed = 0;
     for (let i = 0; i < word.length; i++) {
       seed = ((seed << 5) - seed) + word.charCodeAt(i);
-      seed = seed & seed; // Convert to 32-bit integer
+      seed = seed & seed;
     }
     
-    // Seeded random number generator
     const seededRandom = (index: number) => {
       const x = Math.sin(seed + index) * 10000;
       return x - Math.floor(x);
     };
     
-    // Fisher-Yates shuffle with seeded random
     const shuffled = [...allIndices];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(seededRandom(i) * (i + 1));
@@ -728,13 +796,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    // Get deterministic order of indices for this word
     const deterministicOrder = getDeterministicIndices(gameData.word, nonSpaceIndices);
-    
-    // Filter to only unrevealed letters, maintaining deterministic order
     const unrevealedInOrder = deterministicOrder.filter((i) => !revealedLetters.has(i));
-    
-    // Take the first N letters from the deterministic order
     const newRevealed = new Set(revealedLetters);
     const toReveal = Math.min(revealCount, unrevealedInOrder.length);
     
@@ -775,7 +838,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           data: {
             word: gameData.word,
             gifHintCount: gifHintCount,
-            revealedLetterCount: originalRevealedCount, // Use captured count
+            revealedLetterCount: originalRevealedCount,
             timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
             username: username || 'anonymous',
           },
@@ -1198,6 +1261,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         100% { transform: translateX(0); }
       }
 
+        @keyframes modal-fade-in {
+          0% { opacity: 0; transform: scale(0.9) translateY(-20px); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .animate-modal-fade-in {
+          animation: modal-fade-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
         .confetti {
           position: absolute;
           width: 10px;
@@ -1454,10 +1526,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           ref={questionRef}
           className="mb-6 translate-y-4 transform px-4 text-center opacity-0 transition-all duration-500"
         >
-          {/* <ComicText size={0.9} color="#2563EB">
-            What {gameData.word.includes(' ') ? 'phrase' : 'word'} comes to your mind when you see
-            this GIF?
-          </ComicText> */}
         </div>
       )}
       <div
@@ -1466,7 +1534,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       >
         {renderGifArea()}
       </div>
-      {/* GIF Hint Button */}
       <div
         ref={hintButtonRef}
         className="mt-3 translate-y-4 transform opacity-0 transition-all duration-500"
@@ -1511,16 +1578,28 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         ref={bottomBarRef}
         className="mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
       >
-        <button
-          onClick={handleWordHint}
-          disabled={!gameData || isLoading}
-          className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ backgroundColor: colors.primary }}
-        >
-          <ComicText size={0.6} color="white">
-            {gameData?.word.includes(' ') ? 'Phrase' : 'Word'} Hint
-          </ComicText>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleWordHint}
+            disabled={!gameData || isLoading}
+            className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: colors.primary }}
+          >
+            <ComicText size={0.6} color="white">
+              {gameData?.word.includes(' ') ? 'Phrase' : 'Word'} Hint
+            </ComicText>
+          </button>
+          <button
+            onClick={handleGiveUp}
+            disabled={!gameData || isLoading || gameFlowState !== 'playing'}
+            className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ backgroundColor: '#ef4444' }}
+          >
+            <ComicText size={0.6} color="white">
+              🏳️ Reveal Answer
+            </ComicText>
+          </button>
+        </div>
         <div className="mx-auto w-72">
           <div className="mx-auto w-72">
             <div className="rounded-full bg-gradient-to-r from-blue-500 to-purple-600 p-1 shadow-lg transition-shadow duration-300 hover:shadow-2xl">
@@ -1570,7 +1649,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             <h2 className="mb-4 text-center text-2xl font-bold text-blue-600">🎉 You Won! 🎉</h2>
 
             {finalScore ? (
-              // Only show score details if finalScore exists
               <div className="mb-4 rounded-lg bg-blue-50 p-4">
                 <h3 className="mb-2 text-xl font-semibold text-blue-700">Your Score</h3>
                 <p className="text-lg font-bold text-blue-800">{finalScore.score} / 100</p>
@@ -1645,6 +1723,77 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             </div>
           </div>
         </div>
+      )}
+      {showGiveUpModal && (
+        <>
+          <div className="bg-opacity-60 fixed inset-0 z-40 bg-black backdrop-blur-sm transition-all duration-500"></div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
+            <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-sm sm:max-w-md max-h-[95vh] overflow-y-auto rounded-xl border-2 border-red-600 bg-gradient-to-b from-gray-900 to-red-900 shadow-2xl">
+              <div className="relative border-b border-red-800 p-3 sm:p-4 text-center">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-opacity-70 h-24 w-24 sm:h-32 sm:w-32 rounded-full bg-red-900 blur-xl"></div>
+                </div>
+
+                <div className="mb-1 inline-block transform">
+                  <div className="mb-1 text-3xl sm:text-4xl">🏳️</div>
+                </div>
+
+                <div className="relative z-10">
+                  <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg">
+                    <ComicText size={1.2} color="#ff6b6b">
+                      Game Over!
+                    </ComicText>
+                  </div>
+                  <div className="mt-1 sm:mt-2">
+                    <ComicText size={0.7} color="#ffa07a">
+                      Don't give up, try again next time
+                    </ComicText>
+                  </div>
+                </div>
+              </div>
+              <div className="p-3 sm:p-4 text-center">
+                <div className="bg-opacity-50 mb-3 sm:mb-4 rounded-lg border border-red-700 bg-red-900 p-2 sm:p-3">
+                  <ComicText size={0.6} color="#fff">
+                    The answer was:
+                  </ComicText>
+                  <div className="mt-1 sm:mt-2 rounded p-1.5 sm:p-2 text-lg sm:text-xl font-bold text-white shadow-lg break-words">
+                    {gameData?.word.toUpperCase()}
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2">
+                  <button
+                    onClick={() => {
+                      onNavigate('landing');
+                    }}
+                    className="w-full sm:w-auto flex cursor-pointer items-center gap-1.5 sm:gap-2 rounded-md px-4 py-2 sm:px-5 sm:py-2.5 text-white transition-all duration-200 justify-center bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
+                    aria-label="Try Another Game"
+                    title="Try Another Game"
+                  >
+                    <span className="text-base sm:text-lg">🎮</span>
+                    <span>
+                      <ComicText size={0.6} color="white">
+                        Try Another Game
+                      </ComicText>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onNavigate('leaderboard');
+                    }}
+                    className="w-full sm:w-auto flex cursor-pointer items-center gap-1.5 sm:gap-2 rounded-md px-4 py-2 sm:px-5 sm:py-2.5 text-white transition-all duration-200 justify-center bg-gradient-to-r from-sky-600 to-blue-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
+                    aria-label="View Leaderboard"
+                    title="View Leaderboard"
+                  >
+                    <span className="text-base sm:text-lg">🏆</span>
+                    <span>
+                      <ComicText size={0.6} color="white">View Leaderboard</ComicText>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
