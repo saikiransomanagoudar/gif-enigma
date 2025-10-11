@@ -118,6 +118,7 @@ function App() {
   });
   const [navigationReceived, setNavigationReceived] = useState<boolean>(false);
   const [_initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
+  const [isNavigating, setIsNavigating] = useState<boolean>(true);
 
   // Load game data when navigating to a game page
   useEffect(() => {
@@ -181,6 +182,7 @@ function App() {
       }
 
       setInitialLoadComplete(true);
+      setIsNavigating(false);
     }, 2000);
 
     // Helper to handle the *unwrapped* message
@@ -291,9 +293,11 @@ function App() {
                 // Use requestAnimationFrame to schedule the change back
                 requestAnimationFrame(() => {
                   setCurrentPage(typedMessage.data.page);
+                  setIsNavigating(false);
                 });
               } else {
                 setCurrentPage(typedMessage.data.page);
+                setIsNavigating(false);
               }
               setNavigationReceived(true);
               setInitialLoadComplete(true);
@@ -631,7 +635,7 @@ function App() {
       case 'howToPlay':
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
-        return <LeaderboardPage onNavigate={setCurrentPage} username={userData?.username} />;
+        return <LeaderboardPage onNavigate={handleNavigate} username={userData?.username} gameId={gameId || undefined} />;
       case 'gameResults':
         return <GameResultsPage onNavigate={handleNavigate} gameId={gameId || undefined} />;
       case 'game':
@@ -649,6 +653,15 @@ function App() {
         return <LandingPage onNavigate={handleNavigate} {...commonProps} />;
     }
   };
+
+  // Show loading spinner during navigation
+  if (isNavigating) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#0d1629] dark:bg-[#1A2740]">
+        <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return <div className="app">{renderPage()}</div>;
 }
