@@ -8,41 +8,6 @@ GIF Enigma is a word/phrase-guessing game where players interpret GIFs to uncove
 2. **Use Hints**: You can reveal up to 4 GIF hints. There’s also a word/phrase hint option that adjusts based on the answer’s length.
 3. **Scoring**: You start with 100 points. Points are deducted as hints are used.
 
-## Points & Hint Penalties
-
-### GIF Hints Reveal Penalties
-
-- **After revealing 2 GIFs**: Deduct **10 points**
-- **After revealing 3 GIFs**: Deduct **20 points**
-- **After revealing 4 GIFs**: Deduct **40 points**
-
-### Word/Phrase Hint Reveal Penalties
-
-Penalties depend on the length of the word or phrase:
-
-- **5-7 Word/Phrase Characters**
-
-  - **Hints Available**: 1 hint
-  - **Reveal**: 2 letters
-  - **Penalty**: 50 points reduction per reveal
-
-- **8-10 Word/Phrase Characters**
-
-  - **Hints Available**: 2 hints
-  - **Reveal**: 2 letters
-  - **Penalty**: 25 points reduction per reveal
-
-- **11-15 Word/Phrase Characters**
-
-  - **Hints Available**: 3 hints
-  - **Reveal**: 2 letters
-  - **Penalty**: 15 points reduction per reveal
-
-- **16-25 Word/Phrase Characters**
-  - **Hints Available**: 3 hints
-  - **Reveal**: 3 letters
-  - **Penalty**: 10 points reduction per reveal
-
 ## Creator Mode
 
 Want to design your own GIF Enigma puzzle? Use Creator Mode to craft unique challenges:
