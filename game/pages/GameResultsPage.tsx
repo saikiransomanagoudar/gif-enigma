@@ -4,7 +4,7 @@ import { colors } from '../lib/styles';
 import { GameStatistics, NavigationProps, Page } from '../lib/types';
 
 interface GameResultsPageProps extends NavigationProps {
-  onNavigate: (page: Page) => void;
+  onNavigate: (page: Page, params?: { gameId?: string }) => void;
   gameId?: string;
 }
 
@@ -306,7 +306,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             </ComicText>
           </button>
           <button
-            onClick={() => onNavigate('leaderboard')}
+            onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
             className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:min-w-[220px]"
             style={{ backgroundColor: colors.primary }}
           >

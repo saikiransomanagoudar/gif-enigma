@@ -6,9 +6,10 @@ import * as transitions from '../../src/utils/transitions';
 export interface LeaderboardPageProps extends NavigationProps {
   postMessage?: (message: any) => void;
   username?: string;
+  gameId?: string;
 }
 
-export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) => {
+export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, gameId }) => {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [userStats, setUserStats] = useState<{ totalScore: number; rank: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,7 +91,15 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate }) 
     if (headerRef.current) transitions.fadeOut(headerRef.current, { duration: 300 });
     const categoryCards = document.querySelectorAll('.category-card');
     categoryCards.forEach((card, index) => transitions.fadeOut(card as HTMLElement, { duration: 300, delay: index * 50 }));
-    setTimeout(() => onNavigate('landing'), 450);
+    
+    // If gameId exists, go back to game results page; otherwise go to landing page
+    setTimeout(() => {
+      if (gameId) {
+        onNavigate('gameResults', { gameId });
+      } else {
+        onNavigate('landing');
+      }
+    }, 450);
   };
 
   return (
