@@ -5,6 +5,7 @@ import { HowToPlayPage } from './pages/HowToPlayPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { CategoryPage, CategoryType } from './pages/CategoryPage';
 import { GamePage } from './pages/GamePage';
+import { GameResultsPage } from './pages/GameResultsPage';
 import { Page } from './lib/types';
 
 export type NavigationProps = {
@@ -195,7 +196,6 @@ function App() {
       }
 
       try {
-        // Use type assertion to treat as DevvitMessage
         const typedMessage = message as DevvitMessage;
 
         // Handle random game result specifically
@@ -269,15 +269,16 @@ function App() {
                 setGameId(typedMessage.data.gameId);
               }
 
-              // CRITICAL FIX: When navigating to leaderboard, preserve the gameId
-              else if (typedMessage.data.page === 'leaderboard' && typedMessage.data.gameId) {
+              // CRITICAL FIX: When navigating to leaderboard or gameResults, preserve the gameId
+              else if ((typedMessage.data.page === 'leaderboard' || typedMessage.data.page === 'gameResults') && typedMessage.data.gameId) {
                 setGameId(typedMessage.data.gameId);
               }
 
-              // Handle non-game, non-leaderboard pages by clearing gameId
+              // Handle pages that don't need gameId by clearing it
               else if (
                 typedMessage.data.page !== 'game' &&
-                typedMessage.data.page !== 'leaderboard'
+                typedMessage.data.page !== 'leaderboard' &&
+                typedMessage.data.page !== 'gameResults'
               ) {
                 setGameId(null);
               }
@@ -508,20 +509,21 @@ function App() {
       page === 'leaderboard' ||
       page === 'landing' ||
       page === 'category' ||
-      page === 'create'
+      page === 'create' ||
+      page === 'gameResults'
     ) {
       setCurrentPage(page);
 
-      // Don't clear gameId for leaderboard page as it needs it
-      if (page !== 'leaderboard' && page !== ('game' as Page)) {
+      // Don't clear gameId for pages that need it
+      if (page !== 'leaderboard' && page !== 'gameResults' && page !== ('game' as Page)) {
         setGameId(null);
       }
 
       // Store page for navigation persistence
       localStorage.setItem('lastPage', page);
 
-      // Only store gameId for game and leaderboard pages
-      if (page === ('game' as Page) || page === ('leaderboard' as Page)) {
+      // Only store gameId for game, leaderboard, and gameResults pages
+      if (page === ('game' as Page) || page === ('leaderboard' as Page) || page === 'gameResults') {
         if (params?.gameId) {
           localStorage.setItem('lastGameId', params.gameId);
         }
@@ -561,13 +563,13 @@ function App() {
       setCurrentPage(page);
 
       // Reset gameId if not needed
-      if (page !== 'game' && page !== 'leaderboard') {
+      if (page !== 'game' && page !== 'leaderboard' && page !== 'gameResults') {
         setGameId(null);
       }
 
       // Store only the page for non-game navigations
       localStorage.setItem('lastPage', page);
-      if (page !== 'game') {
+      if (page !== 'game' && page !== 'gameResults') {
         localStorage.removeItem('lastGameId');
       }
     }
@@ -630,6 +632,8 @@ function App() {
         return <HowToPlayPage onNavigate={setCurrentPage} />;
       case 'leaderboard':
         return <LeaderboardPage onNavigate={setCurrentPage} username={userData?.username} />;
+      case 'gameResults':
+        return <GameResultsPage onNavigate={handleNavigate} gameId={gameId || undefined} />;
       case 'game':
         // Safety check - should never happen due to our handleNavigate logic
         if (!gameId) {

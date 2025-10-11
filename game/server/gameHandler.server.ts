@@ -11,6 +11,8 @@ import {
   saveGameState,
   getGameState,
   getUnplayedGames,
+  trackGuess,
+  getGameStatistics,
 } from './gameHandler';
 
 import {
@@ -40,6 +42,8 @@ export {
   saveGameState,
   getGameState,
   getUnplayedGames,
+  trackGuess,
+  getGameStatistics,
 };
 
 export async function getRandomGame(

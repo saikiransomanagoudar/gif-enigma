@@ -1,5 +1,5 @@
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
-export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard';
+export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'gameResults';
 
 export interface GameRedisData {
   id: string;
@@ -214,4 +214,24 @@ export function isPreviewData(obj: any): obj is GamePreviewData {
 
 export function isLeaderboardEntry(obj: any): obj is LeaderboardEntry {
   return obj && typeof obj === 'object' && 'username' in obj && 'score' in obj;
+}
+
+export interface GuessData {
+  guess: string;
+  count: number;
+  percentage: number;
+}
+
+export interface GameStatistics {
+  gameId: string;
+  answer: string;
+  totalPlayers: number;
+  totalGuesses: number;
+  guesses: GuessData[];
+}
+
+export interface GetGameStatisticsResponse {
+  success: boolean;
+  statistics?: GameStatistics;
+  error?: string;
 }

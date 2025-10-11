@@ -13,7 +13,7 @@ import {
 import { createRoot } from 'react-dom/client';
 
 interface GamePageProps extends NavigationProps {
-  onNavigate: (page: Page) => void;
+  onNavigate: (page: Page, params?: { gameId?: string }) => void;
   gameId?: string;
 }
 
@@ -283,6 +283,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             '*'
           );
         }
+      }
+      if (actualMessage.type === 'TRACK_GUESS_RESULT') {
+        // Guess tracking result received
       }
     };
 
@@ -818,6 +821,27 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const cleanedGuess = guess.replace(/\s+/g, '').toUpperCase();
     const cleanedAnswer = gameData.word.replace(/\s+/g, '').toUpperCase();
 
+    // Track the guess attempt
+    if (gameData.id && username) {
+      window.parent.postMessage(
+        {
+          type: 'TRACK_GUESS',
+          data: {
+            gameId: gameData.id,
+            username: username || 'anonymous',
+            guess: cleanedGuess,
+          },
+        },
+        '*'
+      );
+    } else {
+      console.log('❌ [DEBUG] Cannot track guess - missing data:', {
+        hasGameId: !!gameData?.id,
+        hasUsername: !!username,
+        guess: cleanedGuess
+      });
+    }
+
     if (cleanedGuess === cleanedAnswer) {
       const originalRevealedCount = revealedLetters.size;
       setIsCorrect(true);
@@ -1154,47 +1178,59 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </ComicText>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 md:gap-4">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  {/* Comment Results Button - Primary/Highlighted */}
                   <button
                     onClick={handlePostComment}
                     disabled={isCommentPosting || isCommentPosted}
-                    className={`flex cursor-pointer items-center gap-2 rounded-md px-5 py-2.5 text-white transition-all duration-200 md:rounded-lg md:px-5 md:py-2.5 disabled:cursor-not-allowed min-w-[150px] sm:min-w-[170px] justify-center ${
+                    className={`flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3.5 text-white font-semibold transition-all duration-300 disabled:cursor-not-allowed ${
                       isCommentPosted
                         ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                         : isCommentPosting
                           ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
-                          : 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl'
+                          : 'bg-gradient-to-r from-yellow-400 to-amber-500 shadow-xl hover:scale-105 hover:shadow-2xl'
                     }`}
-                    aria-label={isCommentPosted ? 'Commented!' : 'Comment'}
-                    title={isCommentPosted ? 'Commented!' : 'Comment'}
+                    aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
+                    title={isCommentPosted ? 'Commented!' : 'Comment Results'}
                     style={{
+                      minWidth: '208px',
                       boxShadow: isCommentPosted
-                        ? '0 8px 20px rgba(16,185,129,0.35)'
+                        ? '0 8px 20px rgba(16,185,129,0.4)'
                         : isCommentPosting
-                          ? '0 6px 16px rgba(99,102,241,0.25)'
-                          : '0 8px 22px rgba(124,58,237,0.35)'
+                          ? '0 8px 20px rgba(99,102,241,0.3)'
+                          : '0 10px 30px rgba(251,191,36,0.6), 0 0 40px rgba(245,158,11,0.4)'
                     }}
                   >
-                    <span className="text-lg md:text-xl">
+                    <span className="text-xl">
                       {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
                     </span>
-                    <span>
+                    <span className="whitespace-nowrap">
                       <ComicText size={0.7} color="white">
-                        {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment'}
+                        {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
                       </ComicText>
                     </span>
                   </button>
+
+                  {/* View Results Button - Secondary */}
                   <button
                     onClick={() => {
-                      onNavigate('leaderboard');
+                      if (gameData?.id) {
+                        onNavigate('gameResults', { gameId: gameData.id });
+                      }
                     }}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-5 py-2.5 text-white transition-all duration-200 md:rounded-lg md:px-5 md:py-2.5 min-w-[150px] sm:min-w-[170px] justify-center bg-gradient-to-r from-sky-600 to-blue-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
+                    className="flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-3.5 text-white font-semibold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl"
                     aria-label="View Results"
                     title="View Results"
+                    style={{
+                      minWidth: '208px',
+                      boxShadow: '0 8px 20px rgba(37,99,235,0.4)'
+                    }}
                   >
-                    <span className="text-lg md:text-xl">🏆</span>
-                    <span>
-                      <ComicText size={0.7} color="white">View Results</ComicText>
+                    <span className="text-xl">📊</span>
+                    <span className="whitespace-nowrap">
+                      <ComicText size={0.7} color="white">
+                        View Results
+                      </ComicText>
                     </span>
                   </button>
                 </div>

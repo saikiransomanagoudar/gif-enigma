@@ -8,6 +8,8 @@ import {
   CreatorData,
   PostCommentResponse,
   PlayerGameState,
+  GetGameStatisticsResponse,
+  GuessData,
 } from '../lib/types';
 import { awardCreationBonus } from './scoringService';
 
@@ -788,6 +790,110 @@ export async function getUnplayedGames(
     return { success: true, games: unplayedGames };
   } catch (error) {
     console.error('Error getting unplayed games:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// Track guess attempts for a game
+export async function trackGuess(
+  params: {
+    gameId: string;
+    username: string;
+    guess: string;
+  },
+  context: Context
+) {
+  try {
+    const { gameId, username, guess } = params;
+
+    if (!gameId || !username || !guess) {
+      return { success: false, error: 'Missing required parameters' };
+    }
+
+    // Normalize the guess (remove spaces, remove punctuation, uppercase, trim)
+    // This ensures "Mind Blown!", "mindblown", "MIND-BLOWN" all become "MINDBLOWN"
+    const normalizedGuess = guess
+      .replace(/\s+/g, '') // Remove all spaces
+      .replace(/[^\w]/g, '') // Remove all non-word characters (punctuation)
+      .trim()
+      .toUpperCase();
+
+    // Increment the guess count for this specific guess
+    await context.redis.zIncrBy(`gameGuesses:${gameId}`, normalizedGuess, 1);
+
+    // Track total guesses for this game
+    await context.redis.incrBy(`gameTotalGuesses:${gameId}`, 1);
+
+    // Track unique players who have made guesses (using zAdd with timestamp as score)
+    await context.redis.zAdd(`gamePlayers:${gameId}`, {
+      member: username,
+      score: Date.now(),
+    });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// Get game statistics including all guesses
+export async function getGameStatistics(
+  params: { gameId: string },
+  context: Context
+): Promise<GetGameStatisticsResponse> {
+  try {
+    const { gameId } = params;
+
+    if (!gameId) {
+      return { success: false, error: 'Game ID is required' };
+    }
+
+    // Get the game data to get the answer
+    const gameData = await context.redis.hGetAll(`game:${gameId}`);
+    
+    if (!gameData || !gameData.word) {
+      return { success: false, error: 'Game not found' };
+    }
+
+    // Get all guesses with their counts using rank-based zRange
+    const guessesWithScores = await context.redis.zRange(`gameGuesses:${gameId}`, 0, -1, {
+      by: 'rank',
+      reverse: true, // Highest scores first
+    });
+
+    // Get total number of guesses made
+    const totalGuessesStr = await context.redis.get(`gameTotalGuesses:${gameId}`);
+    const totalGuesses = totalGuessesStr ? parseInt(totalGuessesStr) : 0;
+    const playersCount = await context.redis.zCard(`gamePlayers:${gameId}`);
+
+    // Format the guesses data
+    const guesses: GuessData[] = [];
+    
+    for (const item of guessesWithScores) {
+      // Redis zRange with reverse returns items with {member, score} structure
+      if (item && typeof item === 'object' && 'member' in item && 'score' in item) {
+        const count = item.score;
+        const percentage = totalGuesses > 0 ? (count / totalGuesses) * 100 : 0;
+        
+        guesses.push({
+          guess: item.member,
+          count: count,
+          percentage: Math.round(percentage * 10) / 10, // Round to 1 decimal
+        });
+      }
+    }
+
+    return {
+      success: true,
+      statistics: {
+        gameId,
+        answer: gameData.word.toUpperCase(),
+        totalPlayers: playersCount,
+        totalGuesses,
+        guesses,
+      },
+    };
+  } catch (error) {
     return { success: false, error: String(error) };
   }
 }

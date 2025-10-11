@@ -183,6 +183,20 @@ export type WebviewToBlockMessage =
         username: string;
         limit?: number;
       };
+    }
+  | {
+      type: 'TRACK_GUESS';
+      data: {
+        gameId: string;
+        username: string;
+        guess: string;
+      };
+    }
+  | {
+      type: 'GET_GAME_STATISTICS';
+      data: {
+        gameId: string;
+      };
     };
 
 export type BlocksToWebviewMessage =
@@ -517,6 +531,27 @@ export type BlocksToWebviewMessage =
       settings?: {
         allOriginalContent: boolean;
         allowChatPostCreation: boolean;
+      };
+      error?: string;
+    }
+    | {
+      type: 'TRACK_GUESS_RESULT';
+      success: boolean;
+      error?: string;
+    }
+    | {
+      type: 'GET_GAME_STATISTICS_RESULT';
+      success: boolean;
+      statistics?: {
+        gameId: string;
+        answer: string;
+        totalPlayers: number;
+        totalGuesses: number;
+        guesses: Array<{
+          guess: string;
+          count: number;
+          percentage: number;
+        }>;
       };
       error?: string;
     };

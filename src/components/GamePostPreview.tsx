@@ -374,7 +374,7 @@ export const GamePostPreview = ({
   const handleShowResults = async () => {
     await context.redis.del(`navState:${context.postId}`);
     console.log(
-      '[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to leaderboard page'
+      '[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to gameResults page'
     );
 
     // CRITICAL FIX: Clear any stored navigation state for this post first
@@ -392,9 +392,9 @@ export const GamePostPreview = ({
     if (previewData.gameId) {
       try {
         if (context.postId) {
-          console.log('[DEBUG-NAV] GamePostPreview: Storing leaderboard in navigation state');
+          console.log('[DEBUG-NAV] GamePostPreview: Storing gameResults in navigation state');
           await context.redis.hSet(`navState:${context.postId}`, {
-            page: 'leaderboard',
+            page: 'gameResults',
             gameId: previewData.gameId,
           });
         }
@@ -403,9 +403,9 @@ export const GamePostPreview = ({
       }
 
       onMount();
-      sendNavigation('leaderboard', previewData.gameId);
+      sendNavigation('gameResults', previewData.gameId);
     } else {
-      console.log('[DEBUG-NAV] GamePostPreview: Game not found for leaderboard');
+      console.log('[DEBUG-NAV] GamePostPreview: Game not found for gameResults');
       context.ui.showToast('Game not found');
     }
   };

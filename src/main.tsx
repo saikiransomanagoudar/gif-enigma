@@ -17,6 +17,8 @@ import {
   postCompletionComment,
   hasUserCompletedGame,
   removeSystemUsersFromLeaderboard,
+  trackGuess,
+  getGameStatistics,
 } from '../game/server/gameHandler.server.js';
 import { Page } from '../game/lib/types.js';
 import {
@@ -1638,6 +1640,67 @@ Devvit.addCustomPostType({
               console.error('Error getting subreddit settings:', error);
               postMessage({
                 type: 'GET_SUBREDDIT_SETTINGS_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'TRACK_GUESS':
+            try {
+              console.log('📊 [DEBUG] Tracking guess:', event.data);
+
+              if (!event.data || !event.data.gameId || !event.data.username || !event.data.guess) {
+                postMessage({
+                  type: 'TRACK_GUESS_RESULT',
+                  success: false,
+                  error: 'Missing required data: gameId, username, and guess are required',
+                });
+                return;
+              }
+
+              const result = await trackGuess(event.data, context);
+
+              postMessage({
+                type: 'TRACK_GUESS_RESULT',
+                success: result.success,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error tracking guess:', error);
+              postMessage({
+                type: 'TRACK_GUESS_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_GAME_STATISTICS':
+            try {
+              console.log('📊 [DEBUG] Getting game statistics:', event.data);
+
+              if (!event.data || !event.data.gameId) {
+                postMessage({
+                  type: 'GET_GAME_STATISTICS_RESULT',
+                  success: false,
+                  error: 'Missing required data: gameId is required',
+                });
+                return;
+              }
+
+              const result = await getGameStatistics(event.data, context);
+
+              postMessage({
+                type: 'GET_GAME_STATISTICS_RESULT',
+                success: result.success,
+                statistics: result.statistics,
+                error: result.error || undefined,
+              });
+            } catch (error) {
+              console.error('❌ [DEBUG] Error getting game statistics:', error);
+              postMessage({
+                type: 'GET_GAME_STATISTICS_RESULT',
                 success: false,
                 error: String(error),
               });
