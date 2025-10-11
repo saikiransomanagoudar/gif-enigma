@@ -17,6 +17,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
   const [gameState, setGameState] = useState<any>(null);
+  const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -35,17 +36,23 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
   // Fetch game state when we have both username and gameId
   useEffect(() => {
-    if (username && gameId && username !== 'anonymous') {
-      window.parent.postMessage(
-        {
-          type: 'GET_GAME_STATE',
-          data: {
-            username,
-            gameId,
+    if (username && gameId) {
+      if (username !== 'anonymous') {
+        window.parent.postMessage(
+          {
+            type: 'GET_GAME_STATE',
+            data: {
+              username,
+              gameId,
+            },
           },
-        },
-        '*'
-      );
+          '*'
+        );
+      } else {
+        // Anonymous users don't have saved state - mark as loaded
+        setIsGameStateLoaded(true);
+        setGameState(null);
+      }
     }
   }, [username, gameId]);
 
@@ -91,6 +98,10 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
         if (actualMessage.success && actualMessage.state?.playerState) {
           setGameState(actualMessage.state.playerState);
+          setIsGameStateLoaded(true);
+        } else {
+          setGameState(null);
+          setIsGameStateLoaded(true);
         }
       }
 
@@ -238,7 +249,20 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           ) : (
             <div className="space-y-4">
               {statistics.guesses
-                .sort((a, b) => b.count - a.count) // Sort by count descending
+                .sort((a, b) => {
+                  // Check if each guess is correct
+                  const aIsCorrect = a.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
+                  const bIsCorrect = b.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
+                  
+                  // Correct answer always comes first
+                  if (aIsCorrect && !bIsCorrect) return -1;
+                  if (!aIsCorrect && bIsCorrect) return 1;
+                  
+                  // Otherwise sort by count descending
+                  return b.count - a.count;
+                })
                 .slice(0, 5) // Only show top 5
                 .map((guessData, index) => {
                   const isCorrect = guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
@@ -260,15 +284,15 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                       </div>
                       
                       {/* Progress Bar with count inside */}
-                      <div className="relative h-8 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                      <div className="relative h-6 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500"
                           style={{ width: `${guessData.percentage}%` }}
                         ></div>
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                          <ComicText size={0.65} color={isDarkMode ? '#E5E7EB' : '#374151'}>
                             {guessData.count} guess{guessData.count !== 1 ? 'es' : ''}
-                          </span>
+                          </ComicText>
                         </div>
                       </div>
                     </div>
@@ -280,31 +304,41 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
         {/* Bottom Buttons */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button
-            onClick={handlePostComment}
-            disabled={isCommentPosting || isCommentPosted || !username}
-            className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 w-full sm:w-auto sm:min-w-[220px] ${
-              isCommentPosted
-                ? 'bg-gradient-to-r from-emerald-500 to-green-600'
-                : isCommentPosting
-                  ? 'bg-gradient-to-r from-indigo-400 to-purple-500'
-                  : 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600'
-            }`}
-            style={{
-              boxShadow: isCommentPosted
-                ? '0 8px 20px rgba(16,185,129,0.35)'
-                : isCommentPosting
-                  ? '0 6px 16px rgba(99,102,241,0.25)'
-                  : '0 8px 22px rgba(124,58,237,0.35)'
-            }}
-          >
-            <span className="text-lg">
-              {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
-            </span>
-            <ComicText size={0.7} color="white">
-              {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-            </ComicText>
-          </button>
+          {(() => {
+            // Only show comment button if:
+            // 1. Game state has loaded (isGameStateLoaded = true)
+            // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
+            // Note: If gameState is null after loading, user hasn't played yet (show button)
+            const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
+            const shouldShow = isGameStateLoaded && !hasGivenUp;
+            return shouldShow;
+          })() && (
+            <button
+              onClick={handlePostComment}
+              disabled={isCommentPosting || isCommentPosted || !username}
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 w-full sm:w-auto sm:min-w-[220px] ${
+                isCommentPosted
+                  ? 'bg-gradient-to-r from-emerald-500 to-green-600'
+                  : isCommentPosting
+                    ? 'bg-gradient-to-r from-indigo-400 to-purple-500'
+                    : 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600'
+              }`}
+              style={{
+                boxShadow: isCommentPosted
+                  ? '0 8px 20px rgba(16,185,129,0.35)'
+                  : isCommentPosting
+                    ? '0 6px 16px rgba(99,102,241,0.25)'
+                    : '0 8px 22px rgba(124,58,237,0.35)'
+              }}
+            >
+              <span className="text-lg">
+                {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
+              </span>
+              <ComicText size={0.7} color="white">
+                {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
+              </ComicText>
+            </button>
+          )}
           <button
             onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
             className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:min-w-[220px]"

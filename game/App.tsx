@@ -7,6 +7,8 @@ import { CategoryPage, CategoryType } from './pages/CategoryPage';
 import { GamePage } from './pages/GamePage';
 import { GameResultsPage } from './pages/GameResultsPage';
 import { Page } from './lib/types';
+import { ComicText } from './lib/fonts';
+import { colors } from './lib/styles';
 
 export type NavigationProps = {
   onNavigate: (path: string) => void;
@@ -637,14 +639,41 @@ function App() {
       case 'leaderboard':
         return <LeaderboardPage onNavigate={handleNavigate} username={userData?.username} gameId={gameId || undefined} />;
       case 'gameResults':
-        return <GameResultsPage onNavigate={handleNavigate} gameId={gameId || undefined} />;
+        // Safety check - redirect to landing if no gameId
+        if (!gameId) {
+          setTimeout(() => setCurrentPage('landing'), 0);
+          return (
+            <div className="flex h-screen items-center justify-center bg-[#E8E5DA] dark:bg-[#1A1A2E]">
+              <div className="text-center">
+                <ComicText size={1.2} color={colors.primary}>
+                  Oops!
+                </ComicText>
+                <div className="mt-2">
+                  <ComicText size={0.7} color={colors.textSecondary}>
+                    Missing game data. Redirecting...
+                  </ComicText>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        return <GameResultsPage onNavigate={handleNavigate} gameId={gameId} />;
       case 'game':
         // Safety check - should never happen due to our handleNavigate logic
         if (!gameId) {
           setTimeout(() => setCurrentPage('landing'), 0);
           return (
-            <div className="flex h-screen items-center justify-center">
-              <p className="text-lg">Error: Missing game data. Redirecting...</p>
+            <div className="flex h-screen items-center justify-center bg-[#E8E5DA] dark:bg-[#1A1A2E]">
+              <div className="text-center">
+                <ComicText size={1.2} color={colors.primary}>
+                  Oops!
+                </ComicText>
+                <div className="mt-2">
+                  <ComicText size={0.7} color={colors.textSecondary}>
+                    Missing game data. Redirecting...
+                  </ComicText>
+                </div>
+              </div>
             </div>
           );
         }

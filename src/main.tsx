@@ -981,6 +981,7 @@ Devvit.addCustomPostType({
                 guess: event.data.finalGuess || '',
                 lastPlayed: Date.now(),
                 isCompleted: true,
+                hasGivenUp: event.data.hasGivenUp || false,
               };
 
               // Save the game state as completed
@@ -1089,13 +1090,18 @@ Devvit.addCustomPostType({
                     });
                     await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
                     console.log(`[PM] Sent welcome DM to ${toUsername}`);
-                  } catch (pmErr) {
-                    console.error('[PM] sendPrivateMessage failed:', pmErr);
-                    // Intentionally do not set the flag so we can retry later
+                  } catch (pmErr: any) {
+                    const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
+                    
+                    // If user hasn't whitelisted the app, mark as sent to prevent retry spam
+                    if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
+                      await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
+                    }
                   }
                 }
               }
 
+              // Trigger preview refresh after game completion
               setPostPreviewRefreshTrigger((prev) => prev + 1);
 
               postMessage({

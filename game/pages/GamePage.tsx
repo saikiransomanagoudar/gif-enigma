@@ -332,6 +332,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         guess: gameFlowState === 'won' || gameFlowState === 'completed' ? gameData.word : guess,
         lastPlayed: Date.now(),
         isCompleted: gameFlowState === 'won' || gameFlowState === 'completed',
+        // Preserve hasGivenUp flag if player gave up (gifHintCount === 999)
+        hasGivenUp: gifHintCount === 999 ? true : undefined,
       };
 
       window.parent.postMessage(
@@ -621,6 +623,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
     setRevealedLetters(allIndices);
     setGuess(gameData.word.toUpperCase());
+    setGifHintCount(999); // CRITICAL: Update gifHintCount state so useEffect saves correct value
     
     setGameFlowState('completed');
     setFinalScore({
@@ -639,6 +642,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       guess: gameData.word,
       lastPlayed: Date.now(),
       isCompleted: true,
+      hasGivenUp: true,
     };
 
     window.parent.postMessage(
@@ -662,6 +666,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           gifHintCount: 999,
           revealedLetters: Array.from(allIndices),
           finalGuess: gameData.word,
+          hasGivenUp: true,
         },
       },
       '*'
@@ -834,12 +839,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         },
         '*'
       );
-    } else {
-      console.log('❌ [DEBUG] Cannot track guess - missing data:', {
-        hasGameId: !!gameData?.id,
-        hasUsername: !!username,
-        guess: cleanedGuess
-      });
     }
 
     if (cleanedGuess === cleanedAnswer) {

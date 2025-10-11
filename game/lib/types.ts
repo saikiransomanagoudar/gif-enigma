@@ -20,6 +20,7 @@ export interface PlayerGameState {
   guess: string;
   lastPlayed: number;
   isCompleted: boolean;
+  hasGivenUp?: boolean;
 }
 
 export interface GameData {

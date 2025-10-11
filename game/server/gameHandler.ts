@@ -650,8 +650,12 @@ export async function saveGameState(
     const gameStateKey = `gameState:${gameId}:${username}`;
 
     // Store the player state as a JSON string
+    // Remove undefined fields before saving
+    const cleanedState = Object.fromEntries(
+      Object.entries(playerState).filter(([_, v]) => v !== undefined)
+    );
     await context.redis.hSet(gameStateKey, {
-      playerState: JSON.stringify(playerState),
+      playerState: JSON.stringify(cleanedState),
       lastUpdated: Date.now().toString(),
     });
 
@@ -660,7 +664,6 @@ export async function saveGameState(
 
     // If the game is completed, add it to the user's completed games set
     if (playerState.isCompleted) {
-      console.log(`Adding game ${gameId} to ${username}'s completed games`);
       await context.redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: Date.now(), // Using timestamp as score for sorting
@@ -669,7 +672,6 @@ export async function saveGameState(
 
     return { success: true };
   } catch (error) {
-    console.error('Error saving game state:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -714,7 +716,8 @@ export async function getGameState(
     // Parse the player state from JSON
     try {
       if (gameState.playerState) {
-        gameState.playerState = JSON.parse(gameState.playerState);
+        const parsedState = JSON.parse(gameState.playerState);
+        gameState.playerState = parsedState;
       }
     } catch (e) {
       console.error('Error parsing playerState JSON:', e);

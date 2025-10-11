@@ -448,11 +448,6 @@ export const GamePostPreview = ({
 
   const firstGif = getFirstGif();
 
-  if (previewData.gameId && username) {
-    // Log the actual value from state
-    console.log(`[DEBUG-FORCE] Original hasCompletedGame: ${hasCompletedGame}`);
-  }
-
   return (
     <vstack
       height="100%"
