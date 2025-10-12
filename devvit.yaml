@@ -1,2 +1,11 @@
 name: gif-enigma
 version: 0.11.0.29
+
+# Scheduled jobs
+schedules:
+  - cron: "0 * * * *"
+    name: auto_create_post
+    description: "Automatically create game posts (runs hourly, filtered by time guards in code)"
+  - cron: "0 3 * * *"
+    name: cache_prewarmer
+    description: "Pre-warm API caches daily at 3 AM UTC"
