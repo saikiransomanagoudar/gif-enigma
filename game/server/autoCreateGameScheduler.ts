@@ -40,46 +40,48 @@ Devvit.addSchedulerJob({
   onRun: async (event: ScheduledJobEvent<{ force?: boolean } | undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
 
-    // Time guard: only proceed at 09:00 and 19:00 America/Chicago
-    try {
-      const now = new Date();
-      const timeStr = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(now);
-      const [hhStr, mmStr] = timeStr.split(':');
-      const hour = Number(hhStr);
-      const minute = Number(mmStr);
+    // Check if this is a forced/manual run first
+    const force = Boolean(event?.data && (event.data as any).force);
 
-      if (!((hour === 9 || hour === 19) && minute === 0)) {
-        return;
-      }
+    // Time guard: only proceed at 09:00, 14:00, and 19:00 America/Chicago (unless forced)
+    if (!force) {
+      try {
+        const now = new Date();
+        const timeStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Chicago',
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(now);
+        const [hhStr, mmStr] = timeStr.split(':');
+        const hour = Number(hhStr);
+        const minute = Number(mmStr);
 
-      // Idempotency lock: ensure only one post per allowed CT hour (unless forced)
-      const dateParts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Chicago',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        hour12: false,
-      })
-        .formatToParts(now)
-        .reduce((acc: any, p) => {
-          if (p.type !== 'literal') acc[p.type] = p.value;
-          return acc;
-        }, {} as any);
+        if (!((hour === 9 || hour === 14 || hour === 19) && minute === 0)) {
+          return;
+        }
 
-      const yyyy = dateParts.year;
-      const mm = dateParts.month;
-      const dd = dateParts.day;
-      const hh = dateParts.hour; // 00-23 in CT
-      const lockKey = `autoPostLock:${yyyy}-${mm}-${dd}:${hh}`;
+        // Idempotency lock: ensure only one post per allowed CT hour
+        const dateParts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Chicago',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          hour12: false,
+        })
+          .formatToParts(now)
+          .reduce((acc: any, p) => {
+            if (p.type !== 'literal') acc[p.type] = p.value;
+            return acc;
+          }, {} as any);
 
-      const force = Boolean(event?.data && (event.data as any).force);
-      if (!force) {
+        const yyyy = dateParts.year;
+        const mm = dateParts.month;
+        const dd = dateParts.day;
+        const hh = dateParts.hour; // 00-23 in CT
+        const lockKey = `autoPostLock:${yyyy}-${mm}-${dd}:${hh}`;
+
         try {
           // @ts-ignore Devvit Redis supports NX/EX options
           const setResult = await (context as any).redis.set(lockKey, '1', {
@@ -93,9 +95,9 @@ Devvit.addSchedulerJob({
           // If locking fails unexpectedly, fail-open would risk duplicates; returning is safer
           return;
         }
+      } catch (tzErr) {
+        
       }
-    } catch (tzErr) {
-      
     }
 
     const category = pickRandom(categories);
