@@ -37,11 +37,9 @@ export const GamePostPreview = ({
   const [_isWebViewMounted, setIsWebViewMounted] = useState(false);
   const [usernameRetryCount, setUsernameRetryCount] = useState(0);
   const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
-  // Add this useAsync block to reset state when postId changes
   useAsync(
     async () => {
       if (context.postId) {
-        console.log('[DEBUG] Post ID changed, resetting preview state');
         setPreviewData({});
         setLetterBoxes([]);
         setHasCompletedGame(false);
@@ -58,16 +56,9 @@ export const GamePostPreview = ({
     async () => {
       // Only retry if username is still default and we haven't tried too many times
       if (username === 'there' && usernameRetryCount < 3) {
-        console.log(
-          `[DEBUG-USERNAME] Retrying username fetch (attempt ${usernameRetryCount + 1})...`
-        );
-        try {
-          const currentUsername = await context.reddit.getCurrentUsername();
-          if (currentUsername && currentUsername !== 'there') {
-            return currentUsername;
-          }
-        } catch (error) {
-          console.error(`[DEBUG-USERNAME] Retry ${usernameRetryCount + 1} failed:`, error);
+        const currentUsername = await context.reddit.getCurrentUsername();
+        if (currentUsername && currentUsername !== 'there') {
+          return currentUsername;
         }
 
         // Increment retry count for next attempt
@@ -79,31 +70,22 @@ export const GamePostPreview = ({
       depends: [usernameRetryCount, username],
       finally: (result) => {
         if (result) {
-          console.log('[DEBUG-USERNAME] Retry succeeded, setting username to:', result);
           setUsername(result);
         } else if (username === 'there' && usernameRetryCount < 3) {
-          // Schedule another retry
-          console.log('[DEBUG-USERNAME] Scheduling another retry...');
           setUsernameRetryCount((prev) => prev + 1);
         }
       },
     }
   );
 
-  // Fix the completion check logic in your useAsync
-  // Check completion status - runs when refreshTrigger changes
   useAsync(
     async () => {
       // Skip if no valid gameId or username
       if (!previewData.gameId || !username || username === 'there') {
-        console.log('🔍 [DEBUG-COMPLETION] Missing valid data, cannot check completion');
         return false;
       }
 
       const gameId = previewData.gameId;
-      console.log(
-        `🔄 [DEBUG-COMPLETION] Checking completion for game: ${gameId}, user: ${username}, refresh: ${refreshTrigger}`
-      );
 
       try {
         // Use the server-side function to check completion
@@ -112,10 +94,8 @@ export const GamePostPreview = ({
           context
         );
 
-        console.log(`[DEBUG-COMPLETION] Server response for completion check:`, result);
         return result.completed;
       } catch (error) {
-        console.error(`[DEBUG-COMPLETION] Error checking completion:`, error);
         return false;
       }
     },
@@ -123,7 +103,6 @@ export const GamePostPreview = ({
       depends: [refreshTrigger, previewData.gameId ?? null, username],
       finally: (result) => {
         const isCompleted = result === true;
-        console.log(`🔄 [DEBUG-COMPLETION] Setting hasCompletedGame to: ${isCompleted}`);
         setHasCompletedGame(isCompleted);
       },
     }
@@ -136,18 +115,13 @@ export const GamePostPreview = ({
 
       // Try to get username
       let currentUsername;
-      try {
-        currentUsername = await context.reddit.getCurrentUsername();
-        if (currentUsername) {
-          setUsername(currentUsername);
-        }
-      } catch (userError) {
-        console.error('Error getting username:', userError);
+      currentUsername = await context.reddit.getCurrentUsername();
+      if (currentUsername) {
+        setUsername(currentUsername);
       }
 
       // Get game ID from post relationship
       const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-      console.log('GamePostPreview: Found game ID:', gameId);
 
       if (!gameId) return null;
 
@@ -182,7 +156,6 @@ export const GamePostPreview = ({
       depends: [context.postId ?? ''],
       finally: (data, error) => {
         if (data && !error) {
-          console.log('GamePostPreview: Loaded preview data:', data);
           setPreviewData(data);
 
           // Create letter boxes array from masked word
@@ -193,11 +166,6 @@ export const GamePostPreview = ({
             setLetterBoxes(boxes);
           }
         }
-
-        if (error) {
-          console.error('Error loading game preview:', error);
-        }
-
         setIsLoading(false);
       },
     }
@@ -205,13 +173,8 @@ export const GamePostPreview = ({
 
   const refreshCompletionStatus = async () => {
     if (!previewData?.gameId || !username || username === 'there') {
-      console.log('[DEBUG-REFRESH] Cannot refresh completion status - missing data');
       return;
     }
-
-    console.log(
-      `[DEBUG-REFRESH] Forcing refresh of completion status for game ${previewData.gameId}`
-    );
 
     try {
       // First check: Look for game in completed games set
@@ -221,7 +184,6 @@ export const GamePostPreview = ({
       );
 
       if (completedMember !== null) {
-        console.log(`[DEBUG-REFRESH] Game found in completed set with score: ${completedMember}`);
         setHasCompletedGame(true);
         return;
       }
@@ -232,23 +194,15 @@ export const GamePostPreview = ({
       );
 
       if (gameStateRaw && gameStateRaw.playerState) {
-        try {
-          const playerState = JSON.parse(gameStateRaw.playerState);
-          if (playerState.isCompleted) {
-            console.log(`[DEBUG-REFRESH] Game marked as completed in playerState`);
-            setHasCompletedGame(true);
-            return;
-          }
-        } catch (parseError) {
-          console.error(`[DEBUG-REFRESH] Error parsing playerState: ${parseError}`);
+        const playerState = JSON.parse(gameStateRaw.playerState);
+        if (playerState.isCompleted) {
+          setHasCompletedGame(true);
+          return;
         }
       }
-
       // If we get here, the game is not completed
-      console.log(`[DEBUG-REFRESH] Game ${previewData.gameId} is NOT completed`);
       setHasCompletedGame(false);
     } catch (error) {
-      console.error(`[DEBUG-REFRESH] Error refreshing completion status: ${error}`);
       // Default to not completed in case of error
       setHasCompletedGame(false);
     }
@@ -268,7 +222,6 @@ export const GamePostPreview = ({
   );
 
   const sendNavigation = (page: Page, gameId?: string) => {
-    console.log('[DEBUG-NAV] GamePostPreview: Sending navigation message:', page, gameId);
 
     postMessage({
       type: 'NAVIGATE',
@@ -282,10 +235,6 @@ export const GamePostPreview = ({
   useAsync(
     async () => {
       if (isWebViewReady && pendingNavigation) {
-        console.log(
-          '[DEBUG-NAV] GamePostPreview: WebView now ready, sending pending navigation to:',
-          pendingNavigation.page
-        );
 
         setPendingNavigation(null);
 
@@ -304,27 +253,17 @@ export const GamePostPreview = ({
   );
 
   const storeGameId = async (gameId: string) => {
-    try {
-      if (context.postId) {
-        console.log('[DEBUG-NAV] GamePostPreview: Storing gameId in Redis:', gameId);
-        await context.redis.hSet(`navState:${context.postId}`, {
-          gameId,
-          page: 'game',
-        });
-      }
-    } catch (error) {
-      console.error('[DEBUG-NAV] GamePostPreview: Error storing gameId:', error);
+    if (context.postId) {
+      await context.redis.hSet(`navState:${context.postId}`, {
+        gameId,
+        page: 'game',
+      });
     }
   };
 
   const handlePlayGame = async () => {
     if (previewData.gameId) {
       await context.redis.del(`navState:${context.postId}`);
-      console.log(
-        '[DEBUG-NAV] GamePostPreview: handlePlayGame pressed, navigating to game page with gameId:',
-        previewData.gameId
-      );
-
       await storeGameId(previewData.gameId);
 
       onMount();
@@ -332,38 +271,23 @@ export const GamePostPreview = ({
       // Send navigation message
       sendNavigation('game', previewData.gameId);
     } else {
-      console.log('[DEBUG-NAV] GamePostPreview: Game not found');
       context.ui.showToast('Game not found');
     }
   };
 
   const handleHowToPlay = async () => {
     await context.redis.del(`navState:${context.postId}`);
-    console.log(
-      '[DEBUG-NAV] GamePostPreview: handleHowToPlay pressed, navigating to howToPlay page'
-    );
 
-    // CRITICAL FIX: Clear any stored navigation state for this post first
-    try {
-      if (context.postId) {
-        console.log('[DEBUG-NAV] GamePostPreview: Clearing previous navigation state');
-        await context.redis.hDel(`navState:${context.postId}`, ['page']);
-        await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-      }
-    } catch (error) {
-      console.error('[DEBUG-NAV] Error clearing navigation state:', error);
+    if (context.postId) {
+      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
     }
 
     // Store new navigation state explicitly
-    try {
-      if (context.postId) {
-        console.log('[DEBUG-NAV] GamePostPreview: Storing howToPlay in navigation state');
-        await context.redis.hSet(`navState:${context.postId}`, {
-          page: 'howToPlay',
-        });
-      }
-    } catch (error) {
-      console.error('[DEBUG-NAV] Error storing navigation state:', error);
+    if (context.postId) {
+      await context.redis.hSet(`navState:${context.postId}`, {
+        page: 'howToPlay',
+      });
     }
 
     onMount();
@@ -373,39 +297,24 @@ export const GamePostPreview = ({
 
   const handleShowResults = async () => {
     await context.redis.del(`navState:${context.postId}`);
-    console.log(
-      '[DEBUG-NAV] GamePostPreview: handleShowResults pressed, navigating to gameResults page'
-    );
 
-    // CRITICAL FIX: Clear any stored navigation state for this post first
-    try {
-      if (context.postId) {
-        console.log('[DEBUG-NAV] GamePostPreview: Clearing previous navigation state');
-        await context.redis.hDel(`navState:${context.postId}`, ['page']);
-        await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-      }
-    } catch (error) {
-      console.error('[DEBUG-NAV] Error clearing navigation state:', error);
+    if (context.postId) {
+      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
     }
 
     // Store new navigation state explicitly
     if (previewData.gameId) {
-      try {
-        if (context.postId) {
-          console.log('[DEBUG-NAV] GamePostPreview: Storing gameResults in navigation state');
-          await context.redis.hSet(`navState:${context.postId}`, {
-            page: 'gameResults',
-            gameId: previewData.gameId,
-          });
-        }
-      } catch (error) {
-        console.error('[DEBUG-NAV] Error storing navigation state:', error);
+      if (context.postId) {
+        await context.redis.hSet(`navState:${context.postId}`, {
+          page: 'gameResults',
+          gameId: previewData.gameId,
+        });
       }
 
       onMount();
       sendNavigation('gameResults', previewData.gameId);
     } else {
-      console.log('[DEBUG-NAV] GamePostPreview: Game not found for gameResults');
       context.ui.showToast('Game not found');
     }
   };
@@ -417,34 +326,6 @@ export const GamePostPreview = ({
     }
     return null;
   };
-
-  // if (isLoading) {
-  //   return (
-  //     <vstack height="100%" width="100%" alignment="center middle">
-  //       <vstack alignment="center middle">
-  //         <image 
-  //           url="loading.gif"
-  //           imageWidth={50}
-  //           imageHeight={50}
-  //         />
-  //       </vstack>
-  //     </vstack>
-  //   );
-  // }
-
-  // // If no game data was found, show an error
-  // if (!previewData.maskedWord || !previewData.gifs || previewData.gifs.length === 0) {
-  //   return (
-  //     <vstack height="100%" width="100%" alignment="center middle" padding="large" gap="medium">
-  //       <text style="heading" size="medium">
-  //         GIF Enigma
-  //       </text>
-  //       <text alignment="center">
-  //         This game appears to be missing data. Try creating a new game instead.
-  //       </text>
-  //     </vstack>
-  //   );
-  // }
 
   const firstGif = getFirstGif();
 

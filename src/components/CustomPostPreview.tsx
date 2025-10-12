@@ -36,13 +36,10 @@ export const CustomPostPreview = ({
   const [isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
   useAsync(
     async () => {
-      // Get asset URLs
       const startGifUrl = context.assets.getURL('eyebrows.gif');
 
-      // Get username efficiently
       const currentUsername = (await context.reddit.getCurrentUsername()) || '';
 
-      // Return all data together
       return {
         startGifUrl: startGifUrl,
         currentUsername: currentUsername,
@@ -62,9 +59,6 @@ export const CustomPostPreview = ({
           }
         }
 
-        if (error) {
-          console.error('Error fetching assets or username:', error);
-        }
         setIsLoading(false);
       },
     }
@@ -86,10 +80,6 @@ export const CustomPostPreview = ({
       depends: [isWebViewReady, pendingNavigation],
       finally: (data, error) => {
         if (!error && data?.shouldNavigate) {
-          console.log(
-            '[DEBUG-NAV] CustomPostPreview: WebView is ready, sending pending navigation to:',
-            data.page
-          );
 
           // Send the navigation message
           postMessage({
@@ -108,26 +98,18 @@ export const CustomPostPreview = ({
   );
 
   const storeLandingPage = async () => {
-    try {
-      if (context.postId) {
-        console.log('[DEBUG-NAV] CustomPostPreview: Storing landing page in Redis');
-        await context.redis.hSet(`navState:${context.postId}`, {
-          page: 'landing',
-        });
-      }
-    } catch (error) {
-      console.error('[DEBUG-NAV] CustomPostPreview: Error storing landing page:', error);
+    if (context.postId) {
+      await context.redis.hSet(`navState:${context.postId}`, {
+        page: 'landing',
+      });
     }
   };
 
   const handlePlayGame = async () => {
-    console.log('[DEBUG-NAV] CustomPostPreview: handlePlayGame pressed');
-
     // Always store the landing page as the destination
     await storeLandingPage();
 
     // Force remount the WebView every time
-    console.log('[DEBUG-NAV] CustomPostPreview: Force remounting WebView');
     setIsWebViewMounted(false);
 
     // Use this approach to create a small delay without setTimeout
@@ -144,7 +126,6 @@ export const CustomPostPreview = ({
   };
 
   const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
-  console.log('[DEBUG] Block width:', context.dimensions?.width);
 
   return (
     <vstack height="100%" width="100%" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA">
