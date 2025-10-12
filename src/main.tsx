@@ -36,14 +36,6 @@ import {
 } from '../game/server/scoringService.js';
 import '../game/server/autoCreateGameScheduler.js';
 
-// Disable noisy logs in production
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-const __noop = (..._args: unknown[]) => {};
-// @ts-ignore
-console.log = __noop;
-// @ts-ignore
-console.warn = __noop;
-
 Devvit.addSettings([
   {
     name: 'tenor-api-key',
@@ -101,119 +93,48 @@ Devvit.addCustomPostType({
   height: 'tall',
   render: (context) => {
     let isWebViewReadyFlag: boolean = false;
-    const [cumulativeLeaderboardRefreshTrigger, setCumulativeLeaderboardRefreshTrigger] =
-      useState(0);
     const [postPreviewRefreshTrigger, setPostPreviewRefreshTrigger] = useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
-      try {
-        // Store in Redis with the post ID as part of the key
-        const navStateKey = `navState:${context.postId || 'default'}`;
+      // Store in Redis with the post ID as part of the key
+      const navStateKey = `navState:${context.postId || 'default'}`;
 
-        // Store navigation data
-        await context.redis.hSet(navStateKey, {
-          page,
-          ...(gameId ? { gameId } : {}),
-        });
-
-        console.log('[DEBUG-STORAGE] Navigation state stored successfully:', page, gameId);
-      } catch (error) {
-        console.error('[DEBUG-STORAGE] Error storing navigation state:', error);
-      }
+      // Store navigation data
+      await context.redis.hSet(navStateKey, {
+        page,
+        ...(gameId ? { gameId } : {}),
+      });
     };
     // Function to retrieve navigation state
-
     const { data: username } = useAsync(async () => {
       return (await context.reddit.getCurrentUsername()) ?? null;
     });
 
-    // const {
-    //   data: randomGameData,
-    //   loading: randomGameLoading,
-    //   error: randomGameError,
-    // } = useAsync(
-    //   async () => {
-    //     try {
-    //       const result = await getRandomGame(
-    //         {
-    //           excludeIds: [],
-    //           preferUserCreated: true,
-    //         },
-    //         context
-    //       );
-
-    //       return result;
-    //     } catch (error) {
-    //       console.error('Error in randomGame useAsync:', error);
-    //       throw error;
-    //     }
-    //   },
-    //   {
-    //     depends: [context.postId || 'default'],
-    //   }
-    // );
-
     const { data: navigationState } = useAsync(
       async () => {
-        console.log('[DEBUG-STORAGE] Retrieving navigation state with useAsync');
+        const navStateKey = `navState:${context.postId || 'default'}`;
+        const storedState = await context.redis.hGetAll(navStateKey);
 
-        try {
-          const navStateKey = `navState:${context.postId || 'default'}`;
-          const storedState = await context.redis.hGetAll(navStateKey);
-
-          if (storedState?.page) {
-            console.log('[DEBUG-STORAGE] Retrieved navigation state:', storedState);
-            return {
-              page: storedState.page as Page,
-              gameId: storedState.gameId,
-            };
-          }
-        } catch (redisError) {
-          console.error('[DEBUG-STORAGE] Redis error in useAsync:', redisError);
+        if (storedState?.page) {
+          return {
+            page: storedState.page as Page,
+            gameId: storedState.gameId,
+          };
         }
-
-        console.log('[DEBUG-STORAGE] No stored navigation state found, using default');
         return { page: 'landing' as Page, gameId: null };
       },
       {
         depends: [context.postId || 'default'],
-        // Handle errors within the effect
       }
     );
-
-    const {
-      data: cumulativeLeaderboardData,
-      loading: cumulativeLeaderboardLoading,
-      error: cumulativeLeaderboardError,
-    } = useAsync(
-      async () => {
-        try {
-          console.log('Fetching cumulative leaderboard data...');
-          const result = await getCumulativeLeaderboard({ limit: 20 }, context);
-          console.log('Cumulative leaderboard data:', result);
-          return result;
-        } catch (error) {
-          console.error('Error fetching cumulative leaderboard:', error);
-          throw error;
-        }
-      },
-      {
-        depends: [cumulativeLeaderboardRefreshTrigger],
-      }
-    );
-
 
     // @ts-ignore
     const { mount, postMessage } = useWebView<WebviewToBlockMessage, BlocksToWebviewMessage>({
       onMessage: async (rawMessage: WebviewToBlockMessage) => {
-        console.log('[DEBUG] main.tsx onMessage received:', rawMessage);
-
         let event: any;
         const messageAny = rawMessage as any;
         if (context.postId && messageAny.data?.gameId) {
-          console.log(`[DEBUG] Validating post ${context.postId} owns game ${messageAny.data.gameId}`);
           const postGameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
           if (postGameId !== messageAny.data.gameId) {
-            console.log('[DEBUG] Rejecting stale game data');
             return;
           }
         }
@@ -221,13 +142,10 @@ Devvit.addCustomPostType({
           if (messageAny.data?.type === 'devvit-message' && messageAny.data?.message) {
             // Double-wrapped scenario
             event = messageAny.data.message;
-            console.log('[DEBUG] main.tsx unwrapped double layer:', event);
           } else if (messageAny.data) {
             // Single-wrapped scenario
             event = messageAny.data;
-            console.log('[DEBUG] main.tsx unwrapped single layer:', event);
           } else {
-            console.log('[DEBUG] main.tsx: No data to unwrap, using raw message');
             event = messageAny;
           }
         } else {
@@ -236,7 +154,6 @@ Devvit.addCustomPostType({
 
         switch (event.type) {
           case 'webViewReady':
-            console.log('[DEBUG] main.tsx: webViewReady received');
             isWebViewReadyFlag = true;
 
             // Send the navigation state from useAsync
@@ -249,14 +166,9 @@ Devvit.addCustomPostType({
                 },
               };
 
-              console.log(
-                '[DEBUG] main.tsx: Sending navigation from useAsync:',
-                JSON.stringify(navResponse)
-              );
               postMessage(navResponse);
             } else {
               // Default to landing if navigation state isn't available yet
-              console.log('[DEBUG] main.tsx: No navigation state available, defaulting to landing');
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
                 data: {
@@ -267,14 +179,11 @@ Devvit.addCustomPostType({
             break;
 
           case 'requestNavigationState':
-            console.log('[DEBUG] main.tsx: requestNavigationState received');
 
             // CRITICAL FIX: Force retrieve the latest navigation state instead of using cached data
             try {
               const navStateKey = `navState:${context.postId || 'default'}`;
               const freshState = await context.redis.hGetAll(navStateKey);
-
-              console.log('[DEBUG] main.tsx: Fresh navigation state retrieved:', freshState);
 
               if (freshState && freshState.page) {
                 // Create a properly typed response object
@@ -289,20 +198,11 @@ Devvit.addCustomPostType({
                 if (freshState.gameId) {
                   // Use a type assertion to add the gameId property
                   (navResponse.data as any).gameId = freshState.gameId;
-                  console.log(
-                    '[DEBUG] main.tsx: Including gameId in navigation state:',
-                    freshState.gameId
-                  );
                 }
 
-                console.log(
-                  '[DEBUG] main.tsx: Sending fresh navigation state:',
-                  JSON.stringify(navResponse)
-                );
                 postMessage(navResponse);
               } else {
                 // Default to landing if navigation state isn't available
-                console.log('[DEBUG] main.tsx: No stored page found, defaulting to landing');
                 postMessage({
                   type: 'SET_NAVIGATION_STATE',
                   data: {
@@ -312,7 +212,6 @@ Devvit.addCustomPostType({
                 } as BlocksToWebviewMessage);
               }
             } catch (error) {
-              console.error('[DEBUG] main.tsx: Error retrieving navigation state:', error);
               // Default to landing on error
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
@@ -325,8 +224,6 @@ Devvit.addCustomPostType({
             break;
 
           case 'INIT':
-            console.log('[DEBUG-NAV] main.tsx: INIT message received');
-
             // Use navigationState instead of persistentPage
             const desiredPage = navigationState?.page || 'landing';
             const gameId = navigationState?.gameId;
@@ -340,11 +237,6 @@ Devvit.addCustomPostType({
                 ...(gameId ? { gameId } : {}),
               },
             };
-
-            console.log(
-              '[DEBUG-NAV] main.tsx: Sending INIT_RESPONSE:',
-              JSON.stringify(initResponse)
-            );
             postMessage(initResponse);
             break;
 
@@ -364,7 +256,6 @@ Devvit.addCustomPostType({
                 });
               }
             } catch (error) {
-              console.error('Error getting current user:', error);
               postMessage({
                 type: 'GET_CURRENT_USER_RESULT',
                 success: false,
@@ -373,74 +264,8 @@ Devvit.addCustomPostType({
             }
             break;
 
-          // case 'GET_RANDOM_GAME':
-          //   try {
-          //     console.log('GET_RANDOM_GAME received, excludeIds:', event.data?.excludeIds);
-
-          //     if (randomGameLoading) {
-          //       postMessage({
-          //         type: 'GET_RANDOM_GAME_RESULT',
-          //         success: false,
-          //         error: 'Game data is still loading',
-          //       });
-          //       return;
-          //     }
-
-          //     if (randomGameError) {
-          //       // Send the error to the client
-          //       postMessage({
-          //         type: 'GET_RANDOM_GAME_RESULT',
-          //         success: false,
-          //         error: String(randomGameError),
-          //       });
-          //       return;
-          //     }
-
-          //     if (randomGameData && randomGameData.success && randomGameData.game) {
-          //       // Send the pre-loaded random game data
-          //       const gameToSend = {
-          //         id: randomGameData.game.id,
-          //         word: randomGameData.game.word,
-          //         maskedWord: randomGameData.game.maskedWord,
-          //         questionText: randomGameData.game.questionText,
-          //         gifs: Array.isArray(randomGameData.game.gifs) ? randomGameData.game.gifs : [],
-          //         createdAt: randomGameData.game.createdAt,
-          //         username:
-          //           randomGameData.game.username ||
-          //           randomGameData.game.creatorUsername ||
-          //           'anonymous',
-          //       };
-          //       console.log('Sending game with ID:', gameToSend.id);
-          //       postMessage({
-          //         type: 'GET_RANDOM_GAME_RESULT',
-          //         success: true,
-          //         result: {
-          //           success: true,
-          //           game: gameToSend,
-          //         },
-          //       });
-          //     } else {
-          //       // Send failure message
-          //       postMessage({
-          //         type: 'GET_RANDOM_GAME_RESULT',
-          //         success: false,
-          //         error: randomGameData?.error || 'No game found',
-          //       });
-          //     }
-          //   } catch (error) {
-          //     console.error('Error getting random game:', error);
-          //     postMessage({
-          //       type: 'GET_RANDOM_GAME_RESULT',
-          //       success: false,
-          //       error: String(error),
-          //     });
-          //   }
-          //   break;
-
           case 'GET_RANDOM_GAME':
             try {
-              console.log('🔍 [DEBUG] Getting random game, with params:', event.data);
-
               // Make sure to include username if available to filter completed games
               const params = {
                 excludeIds: event.data.excludeIds || [],
@@ -457,7 +282,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error getting random game:', error);
               postMessage({
                 type: 'GET_RANDOM_GAME_RESULT',
                 success: false,
@@ -468,7 +292,6 @@ Devvit.addCustomPostType({
 
           case 'CALCULATE_SCORE':
             try {
-              console.log('Calculating score:', event.data);
               const scoreResult = {
                 ...calculateScore(event.data),
                 username: event.data.username,
@@ -480,7 +303,6 @@ Devvit.addCustomPostType({
                 result: scoreResult,
               });
             } catch (error) {
-              console.error('Error calculating score:', error);
               postMessage({
                 type: 'CALCULATE_SCORE_RESULT',
                 success: false,
@@ -500,7 +322,6 @@ Devvit.addCustomPostType({
               });
               // refreshCumulativeLeaderboard();
             } catch (error) {
-              console.error('Error saving score:', error);
               postMessage({
                 type: 'SAVE_SCORE_RESULT',
                 success: false,
@@ -511,10 +332,7 @@ Devvit.addCustomPostType({
 
           case 'GET_GLOBAL_LEADERBOARD':
             try {
-              console.log('MainApp: Received GET_GLOBAL_LEADERBOARD request', event.data);
               const result = await getGlobalLeaderboard(event.data || {}, context);
-              console.log('MainApp: Global leaderboard fetch result:', result.success);
-
               postMessage({
                 type: 'GET_GLOBAL_LEADERBOARD_RESULT',
                 success: result.success,
@@ -522,7 +340,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('MainApp: Error getting global leaderboard:', error);
               postMessage({
                 type: 'GET_GLOBAL_LEADERBOARD_RESULT',
                 success: false,
@@ -533,10 +350,8 @@ Devvit.addCustomPostType({
 
           case 'GET_CUMULATIVE_LEADERBOARD':
             try {
-              console.log('MainApp: Received GET_CUMULATIVE_LEADERBOARD request', event.data);
               const params = event.data ? event.data : {};
               const result = await getCumulativeLeaderboard(params, context);
-              console.log('MainApp: Cumulative leaderboard fetch result:', result.success);
 
               postMessage({
                 type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
@@ -545,7 +360,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('MainApp: Error getting cumulative leaderboard:', error);
               postMessage({
                 type: 'GET_CUMULATIVE_LEADERBOARD_RESULT',
                 success: false,
@@ -556,8 +370,6 @@ Devvit.addCustomPostType({
 
           case 'GET_USER_STATS':
             try {
-              console.log('Getting user stats for:', event.data?.username);
-
               if (!event.data?.username) {
                 postMessage({
                   type: 'GET_USER_STATS_RESULT',
@@ -590,40 +402,28 @@ Devvit.addCustomPostType({
               
               // Fetch user stats hash directly; fall back to score from sorted set
               let stats: any = null;
-              try {
-                const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
-                if (userStats && Object.keys(userStats).length > 0) {
-                  stats = {
-                    username,
-                    score: Number(userStats.totalScore || 0),
-                    bestScore: Number(userStats.bestScore || 0),
-                    averageScore: Number(userStats.averageScore || 0),
-                    gamesPlayed: Number(userStats.gamesPlayed || 0),
-                    gamesWon: Number(userStats.gamesWon || 0),
-                    gamesCreated: Number(userStats.gamesCreated || 0),
-                    timestamp: Number(userStats.lastPlayed || 0),
-                  };
-                }
-              } catch (statsErr) {
-                console.warn('[DEBUG] Failed to read userStats hash, will rely on leaderboard:', statsErr);
+              const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
+              if (userStats && Object.keys(userStats).length > 0) {
+                stats = {
+                  username,
+                  score: Number(userStats.totalScore || 0),
+                  bestScore: Number(userStats.bestScore || 0),
+                  averageScore: Number(userStats.averageScore || 0),
+                  gamesPlayed: Number(userStats.gamesPlayed || 0),
+                  gamesWon: Number(userStats.gamesWon || 0),
+                  gamesCreated: Number(userStats.gamesCreated || 0),
+                  timestamp: Number(userStats.lastPlayed || 0),
+                };
               }
-
-              // Avoid fetching a large leaderboard snapshot to compute rank.
-              // We intentionally skip any top-N scans so this scales with number of users.
 
               // As a final fallback for score, read the zset score
               if (!stats || typeof stats.score !== 'number') {
-                try {
-                  // @ts-ignore - Devvit redis supports zScore
-                  const zScore = await context.redis.zScore('cumulativeLeaderboard', username);
-                  if (!stats) stats = { username };
-                  stats.score = typeof zScore === 'number' ? zScore : 0;
-                } catch (zErr) {
-                  console.warn('[DEBUG] Failed to read zScore for user:', zErr);
-                }
+                // @ts-ignore - Devvit redis supports zScore
+                const zScore = await context.redis.zScore('cumulativeLeaderboard', username);
+                if (!stats) stats = { username };
+                stats.score = typeof zScore === 'number' ? zScore : 0;
               }
 
-              console.log(`[DEBUG] Final GET_USER_STATS_RESULT for ${username}:`, { stats, rank });
               postMessage({
                 type: 'GET_USER_STATS_RESULT',
                 success: true,
@@ -631,7 +431,6 @@ Devvit.addCustomPostType({
                 rank,
               });
             } catch (error) {
-              console.error('Error getting user stats:', error);
               postMessage({
                 type: 'GET_USER_STATS_RESULT',
                 success: false,
@@ -642,8 +441,6 @@ Devvit.addCustomPostType({
 
           case 'SAVE_GAME_STATE':
             try {
-              console.log('🎲 [DEBUG] Saving game state:', event.data);
-
               if (
                 !event.data ||
                 !event.data.username ||
@@ -666,7 +463,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error saving game state:', error);
               postMessage({
                 type: 'SAVE_GAME_STATE_RESULT',
                 success: false,
@@ -677,8 +473,6 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME':
             try {
-              console.log('Getting game:', event.data.gameId);
-
               if (!event.data.gameId) {
                 postMessage({
                   type: 'GET_GAME_RESULT',
@@ -696,8 +490,6 @@ Devvit.addCustomPostType({
                 context
               );
 
-              console.log('Game data retrieved:', result.success, result.game?.id);
-
               if (result.success && result.game) {
                 postMessage({
                   type: 'GET_GAME_RESULT',
@@ -712,7 +504,6 @@ Devvit.addCustomPostType({
                 });
               }
             } catch (error) {
-              console.error('Error getting game:', error);
               postMessage({
                 type: 'GET_GAME_RESULT',
                 success: false,
@@ -723,8 +514,6 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME_STATE':
             try {
-              console.log('🎲 [DEBUG] Getting game state:', event.data);
-
               if (!event.data || !event.data.username || !event.data.gameId) {
                 postMessage({
                   type: 'GET_GAME_STATE_RESULT',
@@ -743,7 +532,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error getting game state:', error);
               postMessage({
                 type: 'GET_GAME_STATE_RESULT',
                 success: false,
@@ -754,8 +542,6 @@ Devvit.addCustomPostType({
 
           case 'GET_UNPLAYED_GAMES':
             try {
-              console.log('🔍 [DEBUG] Getting unplayed games for user:', event.data?.username);
-
               if (!event.data || !event.data.username) {
                 postMessage({
                   type: 'GET_UNPLAYED_GAMES_RESULT',
@@ -774,7 +560,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error getting unplayed games:', error);
               postMessage({
                 type: 'GET_UNPLAYED_GAMES_RESULT',
                 success: false,
@@ -785,25 +570,13 @@ Devvit.addCustomPostType({
 
           case 'GET_GEMINI_RECOMMENDATIONS': {
             try {
-              console.log('MainApp: Processing Gemini recommendations request', event.data);
-
               if (!event.data) {
                 throw new Error('No data received in request');
               }
 
               const { category, inputType, count } = event.data;
-              console.log('MainApp: Fetching recommendations for', category, inputType, count);
 
               const result = await fetchGeminiRecommendations(context, category, inputType, count);
-
-              console.log(
-                'MainApp: Recommendations result:',
-                JSON.stringify({
-                  success: result.success,
-                  count: result.recommendations?.length,
-                  error: result.error,
-                })
-              );
 
               postMessage({
                 type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
@@ -812,7 +585,6 @@ Devvit.addCustomPostType({
                 error: result.error,
               });
             } catch (error) {
-              console.error('MainApp: Error in GET_GEMINI_RECOMMENDATIONS handler:', error);
               postMessage({
                 type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
                 success: false,
@@ -824,25 +596,14 @@ Devvit.addCustomPostType({
 
           case 'GET_GEMINI_SYNONYMS': {
             try {
-              console.log('MainApp: Processing Gemini synonyms request', event.data);
 
               if (!event.data) {
                 throw new Error('No data received in request');
               }
 
               const { word } = event.data;
-              console.log('MainApp: Fetching synonyms for', word);
 
               const result = await fetchGeminiSynonyms(context, word);
-
-              console.log(
-                'MainApp: Synonyms result:',
-                JSON.stringify({
-                  success: result.success,
-                  count: result.synonyms?.length,
-                  error: result.error,
-                })
-              );
 
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
@@ -852,7 +613,6 @@ Devvit.addCustomPostType({
                 error: result.error,
               } as BlocksToWebviewMessage);
             } catch (error) {
-              console.error('MainApp: Error in GET_GEMINI_SYNONYMS handler:', error);
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: false,
@@ -864,7 +624,6 @@ Devvit.addCustomPostType({
           }
           case 'SEARCH_TENOR_GIFS':
             try {
-              console.log('Searching Tenor GIFs for:', event.data.query);
               const gifResults = await searchTenorGifs(
                 context,
                 event.data.query,
@@ -877,7 +636,6 @@ Devvit.addCustomPostType({
                 results: gifResults,
               });
             } catch (error) {
-              console.error('Error searching Tenor GIFs:', error);
               postMessage({
                 type: 'SEARCH_TENOR_GIFS_RESULT',
                 success: false,
@@ -915,8 +673,6 @@ Devvit.addCustomPostType({
 
           case 'GET_TOP_SCORES':
             try {
-              console.log('[DEBUG] Received GET_TOP_SCORES request');
-
               const result = await getCumulativeLeaderboard({ limit: 10 }, context);
 
               if (!result.success || !result.leaderboard) {
@@ -939,7 +695,6 @@ Devvit.addCustomPostType({
                 scores,
               });
             } catch (error) {
-              console.error('[DEBUG] Error handling GET_TOP_SCORES:', error);
               postMessage({
                 type: 'GET_TOP_SCORES_RESULT',
                 success: false,
@@ -962,16 +717,12 @@ Devvit.addCustomPostType({
 
               // Resolve a reliable username server-side. Client may send 'anonymous'.
               let resolvedUsername: string | null = null;
-              try {
-                const incoming = String(event.data.username || '').trim();
-                if (incoming && incoming.toLowerCase() !== 'anonymous') {
-                  resolvedUsername = incoming.replace(/^u\//i, '');
-                } else {
-                  const fetched = await context.reddit.getCurrentUsername();
-                  if (fetched) resolvedUsername = fetched;
-                }
-              } catch (_e) {
-                // ignore and handle below
+              const incoming = String(event.data.username || '').trim();
+              if (incoming && incoming.toLowerCase() !== 'anonymous') {
+                resolvedUsername = incoming.replace(/^u\//i, '');
+              } else {
+                const fetched = await context.reddit.getCurrentUsername();
+                if (fetched) resolvedUsername = fetched;
               }
 
               // Create a completed player state
@@ -1008,58 +759,43 @@ Devvit.addCustomPostType({
 
               // If we have comment data, post a completion comment
               if (commentData) {
-                try {
-                  const redditPostId = context.postId || null;
-
-                  // Post a completion comment
-                  await postCompletionComment(
-                    {
-                      gameId: event.data.gameId,
-                      username: event.data.username,
-                      numGuesses: commentData.numGuesses || 1,
-                      gifHints: commentData.gifHints || 0,
-                      wordHints: commentData.wordHints || 0,
-                      hintTypeLabel: commentData.hintTypeLabel || 'letter',
-                      redditPostId,
-                    },
-                    context
-                  );
-                } catch (commentError) {
-                  console.error('❌ [DEBUG] Error posting completion comment:', commentError);
-                  // Don't fail the whole operation if commenting fails
-                }
+                const redditPostId = context.postId || null;
+                // Post a completion comment
+                await postCompletionComment(
+                  {
+                    gameId: event.data.gameId,
+                    username: event.data.username,
+                    numGuesses: commentData.numGuesses || 1,
+                    gifHints: commentData.gifHints || 0,
+                    wordHints: commentData.wordHints || 0,
+                    hintTypeLabel: commentData.hintTypeLabel || 'letter',
+                    redditPostId,
+                  },
+                  context
+                );
               }
 
-              try {
-                const gameResult = await getGame({ gameId: event.data.gameId }, context);
+              const gameResult = await getGame({ gameId: event.data.gameId }, context);
+              
+              if (gameResult.success && gameResult.game && gameResult.game.word) {
+                // Calculate the score using the word from the game data
+                const scoreData = calculateScore({
+                  word: gameResult.game.word,
+                  gifHintCount: playerState.gifHintCount || 0,
+                  revealedLetterCount: playerState.revealedLetters?.length || 0,
+                  timeTaken: event.data.timeTaken || 0
+                });
                 
-                if (gameResult.success && gameResult.game && gameResult.game.word) {
-                  // Calculate the score using the word from the game data
-                  const scoreData = calculateScore({
-                    word: gameResult.game.word,
-                    gifHintCount: playerState.gifHintCount || 0,
-                    revealedLetterCount: playerState.revealedLetters?.length || 0,
-                    timeTaken: event.data.timeTaken || 0
-                  });
-                  
-                  // Save the score
-                  await saveScore({
-                    username: event.data.username,
-                    gameId: event.data.gameId,
-                    score: scoreData.score,
-                    gifPenalty: scoreData.gifPenalty,
-                    wordPenalty: scoreData.wordPenalty,
-                    timeTaken: scoreData.timeTaken,
-                    timestamp: Date.now()
-                  }, context);
-                  
-                  console.log('✅ [DEBUG] Automatically calculated and saved score:', scoreData.score);
-                } else {
-                  console.log('⚠️ [DEBUG] Could not retrieve game data for score calculation');
-                }
-              } catch (scoreError) {
-                console.error('❌ [DEBUG] Error auto-calculating score:', scoreError);
-                // Don't fail the operation if score calculation fails
+                // Save the score
+                await saveScore({
+                  username: event.data.username,
+                  gameId: event.data.gameId,
+                  score: scoreData.score,
+                  gifPenalty: scoreData.gifPenalty,
+                  wordPenalty: scoreData.wordPenalty,
+                  timeTaken: scoreData.timeTaken,
+                  timestamp: Date.now()
+                }, context); 
               }
 
               // Send a one-time welcome/thank-you PM to the user
@@ -1078,25 +814,19 @@ Devvit.addCustomPostType({
                 // Normalize username input and send with error handling
                 const rawUsername = String(pmTarget || '').trim();
                 const toUsername = rawUsername.replace(/^u\//i, '');
-
-                if (!toUsername) {
-                  console.warn('[PM] Missing username; skipping DM. Raw:', rawUsername);
-                } else {
-                  try {
-                    await context.reddit.sendPrivateMessage({
-                      subject,
-                      text,
-                      to: toUsername,
-                    });
+                try {
+                  await context.reddit.sendPrivateMessage({
+                    subject,
+                    text,
+                    to: toUsername,
+                  });
+                  await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
+                } catch (pmErr: any) {
+                  const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
+                  
+                  // If user hasn't whitelisted the app, mark as sent to prevent retry spam
+                  if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
                     await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
-                    console.log(`[PM] Sent welcome DM to ${toUsername}`);
-                  } catch (pmErr: any) {
-                    const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
-                    
-                    // If user hasn't whitelisted the app, mark as sent to prevent retry spam
-                    if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
-                      await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
-                    }
                   }
                 }
               }
@@ -1109,7 +839,6 @@ Devvit.addCustomPostType({
                 success: true,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error marking game completed:', error);
               postMessage({
                 type: 'MARK_GAME_COMPLETED_RESULT',
                 success: false,
@@ -1121,8 +850,6 @@ Devvit.addCustomPostType({
 
           case 'REFRESH_POST_PREVIEW':
             try {
-              console.log('🔄 [DEBUG] Refreshing post preview');
-
               // Force a refresh of the GamePostPreview component
               setPostPreviewRefreshTrigger((prev) => prev + 1);
 
@@ -1131,7 +858,6 @@ Devvit.addCustomPostType({
                 success: true,
               });
             } catch (error) {
-              console.error('Error refreshing post preview:', error);
               postMessage({
                 type: 'REFRESH_POST_PREVIEW_RESULT',
                 success: false,
@@ -1142,8 +868,6 @@ Devvit.addCustomPostType({
 
           case 'POST_COMPLETION_COMMENT':
             try {
-              console.log('🎉 [DEBUG] Posting completion comment:', event.data);
-
               if (!event.data || !event.data.gameId || !event.data.username) {
                 postMessage({
                   type: 'POST_COMPLETION_COMMENT_RESULT',
@@ -1175,7 +899,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('Error posting completion comment:', error);
               postMessage({
                 type: 'POST_COMPLETION_COMMENT_RESULT',
                 success: false,
@@ -1186,8 +909,6 @@ Devvit.addCustomPostType({
 
           case 'HAS_USER_COMPLETED_GAME':
             try {
-              console.log('🔍 [DEBUG] Checking if user has completed game:', event.data);
-
               if (!event.data || !event.data.gameId || !event.data.username) {
                 postMessage({
                   type: 'HAS_USER_COMPLETED_GAME_RESULT',
@@ -1207,7 +928,6 @@ Devvit.addCustomPostType({
                 completed: result.completed,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error checking game completion status:', error);
               postMessage({
                 type: 'HAS_USER_COMPLETED_GAME_RESULT',
                 success: false,
@@ -1218,37 +938,16 @@ Devvit.addCustomPostType({
             break;
 
           case 'NAVIGATE':
-            console.log('[DEBUG-NAV] main.tsx: NAVIGATE message received:', JSON.stringify(event));
-
             // Extract navigation data
             const targetPage = event.data?.page;
             const targetGameId = event.data?.params?.gameId;
-
-            console.log(
-              `[DEBUG-NAV] main.tsx: Extracted navigation data - page: ${targetPage}, gameId: ${targetGameId}`
-            );
-
             if (targetPage) {
               // CRITICAL FIX: Force clear any existing navigation state first
-              try {
-                const navStateKey = `navState:${context.postId || 'default'}`;
-                await context.redis.del(navStateKey);
-                console.log('[DEBUG-NAV] main.tsx: Cleared previous navigation state');
-              } catch (clearError) {
-                console.error('[DEBUG-NAV] Error clearing previous navigation state:', clearError);
-              }
+              const navStateKey = `navState:${context.postId || 'default'}`;
+              await context.redis.del(navStateKey);
 
               // Store fresh navigation state
-              try {
-                await storeNavigationState(targetPage, targetGameId);
-                console.log(
-                  '[DEBUG-NAV] main.tsx: Stored new navigation state:',
-                  targetPage,
-                  targetGameId
-                );
-              } catch (storeError) {
-                console.error('[DEBUG-NAV] Error storing navigation state:', storeError);
-              }
+              await storeNavigationState(targetPage, targetGameId);
 
               // Send navigation response
               const navResponse: BlocksToWebviewMessage = {
@@ -1259,13 +958,8 @@ Devvit.addCustomPostType({
                 },
               };
 
-              console.log(
-                '[DEBUG-NAV] main.tsx: Sending navigation response:',
-                JSON.stringify(navResponse)
-              );
               postMessage(navResponse);
             } else {
-              console.error('[DEBUG-NAV] main.tsx: Invalid navigation request - missing page');
               postMessage({
                 type: 'NAVIGATION_RESULT',
                 success: false,
@@ -1275,81 +969,50 @@ Devvit.addCustomPostType({
             break;
 
           case 'NAVIGATE_TO_POST':
+            if (!event.data.postId) {
+              return;
+            }
+
+            // Make sure the postId has the proper format (add t3_ prefix if missing)
+            const formattedPostId = event.data.postId.startsWith('t3_')
+              ? event.data.postId
+              : `t3_${event.data.postId}`;
+
             try {
-              console.log('📱 [DEBUG] Navigating to Reddit post:', event.data.postId);
+              // Method 1: Get the post object using Reddit API
+              const post = await context.reddit.getPostById(formattedPostId);
 
-              if (!event.data.postId) {
-                console.error('❌ [DEBUG] No post ID provided for navigation');
-                return;
-              }
-
-              // Make sure the postId has the proper format (add t3_ prefix if missing)
-              const formattedPostId = event.data.postId.startsWith('t3_')
-                ? event.data.postId
-                : `t3_${event.data.postId}`;
-
-              console.log('🔍 [DEBUG] Using formatted post ID:', formattedPostId);
-
-              try {
-                // Method 1: Get the post object using Reddit API
-                const post = await context.reddit.getPostById(formattedPostId);
-
-                if (post) {
-                  // Log all post properties to help with debugging
-                  console.log('✅ [DEBUG] Got post object with properties:', Object.keys(post));
-
-                  if (post.url) {
-                    console.log('✅ [DEBUG] Got post URL:', post.url);
-                    context.ui.navigateTo(post.url);
-                  } else if (post.permalink) {
-                    // Fallback to permalink if url is not available
-                    const fullUrl = `https://www.reddit.com${post.permalink}`;
-                    console.log('✅ [DEBUG] Using permalink instead:', fullUrl);
-                    context.ui.navigateTo(fullUrl);
-                  } else {
-                    throw new Error('Post URL and permalink both missing');
-                  }
-
-                  console.log('✅ [DEBUG] Navigation request sent for post');
+              if (post) {
+                if (post.url) {
+                  context.ui.navigateTo(post.url);
+                } else if (post.permalink) {
+                  // Fallback to permalink if url is not available
+                  const fullUrl = `https://www.reddit.com${post.permalink}`;
+                  context.ui.navigateTo(fullUrl);
                 } else {
-                  throw new Error('Post not found');
+                  throw new Error('Post URL and permalink both missing');
                 }
-              } catch (error) {
-                console.error('❌ [DEBUG] Error with Method 1, trying fallback:', error);
-
-                // Fallback method: Construct the URL directly
-                try {
-                  // Clean the postId (remove t3_ prefix if present)
-                  const cleanPostId = event.data.postId.replace('t3_', '');
-
-                  // Get the current subreddit
-                  const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
-                  const subredditName = subreddit?.name || 'PlayGIFEnigma'; // Use your default subreddit
-
-                  const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
-                  console.log('✅ [DEBUG] Constructed fallback post URL:', postUrl);
-
-                  context.ui.navigateTo(postUrl);
-                  console.log('✅ [DEBUG] Navigation request sent with fallback URL');
-                } catch (fallbackError) {
-                  console.error('❌ [DEBUG] Fallback navigation also failed:', fallbackError);
-                }
+              } else {
+                throw new Error('Post not found');
               }
             } catch (error) {
-              console.error('❌ [DEBUG] Error in NAVIGATE_TO_POST handler:', error);
+              // Fallback method: Construct the URL directly
+              // Clean the postId (remove t3_ prefix if present)
+              const cleanPostId = event.data.postId.replace('t3_', '');
+              // Get the current subreddit
+              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
+              const subredditName = subreddit?.name || 'PlayGIFEnigma';
+
+              const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
+
+              context.ui.navigateTo(postUrl);
             }
             break;
 
           case 'GET_RANDOM_POST':
             try {
-              console.log('🔍 [DEBUG] Getting random post, with params:', event.data);
-
               // Get username if provided
               const username = event.data?.username || (await context.reddit.getCurrentUsername());
-
-              if (!username) {
-                console.warn('⚠️ [DEBUG] No username available, cannot filter completed games');
-              }
 
               // Get user's completed games if username is available
               let completedGameIds: string[] = [];
@@ -1365,15 +1028,12 @@ Devvit.addCustomPostType({
                 completedGameIds = rangeResult.map((item) =>
                   typeof item === 'string' ? item : item.member
                 );
-                console.log('🔍 [DEBUG] User completed games:', completedGameIds);
               }
 
               // Get all active games from the sorted set
               const gameItems = await context.redis.zRange('activeGames', 0, -1);
-              console.log(`🔍 [DEBUG] Found ${gameItems.length} active games`);
 
               if (!gameItems || gameItems.length === 0) {
-                console.error('❌ [DEBUG] No active games found');
                 postMessage({
                   type: 'GET_RANDOM_POST_RESULT',
                   success: false,
@@ -1388,69 +1048,50 @@ Devvit.addCustomPostType({
               );
 
               // Get the subreddit directly
-              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma'); // Replace with your actual subreddit name
-
-              // Get comprehensive list of posts using multiple methods
-              console.log('🔍 [DEBUG] Getting comprehensive list of posts');
+              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
 
               // Create a set to store removed post IDs
               const removedPostIds = new Set<string>();
 
               // Get posts from various listings
-              try {
-                // Get posts from top posts
-                const topPosts = await subreddit.getTopPosts();
-                const allTopPosts = await topPosts.all();
-                console.log('🔍 [DEBUG] Top posts count:', allTopPosts.length);
+              // Get posts from top posts
+              const topPosts = await subreddit.getTopPosts();
+              const allTopPosts = await topPosts.all();
 
-                // Get edited posts
-                const editedListing = await subreddit.getEdited({ type: 'post' });
-                const editedPosts = await editedListing.all();
-                console.log('🔍 [DEBUG] Edited posts count:', editedPosts.length);
+              // Get edited posts
+              const editedListing = await subreddit.getEdited({ type: 'post' });
+              const editedPosts = await editedListing.all();
 
-                // Get unmoderated posts
-                const unmoderatedListing = await subreddit.getUnmoderated({ type: 'post' });
-                const unmoderatedPosts = await unmoderatedListing.all();
-                console.log('🔍 [DEBUG] Unmoderated posts count:', unmoderatedPosts.length);
+              // Get unmoderated posts
+              const unmoderatedListing = await subreddit.getUnmoderated({ type: 'post' });
+              const unmoderatedPosts = await unmoderatedListing.all();
 
-                // Get mod queue posts
-                const modQueueListing = await subreddit.getModQueue({ type: 'post' });
-                const modQueuePosts = await modQueueListing.all();
-                console.log('🔍 [DEBUG] Mod queue posts count:', modQueuePosts.length);
+              // Get mod queue posts
+              const modQueueListing = await subreddit.getModQueue({ type: 'post' });
+              const modQueuePosts = await modQueueListing.all();
 
-                // Combine all posts and check isRemoved status
-                const allPosts = [
-                  ...allTopPosts,
-                  ...editedPosts,
-                  ...unmoderatedPosts,
-                  ...modQueuePosts,
-                ];
+              // Combine all posts and check isRemoved status
+              const allPosts = [
+                ...allTopPosts,
+                ...editedPosts,
+                ...unmoderatedPosts,
+                ...modQueuePosts,
+              ];
 
-                // Filter out removed posts
-                for (const post of allPosts) {
-                  // Check if the post is removed
-                  if (post.isRemoved && post.isRemoved()) {
-                    removedPostIds.add(post.id);
-                    console.log(`🔍 [DEBUG] Post ${post.id} is marked as removed`);
-                  }
+              // Filter out removed posts
+              for (const post of allPosts) {
+                // Check if the post is removed
+                if (post.isRemoved && post.isRemoved()) {
+                  removedPostIds.add(post.id);
                 }
-
-                console.log('🔍 [DEBUG] Total removed posts identified:', removedPostIds.size);
-              } catch (error) {
-                console.error('❌ [DEBUG] Error getting posts:', error);
               }
 
               // Get posts removed by Automoderator from Redis
               let automoderatorRemovedIds: string[] = [];
-              try {
-                const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
-                automoderatorRemovedIds = zRangeResult.map((item) =>
-                  typeof item === 'string' ? item : item.member
-                );
-                console.log('🔍 [DEBUG] Posts removed by Automoderator:', automoderatorRemovedIds);
-              } catch (error) {
-                console.error('❌ [DEBUG] Error getting automod removed posts:', error);
-              }
+              const zRangeResult = await context.redis.zRange('removedPosts', 0, -1);
+              automoderatorRemovedIds = zRangeResult.map((item) =>
+                typeof item === 'string' ? item : item.member
+              );
 
               // Get any additional exclude IDs from the request
               const excludeIds = event.data?.excludeIds || [];
@@ -1462,7 +1103,6 @@ Devvit.addCustomPostType({
               for (const gameId of gameIds) {
                 // Skip if this game is already completed by the user
                 if (completedGameIds.includes(gameId)) {
-                  console.log(`🔍 [DEBUG] Skipping completed game: ${gameId}`);
                   continue;
                 }
 
@@ -1474,10 +1114,6 @@ Devvit.addCustomPostType({
                   const createdAt = parseInt(gameData.createdAt || '0');
                   const cleanPostId = postId.replace('t3_', '');
                   const fullPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
-
-                  console.log(
-                    `🔍 [DEBUG] Checking post ${postId} (clean: ${cleanPostId}, full: ${fullPostId})`
-                  );
 
                   // Check exclusions with different ID formats
                   const isInExcludeList =
@@ -1497,10 +1133,6 @@ Devvit.addCustomPostType({
                     return cleanId === cleanPostId || id === postId || id === fullPostId;
                   });
 
-                  console.log(
-                    `🔍 [DEBUG] Post ${postId} status - Excluded: ${isInExcludeList}, Removed: ${isRemoved}, Automod: ${isRemovedByAutomod}`
-                  );
-
                   // Only proceed if the post is not excluded or removed
                   if (!isInExcludeList && !isRemoved && !isRemovedByAutomod) {
                     // Check if user has a game state for this game
@@ -1515,14 +1147,10 @@ Devvit.addCustomPostType({
                           isCompleted = playerState.isCompleted === true;
 
                           if (isCompleted) {
-                            console.log(
-                              `🔍 [DEBUG] Skipping game ${gameId} - user has completed it`
-                            );
                             continue;
                           }
                         }
                       } catch (stateError) {
-                        console.error(`❌ [DEBUG] Error checking game state: ${stateError}`);
                         // Continue anyway - assume not completed
                       }
                     }
@@ -1533,19 +1161,11 @@ Devvit.addCustomPostType({
                       postId: postId,
                       createdAt: createdAt,
                     });
-                    console.log(
-                      `✅ [DEBUG] Added post ${postId} for game ${gameId} to available posts (created at: ${new Date(createdAt).toISOString()})`
-                    );
-                  } else {
-                    console.log(
-                      `🚫 [DEBUG] Skipping post ${postId} - ${isInExcludeList ? 'excluded ' : ''}${isRemoved ? 'removed ' : ''}${isRemovedByAutomod ? 'automod removed' : ''}`
-                    );
                   }
                 }
               }
 
               if (availablePostsWithDates.length === 0) {
-                console.error('❌ [DEBUG] No available posts found after filtering');
                 postMessage({
                   type: 'GET_RANDOM_POST_RESULT',
                   success: false,
@@ -1562,20 +1182,10 @@ Devvit.addCustomPostType({
                 0,
                 Math.min(10, availablePostsWithDates.length)
               );
-              console.log(`✅ [DEBUG] Using ${recentPosts.length} most recent posts for selection`);
 
               // Select a random post from these recent posts
               const randomIndex = Math.floor(Math.random() * recentPosts.length);
               const randomPost = recentPosts[randomIndex];
-
-              console.log(
-                '✅ [DEBUG] Selected random post:',
-                randomPost.postId,
-                'for game:',
-                randomPost.gameId,
-                'created at:',
-                new Date(randomPost.createdAt).toISOString()
-              );
 
               // Final check to ensure post hasn't been removed since our filtering
               try {
@@ -1586,9 +1196,6 @@ Devvit.addCustomPostType({
                 );
 
                 if (finalCheck && finalCheck.isRemoved && finalCheck.isRemoved()) {
-                  console.error(
-                    `❌ [DEBUG] Final check found post ${randomPost.postId} is removed!`
-                  );
                   postMessage({
                     type: 'GET_RANDOM_POST_RESULT',
                     success: false,
@@ -1597,7 +1204,6 @@ Devvit.addCustomPostType({
                   return;
                 }
               } catch (finalCheckError) {
-                console.error(`❌ [DEBUG] Error in final post check:`, finalCheckError);
                 // If we can't fetch the post, it might be removed/deleted
                 postMessage({
                   type: 'GET_RANDOM_POST_RESULT',
@@ -1614,7 +1220,6 @@ Devvit.addCustomPostType({
                 gameId: randomPost.gameId,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error getting random post:', error);
               postMessage({
                 type: 'GET_RANDOM_POST_RESULT',
                 success: false,
@@ -1625,10 +1230,6 @@ Devvit.addCustomPostType({
 
           case 'GET_SUBREDDIT_SETTINGS':
             try {
-              console.log('Getting subreddit settings');
-
-              // Get the current subreddit
-
               // Get the settings
               const allOriginalContent = await context.settings.get('allOriginalContent');
 
@@ -1639,11 +1240,10 @@ Devvit.addCustomPostType({
                 success: true,
                 settings: {
                   allOriginalContent: allOriginalContent === true,
-                  allowChatPostCreation: allowChatPostCreation !== false, // Default to true if not set
+                  allowChatPostCreation: allowChatPostCreation !== false,
                 },
               });
             } catch (error) {
-              console.error('Error getting subreddit settings:', error);
               postMessage({
                 type: 'GET_SUBREDDIT_SETTINGS_RESULT',
                 success: false,
@@ -1654,8 +1254,6 @@ Devvit.addCustomPostType({
 
           case 'TRACK_GUESS':
             try {
-              console.log('📊 [DEBUG] Tracking guess:', event.data);
-
               if (!event.data || !event.data.gameId || !event.data.username || !event.data.guess) {
                 postMessage({
                   type: 'TRACK_GUESS_RESULT',
@@ -1673,7 +1271,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error tracking guess:', error);
               postMessage({
                 type: 'TRACK_GUESS_RESULT',
                 success: false,
@@ -1684,8 +1281,6 @@ Devvit.addCustomPostType({
 
           case 'GET_GAME_STATISTICS':
             try {
-              console.log('📊 [DEBUG] Getting game statistics:', event.data);
-
               if (!event.data || !event.data.gameId) {
                 postMessage({
                   type: 'GET_GAME_STATISTICS_RESULT',
@@ -1704,7 +1299,6 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
-              console.error('❌ [DEBUG] Error getting game statistics:', error);
               postMessage({
                 type: 'GET_GAME_STATISTICS_RESULT',
                 success: false,
@@ -1734,7 +1328,6 @@ Devvit.addCustomPostType({
 
           // Check if this post has a game ID associated with it
           const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-          console.log('Post preview check - gameId found:', gameId);
           return !!gameId; // Convert to boolean
         },
         {
@@ -1742,7 +1335,6 @@ Devvit.addCustomPostType({
           finally: (result) => {
             setIsGame(!!result);
             setIsLoading(false);
-            console.log('Post preview component - isGame:', !!result);
           },
         }
       );
@@ -1829,83 +1421,16 @@ Devvit.addMenuItem({
   },
 });
 
-// Helper: schedule once using a Redis guard to avoid hitting cron limits during upgrades/playtests
-async function ensureAutoCreateScheduled(context: any): Promise<void> {
-  try {
-    // Only allow scheduling when explicitly enabled in settings
-    const enabled = await context.settings.get('enableAutoCron');
-    if (enabled !== true) {
-      return;
-    }
-
-    const guardKey = 'cron:scheduled:auto_create_post';
-    const versionKey = 'cron:scheduled:auto_create_post:version';
-    const already = await context.redis.get(guardKey);
-    const currentVersion = context.appVersion || 'unknown';
-    const recordedVersion = await context.redis.get(versionKey);
-
-    if (already === '1' && recordedVersion === currentVersion) {
-      return; // already scheduled for this version
-    }
-
-    await context.scheduler.runJob({
-      name: 'auto_create_post',
-      cron: '0 * * * *',
-    });
-
-    // Mark as scheduled with a long expiry (90 days)
-    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    await context.redis.set(guardKey, '1', { expiration: expireAt });
-    await context.redis.set(versionKey, currentVersion, { expiration: expireAt });
-  } catch (err) {
-    // Swallow cron limit errors to avoid crashing build/playtest cycles
-    console.error('[SCHEDULER] ensureAutoCreateScheduled error (ignored):', err);
-  }
-}
-
-// Helper: schedule cache pre-warming job
-async function ensureCachePreWarmerScheduled(context: any): Promise<void> {
-  try {
-    const guardKey = 'cron:scheduled:cache_prewarmer';
-    const versionKey = 'cron:scheduled:cache_prewarmer:version';
-    const already = await context.redis.get(guardKey);
-    const currentVersion = context.appVersion || 'unknown';
-    const recordedVersion = await context.redis.get(versionKey);
-
-    if (already === '1' && recordedVersion === currentVersion) {
-      return; // already scheduled for this version
-    }
-
-    // Schedule to run daily at 3 AM UTC (low traffic hours)
+Devvit.addMenuItem({
+  label: '🔥 Test Cache Prewarmer (Manual)',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
     await context.scheduler.runJob({
       name: 'cache_prewarmer',
-      cron: '0 3 * * *',
+      runAt: new Date(),
     });
-
-    // Mark as scheduled with a long expiry (90 days)
-    const expireAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    await context.redis.set(guardKey, '1', { expiration: expireAt });
-    await context.redis.set(versionKey, currentVersion, { expiration: expireAt });
-    
-    console.log('[SCHEDULER] Cache pre-warmer scheduled successfully');
-  } catch (err) {
-    // Silently ignore cron limit errors in development - will work in production
-  }
-}
-
-Devvit.addTrigger({
-  event: 'AppInstall',
-  onEvent: async (_event, context) => {
-    await ensureAutoCreateScheduled(context);
-    await ensureCachePreWarmerScheduled(context);    // Note: Cache pre-warming will run automatically via scheduled job at 3 AM UTC
-  },
-});
-
-Devvit.addTrigger({
-  event: 'AppUpgrade',
-  onEvent: async (_event, context) => {
-    await ensureAutoCreateScheduled(context);
-    await ensureCachePreWarmerScheduled(context);
+    context.ui.showToast('✅ Triggered cache prewarmer manually!');
   },
 });
 
