@@ -105,6 +105,7 @@ export interface CreatorData {
   postToSubreddit?: boolean;
   previewStyle?: 'basic' | 'enhanced';
   isChatPost?: boolean;
+  inputType?: 'word' | 'phrase';
 }
 
 export interface SubredditSettings {

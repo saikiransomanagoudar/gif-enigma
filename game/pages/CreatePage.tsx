@@ -616,6 +616,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             maskedWord,
             questionText,
             gifs: gifUrls,
+            inputType,
           },
         },
         '*'

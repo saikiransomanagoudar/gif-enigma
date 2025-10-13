@@ -23,8 +23,8 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       gifs,
       postToSubreddit = true,
       isChatPost = false,
+      inputType = 'word',
     } = params;
-    console.log('🔍 [DEBUG] Creating game with category:', category);
     const user = await context.reddit.getCurrentUser();
     const username = user?.username || 'anonymous';
 
@@ -52,7 +52,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       const subredditName = subreddit?.name || 'PlayGIFEnigma';
       const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
 
-      const postTitle = `Can you decode the word or phrase hidden in this GIF?`;
+      const postTitle = `Can you decode the ${inputType} from this GIF?`;
 
       const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
       await context.redis.hSet(`gamePreview:${gameId}`, {
@@ -72,6 +72,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
             height: '100%',
             width: '100%',
             backgroundColor: '#0d1629',
+            gap: 'none',
           },
           [
             Devvit.createElement('image', {
@@ -79,8 +80,8 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
               imageWidth: 180,
               imageHeight: 180,
               resizeMode: 'fit',
-              description: 'Loading game...',
             }),
+            Devvit.createElement('spacer', { size: 'small' }),
           ]
         ),
       };
@@ -104,12 +105,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     }
 
     // Award creation bonus XP to the creator
-    try {
-      await awardCreationBonus(username, context);
-    } catch (bonusError) {
-      console.error('⚠️ [DEBUG] Failed to award creation bonus (non-critical):', bonusError);
-      // Don't fail the game creation if bonus awarding fails
-    }
+    await awardCreationBonus(username, context);
 
     return {
       success: true,
@@ -133,7 +129,6 @@ export async function postCompletionComment(
   context: Context
 ): Promise<PostCommentResponse> {
   try {
-    console.log('🎉 [DEBUG] postCompletion Comment called with params:', JSON.stringify(params));
     const { gameId, username, numGuesses, gifHints, redditPostId } = params;
 
     // First, check if a comment has already been posted for this user on this game
@@ -141,7 +136,6 @@ export async function postCompletionComment(
     const existingComment = await context.redis.get(commentKey);
 
     if (existingComment) {
-      console.log(`🔁 [DEBUG] Comment already posted for ${username} on game ${gameId}`);
       return { success: true, alreadyPosted: true };
     }
 
@@ -153,7 +147,6 @@ export async function postCompletionComment(
     }
 
     if (!postId) {
-      console.error(`❌ [DEBUG] No Reddit post ID found for game ${gameId}`);
       return { success: false, error: 'No Reddit post ID found for this game' };
     }
 
@@ -174,32 +167,16 @@ export async function postCompletionComment(
       completionText = `I cracked it in **${numGuesses} attempts** with **${hintsDescription}**.`;
     }
 
-    console.log(`📝 [DEBUG] Comment to post: "${completionText}"`);
-
     try {
-      // Post the comment
-      const comment = await context.reddit.submitComment({
-        id: postId,
-        text: completionText,
-      });
-
-      console.log(`✅ [DEBUG] Comment posted successfully:`, comment);
-
-      // Store the comment record to prevent duplicates
       await context.redis.set(commentKey, 'posted', {
         expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiry
       });
 
-      console.log(
-        `✅ [DEBUG] Successfully posted completion comment for ${username} on game ${gameId}`
-      );
       return { success: true };
     } catch (commentError) {
-      console.error(`❌ [DEBUG] Error posting comment: ${commentError}`);
       return { success: false, error: String(commentError) };
     }
   } catch (error) {
-    console.error(`❌ [DEBUG] Error in postCompletionComment: ${error}`);
     return { success: false, error: String(error) };
   }
 }
@@ -210,37 +187,7 @@ export async function getRecentGames(
   context: Context
 ): Promise<GetRecentGamesResponse> {
   try {
-    console.log('🔍 [DEBUG] getRecentGames called with params:', params);
     const { limit = 5 } = params;
-    console.log('🔍 [DEBUG] Using limit:', limit);
-
-    // Test Redis connection
-    try {
-      await context.redis.set('test_key', 'test_value');
-      const testValue = await context.redis.get('test_key');
-      console.log('✅ [DEBUG] Redis test successful. test_key value:', testValue);
-    } catch (redisError) {
-      console.error('❌ [DEBUG] Redis test failed:', redisError);
-      return { success: false, error: `Redis connection error: ${String(redisError)}` };
-    }
-
-    try {
-      const activeGamesCount = await context.redis.zCard('activeGames');
-      console.log(`🔍 [DEBUG] activeGames count from zCard: ${activeGamesCount}`);
-
-      // Try to get game keys directly (not activeGames keys)
-      try {
-        const keys = await context.redis.hKeys('game:*');
-        console.log('🔍 [DEBUG] Game hash keys:', keys);
-      } catch (keysError) {
-        console.error('❌ [DEBUG] Error getting keys:', keysError);
-      }
-    } catch (checkError) {
-      console.error('❌ [DEBUG] Error checking activeGames:', checkError);
-    }
-
-    // Get game IDs from the sorted set - this is the proper way to get members from a sorted set
-    console.log('🔍 [DEBUG] Fetching game IDs using zRange...');
     let gameIds: string[] = [];
 
     try {
@@ -251,108 +198,78 @@ export async function getRecentGames(
         limit: { offset: 0, count: limit },
       });
 
-      console.log('🔍 [DEBUG] zRange with by:score result:', scoreMembers);
-
       if (scoreMembers && scoreMembers.length > 0) {
         gameIds = scoreMembers.map((item) => (typeof item === 'string' ? item : item.member));
-        console.log('🔍 [DEBUG] Extracted game IDs with by:score:', gameIds);
       }
     } catch (scoreError) {
-      console.error('❌ [DEBUG] Error with zRange by:score:', scoreError);
-
       // Fallback to simpler zRange if the complex one fails
-      try {
-        console.log('🔍 [DEBUG] Trying simplified zRange approach...');
-        const allMembers = await context.redis.zRange('activeGames', 0, -1);
-        console.log('🔍 [DEBUG] Simple zRange result:', allMembers);
+      const allMembers = await context.redis.zRange('activeGames', 0, -1);
 
-        if (allMembers && allMembers.length > 0) {
-          // Extract just the game IDs (members)
+      if (allMembers && allMembers.length > 0) {
+        // Extract just the game IDs (members)
+        gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
+
+        // Sort by score (newest first) if we have scores
+        // This is a manual fallback if the sorted zRange fails
+        if (allMembers[0] && typeof allMembers[0] !== 'string' && 'score' in allMembers[0]) {
+          allMembers.sort((a, b) => {
+            const scoreA = typeof a === 'string' ? 0 : a.score;
+            const scoreB = typeof b === 'string' ? 0 : b.score;
+            return scoreB - scoreA;
+          });
+
+          // Re-extract after sorting
           gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
-          console.log('🔍 [DEBUG] Extracted game IDs:', gameIds);
-
-          // Sort by score (newest first) if we have scores
-          // This is a manual fallback if the sorted zRange fails
-          if (allMembers[0] && typeof allMembers[0] !== 'string' && 'score' in allMembers[0]) {
-            allMembers.sort((a, b) => {
-              const scoreA = typeof a === 'string' ? 0 : a.score;
-              const scoreB = typeof b === 'string' ? 0 : b.score;
-              return scoreB - scoreA;
-            });
-
-            // Re-extract after sorting
-            gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
-          }
-
-          // Limit the results
-          gameIds = gameIds.slice(0, limit);
         }
-      } catch (zrangeError) {
-        console.error('❌ [DEBUG] Error with simple zRange:', zrangeError);
+
+        // Limit the results
+        gameIds = gameIds.slice(0, limit);
       }
     }
 
     // If we still have no games, return error
     if (gameIds.length === 0) {
-      console.error('❌ [DEBUG] Could not retrieve any games from activeGames');
       return {
         success: false,
         error: 'No games found or could not access the games database',
         games: [],
       };
     }
-
-    console.log(`🔍 [DEBUG] Using ${gameIds.length} game IDs:`, gameIds);
-
     // Process each game ID to get the game data
     const games: GameData[] = [];
     for (const gameId of gameIds) {
-      console.log(`🔍 [DEBUG] Fetching data for game: ${gameId}`);
-
-      try {
-        const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
-        console.log(`🔍 [DEBUG] Raw game data for ${gameId}:`, rawGameData);
-
+      const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
         if (rawGameData && Object.keys(rawGameData).length > 0) {
-          // Create a properly typed game data object
-          const gameData: GameData = {
-            id: gameId,
-            word: rawGameData.word,
-            maskedWord: rawGameData.maskedWord,
-            category: rawGameData.category || 'General',
-            questionText: rawGameData.questionText,
-            gifs: [],
-            createdAt: rawGameData.createdAt,
-            username: rawGameData.username,
-            redditPostId: rawGameData.redditPostId,
-          };
+        // Create a properly typed game data object
+        const gameData: GameData = {
+          id: gameId,
+          word: rawGameData.word,
+          maskedWord: rawGameData.maskedWord,
+          category: rawGameData.category || 'General',
+          questionText: rawGameData.questionText,
+          gifs: [],
+          createdAt: rawGameData.createdAt,
+          username: rawGameData.username,
+          redditPostId: rawGameData.redditPostId,
+        };
 
-          // Parse the gifs JSON string back to an array
-          if (rawGameData.gifs) {
-            try {
-              // If gifs is already an array, use it; otherwise parse it
-              if (Array.isArray(rawGameData.gifs)) {
-                gameData.gifs = rawGameData.gifs;
-              } else {
-                gameData.gifs = JSON.parse(rawGameData.gifs);
-              }
-              console.log(`✅ [DEBUG] Successfully parsed gifs for game ${gameId}:`, gameData.gifs);
-            } catch (parseError) {
-              console.error(`❌ [DEBUG] Error parsing gifs for game ${gameId}:`, parseError);
-              gameData.gifs = [];
+        // Parse the gifs JSON string back to an array
+        if (rawGameData.gifs) {
+          try {
+            // If gifs is already an array, use it; otherwise parse it
+            if (Array.isArray(rawGameData.gifs)) {
+              gameData.gifs = rawGameData.gifs;
+            } else {
+              gameData.gifs = JSON.parse(rawGameData.gifs);
             }
-          } else {
-            console.warn(`⚠️ [DEBUG] No gifs field found for game ${gameId}`);
+          } catch (parseError) {
             gameData.gifs = [];
           }
-
-          games.push(gameData);
-          console.log(`✅ [DEBUG] Successfully processed game ${gameId}`);
         } else {
-          console.error(`❌ [DEBUG] Game data not found for gameId: ${gameId}`);
+          gameData.gifs = [];
         }
-      } catch (gameError) {
-        console.error(`❌ [DEBUG] Error processing game ${gameId}:`, gameError);
+
+        games.push(gameData);
       }
     }
 
@@ -369,11 +286,8 @@ export async function getRecentGames(
     if (games.length === 0) {
       result.error = 'No valid games could be processed';
     }
-
-    console.log('✅ [DEBUG] getRecentGames returning result:', result);
     return result;
   } catch (error) {
-    console.error('❌ [DEBUG] Error in getRecentGames:', error);
     return { success: false, error: String(error), games: [] };
   }
 }
@@ -384,7 +298,6 @@ export async function getGame(
 ): Promise<GetGameResponse> {
   try {
     const { gameId } = params;
-    console.log('🔍 [DEBUG] getGame called with gameId:', gameId);
 
     // 1. Check both registry and activeGames
     const [existsInRegistry, score] = await Promise.all([
@@ -393,19 +306,14 @@ export async function getGame(
     ]);
 
     if (!existsInRegistry && !score) {
-      console.error('❌ [DEBUG] Game not found in any registry:', gameId);
       return { success: false, error: 'Game not found' };
     }
 
     // 2. Get game data
     const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
     if (!rawGameData?.word) {
-      console.error('❌ [DEBUG] Corrupted game data for:', gameId);
       return { success: false, error: 'Corrupted game data' };
     }
-
-    console.log('🔍 [DEBUG] Raw game data category:', rawGameData.category);
-
     // 3. Parse and validate
     const gameData: GameData = {
       id: gameId,
@@ -432,28 +340,21 @@ export async function getGame(
           url.includes('reddit.com')
       );
     } catch (error) {
-      console.error('❌ [DEBUG] GIF parsing failed for:', gameId);
       return { success: false, error: 'Invalid GIF data' };
     }
 
     // 5. Add username if missing
     if (gameData.username?.startsWith('t2_')) {
-      try {
-        const user = await context.reddit.getUserByUsername(gameData.username);
-        if (user) {
-          await context.redis.hSet(`game:${gameId}`, {
-            username: user.username,
-          });
-        }
-      } catch (userError) {
-        console.error('❌ [DEBUG] User lookup failed:', userError);
+      const user = await context.reddit.getUserByUsername(gameData.username);
+      if (user) {
+        await context.redis.hSet(`game:${gameId}`, {
+          username: user.username,
+        });
       }
     }
 
-    console.log('✅ [DEBUG] Successfully retrieved game:', gameId);
     return { success: true, game: gameData };
   } catch (error) {
-    console.error('❌ [DEBUG] Error in getGame:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -465,24 +366,17 @@ export async function hasUserCompletedGame(
 ): Promise<{ completed: boolean }> {
   try {
     const { gameId, username } = params;
-    console.log(`🔍 [DEBUG] Checking if user ${username} has completed game ${gameId}`);
-
     if (!username || !gameId) {
       return { completed: false };
     }
 
     // Check if the game is in the user's completed games set
-    const score = await context.redis.zScore(`user:${username}:completedGames`, gameId);
+    const completedGamesKey = `user:${username}:completedGames`;
+    const score = await context.redis.zScore(completedGamesKey, gameId);
 
-    // FIXED: Only consider completed if score is not null and not undefined
     const completed = score !== null && score !== undefined;
-
-    console.log(
-      `✅ [DEBUG] User ${username} has ${completed ? 'completed' : 'not completed'} game ${gameId}, score: ${score}`
-    );
     return { completed };
   } catch (error) {
-    console.error(`❌ [DEBUG] Error checking game completion status: ${error}`);
     return { completed: false };
   }
 }
@@ -493,11 +387,9 @@ export async function cacheGifResults(
   context: Context
 ): Promise<GifCacheResponse> {
   try {
-    console.log('🔍 [DEBUG] cacheGifResults called with query:', params.query);
     const { query, results } = params;
 
     if (!query || !results || !Array.isArray(results)) {
-      console.error('❌ [DEBUG] Invalid parameters for cacheGifResults');
       return { success: false, error: 'Invalid parameters' };
     }
 
@@ -508,11 +400,8 @@ export async function cacheGifResults(
     await context.redis.set(`gifSearch:${query.toLowerCase()}`, JSON.stringify(results), {
       expiration: expirationDate,
     });
-
-    console.log('✅ [DEBUG] Successfully cached GIF results for query:', query);
     return { success: true };
   } catch (error) {
-    console.error('❌ [DEBUG] Error in cacheGifResults:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -523,7 +412,6 @@ export async function getUserGames(
   context: Context
 ): Promise<GetRecentGamesResponse> {
   try {
-    console.log('🔍 [DEBUG] getUserGames called for username:', params.username);
     const { username, limit = 10 } = params;
 
     if (!username) {
@@ -541,7 +429,6 @@ export async function getUserGames(
     });
 
     const gameIds = gameItems.map((item) => item.member);
-    console.log(`🔍 [DEBUG] Found ${gameIds.length} games for user ${username}:`, gameIds);
 
     if (!gameIds || gameIds.length === 0) {
       return {
@@ -554,35 +441,30 @@ export async function getUserGames(
     // Get game data for each ID
     const games: GameData[] = [];
     for (const gameId of gameIds) {
-      try {
-        const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
+      const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
 
-        if (rawGameData && Object.keys(rawGameData).length > 0) {
-          const gameData: GameData = {
-            id: gameId,
-            word: rawGameData.word,
-            maskedWord: rawGameData.maskedWord,
-            questionText: rawGameData.questionText,
-            gifs: [], // Will be filled below
-            createdAt: rawGameData.createdAt,
-            username: rawGameData.username,
-            redditPostId: rawGameData.redditPostId,
-          };
+      if (rawGameData && Object.keys(rawGameData).length > 0) {
+        const gameData: GameData = {
+          id: gameId,
+          word: rawGameData.word,
+          maskedWord: rawGameData.maskedWord,
+          questionText: rawGameData.questionText,
+          gifs: [], // Will be filled below
+          createdAt: rawGameData.createdAt,
+          username: rawGameData.username,
+          redditPostId: rawGameData.redditPostId,
+        };
 
-          // Parse the gifs JSON string
-          if (rawGameData.gifs) {
-            try {
-              gameData.gifs = JSON.parse(rawGameData.gifs);
-            } catch (parseError) {
-              console.error(`❌ [DEBUG] Error parsing gifs for game ${gameId}:`, parseError);
-              gameData.gifs = [];
-            }
+        // Parse the gifs JSON string
+        if (rawGameData.gifs) {
+          try {
+            gameData.gifs = JSON.parse(rawGameData.gifs);
+          } catch (parseError) {
+            gameData.gifs = [];
           }
-
-          games.push(gameData);
         }
-      } catch (gameError) {
-        console.error(`❌ [DEBUG] Error fetching game ${gameId}:`, gameError);
+
+        games.push(gameData);
       }
     }
 
@@ -592,7 +474,6 @@ export async function getUserGames(
       message: `Found ${games.length} games created by ${username}`,
     };
   } catch (error) {
-    console.error('❌ [DEBUG] Error in getUserGames:', error);
     return {
       success: false,
       error: String(error),
@@ -607,25 +488,20 @@ export async function getCachedGifResults(
   context: Context
 ): Promise<GifCacheResponse> {
   try {
-    console.log('🔍 [DEBUG] getCachedGifResults called with query:', params.query);
     const { query } = params;
 
     if (!query) {
-      console.error('❌ [DEBUG] Invalid query parameter');
       return { success: false, error: 'Invalid query' };
     }
 
     const cachedResults = await context.redis.get(`gifSearch:${query.toLowerCase()}`);
 
     if (!cachedResults) {
-      console.log('ℹ️ [DEBUG] No cached results found for query:', query);
       return { success: false, cached: false };
     }
 
-    console.log('✅ [DEBUG] Retrieved cached results for query:', query);
     return { success: true, cached: true, results: JSON.parse(cachedResults) };
   } catch (error) {
-    console.error('❌ [DEBUG] Error in getCachedGifResults:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -639,7 +515,6 @@ export async function saveGameState(
   context: Context
 ) {
   try {
-    console.log('Saving game state:', params);
     const { username, gameId, playerState } = params;
 
     if (!username || !gameId || !playerState) {
@@ -684,7 +559,6 @@ export async function getGameState(
   context: Context
 ) {
   try {
-    console.log('Getting game state for:', params);
     const { username, gameId } = params;
 
     if (!username || !gameId) {
@@ -720,7 +594,6 @@ export async function getGameState(
         gameState.playerState = parsedState;
       }
     } catch (e) {
-      console.error('Error parsing playerState JSON:', e);
       gameState.playerState = JSON.stringify({
         gifHintCount: 0,
         revealedLetters: [],
@@ -732,7 +605,6 @@ export async function getGameState(
 
     return { success: true, state: gameState };
   } catch (error) {
-    console.error('Error getting game state:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -792,7 +664,6 @@ export async function getUnplayedGames(
 
     return { success: true, games: unplayedGames };
   } catch (error) {
-    console.error('Error getting unplayed games:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -813,8 +684,6 @@ export async function trackGuess(
       return { success: false, error: 'Missing required parameters' };
     }
 
-    // Normalize the guess (remove spaces, remove punctuation, uppercase, trim)
-    // This ensures "Mind Blown!", "mindblown", "MIND-BLOWN" all become "MINDBLOWN"
     const normalizedGuess = guess
       .replace(/\s+/g, '') // Remove all spaces
       .replace(/[^\w]/g, '') // Remove all non-word characters (punctuation)

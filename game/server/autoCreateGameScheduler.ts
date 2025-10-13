@@ -169,8 +169,8 @@ Devvit.addSchedulerJob({
 
     const questionText =
       inputType === 'phrase'
-        ? 'Can you guess the phrase from these GIF clues?'
-        : 'Can you guess the word from these GIF clues?';
+        ? 'Can you decode the phrase from this GIF?'
+        : 'Can you decode the word from this GIF?';
 
     await saveGame(
       {
@@ -180,6 +180,7 @@ Devvit.addSchedulerJob({
         questionText,
         gifs: gifUrls,
         postToSubreddit: true,
+        inputType,
       },
       context
     );
