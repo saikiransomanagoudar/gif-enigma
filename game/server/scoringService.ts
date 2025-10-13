@@ -68,11 +68,6 @@ export function calculateScore(params: {
   // Apply penalties
   score = Math.max(0, score - gifPenalty - wordPenalty);
 
-  // Apply small time penalty (1 point per minute, max 10 points)
-  const timePenalty = Math.min(10, Math.floor(timeTaken / 60));
-  score = Math.max(0, score - timePenalty);
-
-  // Return the score, penalties AND the timeTaken
   return { score, gifPenalty, wordPenalty, timeTaken };
 }
 
@@ -82,7 +77,6 @@ export async function saveScore(
   context: Context
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log('🔍 [DEBUG] saveScore called with params:', params);
     const { username, gameId, score, gifPenalty, wordPenalty, timeTaken, timestamp } = params;
 
     if (!username || !gameId) {
@@ -127,7 +121,6 @@ export async function saveScore(
       // Get existing user stats
       let userStats: { gamesPlayed?: string; gamesWon?: string; totalScore?: string; bestScore?: string; averageScore?: string; lastPlayed?: string } = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
       if (!userStats || typeof userStats !== 'object') {
-        console.error('Invalid user stats format, resetting');
         await context.redis.del(`userStats:${username}`);
       }
       if (!userStats || Object.keys(userStats).length === 0) {
@@ -162,18 +155,14 @@ export async function saveScore(
       // Update cumulative leaderboard
       await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
 
-      console.log(`✅ [DEBUG] Updated user stats for ${username}, total score: ${totalScore}`);
     } catch (statsError) {
-      console.error(`❌ [DEBUG] Error updating user stats for ${username}:`, statsError);
       // Continue with the function even if user stats update fails
     }
 
     // -------- End Cumulative Leaderboard Additions --------
 
-    console.log('✅ [DEBUG] Score saved successfully for user:', username);
     return { success: true };
   } catch (error) {
-    console.error('❌ [DEBUG] Error saving score:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -184,7 +173,6 @@ export async function getGameLeaderboard(
   context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
-    console.log('🔍 [DEBUG] getGameLeaderboard called with params:', params);
     const { gameId, limit = 10 } = params;
 
     // Get top scores from game's leaderboard (highest scores first)
@@ -222,13 +210,11 @@ export async function getGameLeaderboard(
           timestamp: Number(scoreData?.timestamp || 0),
         });
       } catch (entryError) {
-        console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
       }
     }
 
     return { success: true, leaderboard };
   } catch (error) {
-    console.error('❌ [DEBUG] Error getting game leaderboard:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -239,7 +225,6 @@ export async function getGlobalLeaderboard(
   context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
-    console.log('🔍 [DEBUG] getGlobalLeaderboard called with params:', params);
     const { limit = 10 } = params;
 
     // Get top scores from global leaderboard
@@ -261,26 +246,21 @@ export async function getGlobalLeaderboard(
 
       if (!gameId || !username) continue;
 
-      try {
-        const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
 
-        leaderboard.push({
-          rank: i + 1,
-          username: username,
-          score: Number(scoreData.score || item.score),
-          gifPenalty: Number(scoreData.gifPenalty || 0),
-          wordPenalty: Number(scoreData.wordPenalty || 0),
-          timeTaken: Number(scoreData.timeTaken || 0),
-          timestamp: Number(scoreData.timestamp || 0),
-        });
-      } catch (entryError) {
-        console.error(`❌ [DEBUG] Error processing entry ${combinedId}:`, entryError);
-      }
+      leaderboard.push({
+        rank: i + 1,
+        username: username,
+        score: Number(scoreData.score || item.score),
+        gifPenalty: Number(scoreData.gifPenalty || 0),
+        wordPenalty: Number(scoreData.wordPenalty || 0),
+        timeTaken: Number(scoreData.timeTaken || 0),
+        timestamp: Number(scoreData.timestamp || 0),
+      });
     }
 
     return { success: true, leaderboard };
   } catch (error) {
-    console.error('❌ [DEBUG] Error getting global leaderboard:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -291,7 +271,6 @@ export async function getUserScores(
   context: Context
 ): Promise<{ success: boolean; scores?: ScoreData[]; error?: string }> {
   try {
-    console.log('🔍 [DEBUG] getUserScores called with params:', params);
     const { username, limit = 10 } = params;
 
     // Get user's scores (highest scores first)
@@ -331,7 +310,6 @@ export async function getUserScores(
 
     return { success: true, scores };
   } catch (error) {
-    console.error('❌ [DEBUG] Error getting user scores:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -341,7 +319,6 @@ export async function getCumulativeLeaderboard(
   context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
-    console.log('🔍 [DEBUG] getCumulativeLeaderboard called with params:', params);
     const { limit = 10 } = params;
 
     // Get top users from cumulative leaderboard
@@ -360,38 +337,32 @@ export async function getCumulativeLeaderboard(
       const item = leaderboardItems[i];
       const username = typeof item.member === 'string' ? item.member : '';
 
-      try {
-        // Get user stats
-        const userStats = await context.redis.hGetAll(`userStats:${username}`) || {};
+      // Get user stats
+      const userStats = await context.redis.hGetAll(`userStats:${username}`) || {};
 
-        if (!userStats || Object.keys(userStats).length === 0) {
-          continue;
-        }
-
-        if (!userStats || typeof userStats !== 'object') {
-          console.error('Invalid user stats format');
-          return { success: false, error: 'Invalid user data format' };
-        }
-
-        leaderboard.push({
-          rank: i + 1,
-          username: username,
-          score: Number(userStats.totalScore ?? item.score),
-          gamesPlayed: Number(userStats.gamesPlayed || 0),
-          gamesWon: Number(userStats.gamesWon || 0),
-          gamesCreated: Number(userStats.gamesCreated || 0),
-          bestScore: Number(userStats.bestScore || 0),
-          averageScore: Number(userStats.averageScore || 0),
-          timestamp: Number(userStats.lastPlayed || 0),
-        });
-      } catch (entryError) {
-        console.error(`❌ [DEBUG] Error processing entry for ${username}:`, entryError);
+      if (!userStats || Object.keys(userStats).length === 0) {
+        continue;
       }
+
+      if (!userStats || typeof userStats !== 'object') {
+        return { success: false, error: 'Invalid user data format' };
+      }
+
+      leaderboard.push({
+        rank: i + 1,
+        username: username,
+        score: Number(userStats.totalScore ?? item.score),
+        gamesPlayed: Number(userStats.gamesPlayed || 0),
+        gamesWon: Number(userStats.gamesWon || 0),
+        gamesCreated: Number(userStats.gamesCreated || 0),
+        bestScore: Number(userStats.bestScore || 0),
+        averageScore: Number(userStats.averageScore || 0),
+        timestamp: Number(userStats.lastPlayed || 0),
+      });
     }
 
     return { success: true, leaderboard };
   } catch (error) {
-    console.error('❌ [DEBUG] Error getting cumulative leaderboard:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -402,7 +373,6 @@ export async function awardCreationBonus(
   context: Context
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log(`🎨 [DEBUG] Awarding creation bonus to ${username}: ${CREATION_BONUS_XP} XP`);
     
     // Get or initialize user stats
     let userStats: any = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
@@ -432,10 +402,8 @@ export async function awardCreationBonus(
     // Update cumulative leaderboard with bonus
     await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
     
-    console.log(`✅ [DEBUG] Creation bonus awarded: ${username} now has ${gamesCreated} games created, total: ${totalScore}`);
     return { success: true };
   } catch (error) {
-    console.error('❌ [DEBUG] Error awarding creation bonus:', error);
     return { success: false, error: String(error) };
   }
 }
