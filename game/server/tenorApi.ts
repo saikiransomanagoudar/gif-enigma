@@ -57,9 +57,7 @@ export async function searchTenorGifs(
     }
 
     const apiKey = await context.settings.get('tenor-api-key');
-    if (!apiKey) {
-      console.error('Tenor API key not configured. Please set it in the app settings.');
-    }
+    
 
     // Construct the search URL with query parameters, matching the server version
     const searchUrl = `${TENOR_API_BASE_URL}/search?q=${encodeURIComponent(query)}&key=${apiKey}&limit=${limit}&contentfilter=${contentfilter}&media_filter=${media_filter}`;
@@ -83,7 +81,6 @@ export async function searchTenorGifs(
     }
     return [];
   } catch (error) {
-    console.error('Error searching Tenor GIFs:', error);
     throw new Error('Error searching Tenor GIFs');
   }
 }
@@ -111,7 +108,6 @@ export async function cacheTenorResults(
 
     return { success: true };
   } catch (error) {
-    console.error('Error caching Tenor results:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -140,7 +136,6 @@ export async function getCachedTenorResults(
       results: JSON.parse(cachedResults) as TenorGifResult[]
     };
   } catch (error) {
-    console.error('Error getting cached Tenor results:', error);
     return { success: false, error: String(error) };
   }
 }

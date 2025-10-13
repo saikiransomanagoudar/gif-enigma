@@ -11,6 +11,7 @@ interface StatsParams {
 const DEFAULT_STATS: UserStats = {
   gamesPlayed: 0,
   gamesWon: 0,
+  gamesCreated: 0,
   bestScore: 0,
   averageScore: 0,
   totalScore: 0,
@@ -26,7 +27,6 @@ export async function userStats(params: StatsParams, context: Context): Promise<
     const currentUser = await reddit.getCurrentUser();
     
     if (!currentUser) {
-      console.error('No user found');
       return null;
     }
     
@@ -61,7 +61,6 @@ export async function userStats(params: StatsParams, context: Context): Promise<
     
     return null;
   } catch (error) {
-    console.error('Error managing user stats:', error);
     return null;
   }
 }

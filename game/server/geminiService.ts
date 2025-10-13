@@ -25,23 +25,15 @@ export async function getRecommendations(
   try {
     const { category, inputType, count = 20 } = params;
 
-    // Add debug log
-    console.log(
-      `[DEBUG] Getting recommendations for category: ${category}, type: ${inputType}, count: ${count}`
-    );
-
     const apiKey = await context.settings.get('gemini-api-key');
 
     if (!apiKey) {
-      console.error('[ERROR] Gemini API key not found in settings');
       return {
         success: false,
         error: 'API key not configured',
         recommendations: getDefaultRecommendations(category, inputType),
       };
     }
-
-    console.log('[DEBUG] API key found, proceeding with request');
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
@@ -114,8 +106,6 @@ export async function getRecommendations(
       },
     };
 
-    console.log('[DEBUG] Sending request to Gemini API');
-
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -125,11 +115,8 @@ export async function getRecommendations(
         body: JSON.stringify(requestBody),
       });
 
-      console.log(`[DEBUG] Response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[ERROR] Gemini API error (${response.status}): ${errorText}`);
         return {
           success: false,
           error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
@@ -139,7 +126,6 @@ export async function getRecommendations(
       }
 
       const data = (await response.json()) as GeminiResponse;
-      console.log('[DEBUG] Received response from Gemini API');
 
       // Add more detailed logging of the response structure
       const responseStructure = {
@@ -151,71 +137,47 @@ export async function getRecommendations(
         hasError: !!data.error,
       };
 
-      console.log('[DEBUG] Response structure:', JSON.stringify(responseStructure));
-
       // Attempt to parse the text from data.candidates[0].content.parts[0].text
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
-        console.log('[DEBUG] Raw API response text:', text); // Added logging
-
         let sanitizedText = text;
 
         let recommendations = [];
         let parseSuccessful = false;
 
         // First parse attempt
-        try {
-          console.log('[DEBUG] Attempting to parse sanitized text:', sanitizedText);
-          recommendations = JSON.parse(sanitizedText);
-          parseSuccessful = Array.isArray(recommendations);
-        } catch (primaryError) {
-          console.log('[DEBUG] Primary parse failed, attempting fallback');
-        }
+        recommendations = JSON.parse(sanitizedText);
+        parseSuccessful = Array.isArray(recommendations);
 
         if (!parseSuccessful) {
           // Look for anything that looks like a JSON array
           const arrayMatch = text.match(/\[\s*(['"][^'"]*['"](\s*,\s*['"][^'"]*['"])*)\s*\]/s);
           if (arrayMatch) {
-            try {
-              const extractedArray = `[${arrayMatch[1]}]`;
-              console.log('[DEBUG] Extracted array text:', extractedArray);
-              recommendations = JSON.parse(extractedArray);
-              parseSuccessful = Array.isArray(recommendations);
-            } catch (fallbackError) {
-              console.error('[ERROR] Fallback parse failed:', fallbackError);
-            }
+            const extractedArray = `[${arrayMatch[1]}]`;
+            recommendations = JSON.parse(extractedArray);
+            parseSuccessful = Array.isArray(recommendations);
           }
 
           // One more fallback - try to manually build the array
           if (!parseSuccessful) {
-            try {
               // Extract anything that looks like a quoted string
-              const itemMatches = text.match(/['"]([^'"]+)['"]/g);
-              if (itemMatches && itemMatches.length > 0) {
-                recommendations = itemMatches.map((m) => m.replace(/['"]/g, ''));
-                parseSuccessful = true;
-                console.log('[DEBUG] Manual array extraction successful:', recommendations);
-              }
-            } catch (manualError) {
-              console.error('[ERROR] Manual extraction failed:', manualError);
+            const itemMatches = text.match(/['"]([^'"]+)['"]/g);
+            if (itemMatches && itemMatches.length > 0) {
+              recommendations = itemMatches.map((m) => m.replace(/['"]/g, ''));
+              parseSuccessful = true;
             }
-          }
+          } 
         }
 
         if (parseSuccessful && recommendations.length > 0) {
           // Validate array contents
           const validItems = recommendations.filter((item: any) => typeof item === 'string');
-          console.log(`[DEBUG] Found ${validItems.length} valid recommendations`);
           return {
             success: true,
             recommendations: validItems,
             debug: { responseStructure },
           };
-        } else {
-          console.error('[ERROR] Final parsed array invalid');
         }
-      } else {
-        console.error('[ERROR] No text found in Gemini response');
       }
 
       // If we reach here, fallback
@@ -226,7 +188,6 @@ export async function getRecommendations(
         debug: { data },
       };
     } catch (fetchError) {
-      console.error('[ERROR] Fetch error:', fetchError);
       return {
         success: false,
         error: `Fetch error: ${String(fetchError)}`,
@@ -235,7 +196,6 @@ export async function getRecommendations(
       };
     }
   } catch (error) {
-    console.error('[ERROR] Error in getRecommendations:', error);
     return {
       success: false,
       error: String(error),
@@ -252,21 +212,17 @@ export async function getSynonyms(
   const { word } = params; // ensure 'word' is in scope for the catch block
 
   try {
-    console.log(`[DEBUG] Getting synonyms for word: ${word}`);
 
     // Get the API key from Devvit settings
     const apiKey = await context.settings.get('gemini-api-key');
 
     if (!apiKey) {
-      console.error('[ERROR] Gemini API key not found in settings');
       return {
         success: false,
         error: 'API key not configured',
         synonyms: getDefaultSynonyms(word),
       };
     }
-
-    console.log('[DEBUG] API key found for synonyms request');
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
 
@@ -312,8 +268,6 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
       },
     };
 
-    console.log('[DEBUG] Sending synonyms request to Gemini API');
-
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -323,11 +277,8 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
         body: JSON.stringify(requestBody),
       });
 
-      console.log(`[DEBUG] Synonyms response status: ${response.status}`);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[ERROR] Gemini API error for synonyms (${response.status}): ${errorText}`);
         return {
           success: false,
           error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
@@ -337,7 +288,6 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
       }
 
       const data = (await response.json()) as GeminiResponse;
-      console.log('[DEBUG] Received synonyms response from Gemini API');
 
       // Log response structure
       const responseStructure = {
@@ -349,27 +299,20 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
         hasError: !!data.error,
       };
 
-      console.log('[DEBUG] Synonyms response structure:', JSON.stringify(responseStructure));
 
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
         try {
-          console.log(`[DEBUG] Attempting to parse synonyms text: ${text.substring(0, 100)}...`);
           const synonyms = JSON.parse(text);
 
           if (Array.isArray(synonyms) && synonyms.length > 0) {
-            console.log(`[DEBUG] Successfully parsed ${synonyms.length} synonym groups`);
             return {
               success: true,
               synonyms,
               debug: { responseStructure },
             };
-          } else {
-            console.error('[ERROR] Parsed synonyms response is not a valid array or is empty');
           }
         } catch (parseError) {
-          console.error('[ERROR] Error parsing synonyms JSON:', parseError);
-          console.log('[DEBUG] Raw synonyms text that failed to parse:', text);
           return {
             success: false,
             error: `Parse error: ${String(parseError)}`,
@@ -377,8 +320,6 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
             debug: { parseError: String(parseError), rawText: text },
           };
         }
-      } else {
-        console.error('[ERROR] No text found in Gemini synonyms response');
       }
 
       return {
@@ -388,7 +329,6 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
         debug: { data },
       };
     } catch (fetchError) {
-      console.error('[ERROR] Fetch error for synonyms:', fetchError);
       return {
         success: false,
         error: `Fetch error: ${String(fetchError)}`,
@@ -397,7 +337,6 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
       };
     }
   } catch (error) {
-    console.error('[ERROR] Error in getSynonyms:', error);
     return {
       success: false,
       error: String(error),

@@ -30,7 +30,7 @@ const GIF_CACHE_PREFIX = 'tenor_gif:';
 
 async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promise<TenorGifResult> {
   const cacheKey = `${GIF_CACHE_PREFIX}${tenorGif.id}`;
-  
+
   try {
     // 1. Check Redis cache for ALL formats
     const cachedFormats = await context.redis.get(cacheKey);
@@ -64,7 +64,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     const uploadPromises = ['gif', 'tinygif'].map(async (format) => {
       const originalFormat = tenorGif.media_formats[format as keyof typeof tenorGif.media_formats];
       if (!originalFormat?.url) return { format, success: false };
-      
+
       try {
         const mediaUrl = await fastUpload(originalFormat.url);
         if (isRedditCdn(mediaUrl)) {
@@ -120,7 +120,6 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     return cachedResult;
 
   } catch (error) {
-    console.warn('Non-fatal: cacheTenorGif fallback to original URLs due to error.', error);
     return tenorGif;
   }
 }
@@ -150,131 +149,117 @@ export async function searchTenorGifs(
     // Cache error, continue to API
   }
 
-  try {
-    const apiKey = await context.settings.get('tenor-api-key');
+  const apiKey = await context.settings.get('tenor-api-key');
 
-    if (!apiKey) {
-      console.error('Tenor API key not configured in app settings');
+  const clientKey = 'gif_enigma_devvit';
+
+  // Smart strategy: fetch in batches and process until we have exactly 16
+  const desiredCount = Math.max(1, limit);
+  const collected: TenorGifResult[] = [];
+  const seenIds = new Set<string>();
+  let pos: string | undefined = undefined;
+  let page = 0;
+  const MAX_PAGES = 4; // Allow more pages but with smarter batching
+
+  while (collected.length < desiredCount && page < MAX_PAGES) {
+    // Fetch large batches but process them efficiently
+    const fetchLimit = 50; // Maximum per page
+    const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
+    const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
+    const response: Response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'GIF-Enigma/1.0',
+        'Referer': 'https://www.reddit.com',
+        'Origin': 'https://www.reddit.com',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Tenor API returned status ${response.status}: ${errorText}`);
     }
 
-    const clientKey = 'gif_enigma_devvit';
+    const data: any = await response.json();
+    if (!data || !data.results) {
+      throw new Error('Invalid response structure from Tenor API');
+    }
 
-    // Smart strategy: fetch in batches and process until we have exactly 16
-    const desiredCount = Math.max(1, limit);
-    const collected: TenorGifResult[] = [];
-    const seenIds = new Set<string>();
-    let pos: string | undefined = undefined;
-    let page = 0;
-    const MAX_PAGES = 4; // Allow more pages but with smarter batching
+    // Process results in parallel batches for maximum speed
+    const batchSize = 20; // Process 20 at a time for maximum speed
+    const results = data.results;
 
-    while (collected.length < desiredCount && page < MAX_PAGES) {
-      // Fetch large batches but process them efficiently
-      const fetchLimit = 50; // Maximum per page
-      const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
-      const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
-      const response: Response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'GIF-Enigma/1.0',
-          'Referer': 'https://www.reddit.com',
-          'Origin': 'https://www.reddit.com',
-        },
-      });
+    for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
+      const batch = results.slice(i, i + batchSize);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Tenor API returned status ${response.status}: ${errorText}`);
-      }
+      const batchResults: TenorGifResult[] = await Promise.all(
+        batch.map(async (result: any) => {
+          const mediaFormats = { ...result.media_formats };
+          const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
+          requiredFormats.forEach((format) => {
+            if (!mediaFormats[format]) {
+              mediaFormats[format] = { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
+            }
+          });
 
-      const data: any = await response.json();
-      if (!data || !data.results) {
-        throw new Error('Invalid response structure from Tenor API');
-      }
+          const transformed = {
+            id: result.id,
+            title: result.title || '',
+            media_formats: mediaFormats,
+            content_description: result.content_description || result.title || '',
+            created: result.created || Date.now(),
+            hasaudio: result.hasaudio || false,
+            url: result.url || '',
+          };
 
-      // Process results in parallel batches for maximum speed
-      const batchSize = 20; // Process 20 at a time for maximum speed
-      const results = data.results;
-      
-      for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
-        const batch = results.slice(i, i + batchSize);
-        
-        const batchResults: TenorGifResult[] = await Promise.all(
-          batch.map(async (result: any) => {
-            const mediaFormats = { ...result.media_formats };
-            const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
-            requiredFormats.forEach((format) => {
-              if (!mediaFormats[format]) {
-                mediaFormats[format] = { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
-              }
+          try {
+            const cachedGif = await cacheTenorGif(context, transformed);
+            return cachedGif;
+          } catch (error) {
+            return transformed;
+          }
+        })
+      );
+
+      // Add successful uploads with lenient verification
+      for (const r of batchResults) {
+        if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
+          // Verify URL works with more lenient timeout
+          try {
+            const checkResponse = await fetch(r.url, {
+              method: 'HEAD',
+              signal: AbortSignal.timeout(2000) // Increased from 800ms to 2s
             });
-
-            const transformed = {
-              id: result.id,
-              title: result.title || '',
-              media_formats: mediaFormats,
-              content_description: result.content_description || result.title || '',
-              created: result.created || Date.now(),
-              hasaudio: result.hasaudio || false,
-              url: result.url || '',
-            };
-
-            try {
-              const cachedGif = await cacheTenorGif(context, transformed);
-              return cachedGif;
-            } catch (error) {
-              console.error('Error caching GIF:', error);
-              return transformed;
-            }
-          })
-        );
-
-        // Add successful uploads with lenient verification
-        for (const r of batchResults) {
-          if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
-            // Verify URL works with more lenient timeout
-            try {
-              const checkResponse = await fetch(r.url, { 
-                method: 'HEAD', 
-                signal: AbortSignal.timeout(2000) // Increased from 800ms to 2s
-              });
-              if (checkResponse.ok) {
-                collected.push(r);
-                seenIds.add(r.id);
-                if (collected.length >= desiredCount) break;
-              } else {
-                seenIds.add(r.id); // Mark as seen to avoid retrying
-              }
-            } catch {
-              // Skip broken/slow URLs
+            if (checkResponse.ok) {
+              collected.push(r);
               seenIds.add(r.id);
+              if (collected.length >= desiredCount) break;
+            } else {
+              seenIds.add(r.id); // Mark as seen to avoid retrying
             }
+          } catch {
+            // Skip broken/slow URLs
+            seenIds.add(r.id);
           }
         }
-        
-        // Stop processing if we have enough verified GIFs
-        if (collected.length >= desiredCount) break;
       }
 
-      pos = data.next;
-      page += 1;
-      if (!pos) break; // no more pages
+      // Stop processing if we have enough verified GIFs
+      if (collected.length >= desiredCount) break;
     }
 
-    // Results are already verified during collection, just slice to desired count
-    const usableResults = collected.slice(0, desiredCount);
-
-    try {
-      const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
-      await context.redis.set(cacheKey, JSON.stringify(usableResults));
-      await context.redis.expire(cacheKey, CACHE_TTL);
-    } catch (cacheError) {
-      // Cache error, continue
-    }
-
-    return usableResults;
-  } catch (error) {
-    console.error('Error with API call:', error);
-    throw new Error('Error fetching GIFs from Tenor API');
+    pos = data.next;
+    page += 1;
+    if (!pos) break; // no more pages
   }
+
+  // Results are already verified during collection, just slice to desired count
+  const usableResults = collected.slice(0, desiredCount);
+
+  const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+  await context.redis.set(cacheKey, JSON.stringify(usableResults));
+  await context.redis.expire(cacheKey, CACHE_TTL);
+
+  return usableResults;
 }
