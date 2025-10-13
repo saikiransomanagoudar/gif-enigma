@@ -44,6 +44,7 @@ export const CustomPostPreview = ({
       };
     },
     {
+      depends: [],
       finally: (data, error) => {
         if (data && !error) {
           setGifUrls({
@@ -63,19 +64,24 @@ export const CustomPostPreview = ({
 
   useAsync<{ shouldNavigate: boolean; page?: Page; gameId?: string }>(
     async () => {
-      if (isWebViewReady && pendingNavigation) {
-        return {
-          shouldNavigate: true,
-          page: pendingNavigation.page,
-          gameId: pendingNavigation.gameId,
-        };
+      // Only run if we actually have a pending navigation AND webview is ready
+      if (!pendingNavigation || !isWebViewReady) {
+        return { shouldNavigate: false };
       }
-      return { shouldNavigate: false };
+      
+      return {
+        shouldNavigate: true,
+        page: pendingNavigation.page,
+        gameId: pendingNavigation.gameId,
+      };
     },
     {
-      depends: [isWebViewReady, pendingNavigation],
+      depends: [
+        isWebViewReady ? (pendingNavigation?.page ?? 'none') : 'waiting',
+        isWebViewReady ? (pendingNavigation?.gameId ?? 'none') : 'waiting'
+      ],
       finally: (data, error) => {
-        if (!error && data?.shouldNavigate) {
+        if (!error && data?.shouldNavigate && pendingNavigation) {
           postMessage({
             type: 'SET_NAVIGATION_STATE',
             data: {

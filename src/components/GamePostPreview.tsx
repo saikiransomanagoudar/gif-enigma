@@ -67,7 +67,7 @@ export const GamePostPreview = ({
       return null;
     },
     {
-      depends: [usernameRetryCount, username],
+      depends: [usernameRetryCount],
       finally: (result) => {
         if (result) {
           setUsername(result);
@@ -112,13 +112,6 @@ export const GamePostPreview = ({
   useAsync(
     async () => {
       if (!context.postId) return null;
-
-      // Try to get username
-      let currentUsername;
-      currentUsername = await context.reddit.getCurrentUsername();
-      if (currentUsername) {
-        setUsername(currentUsername);
-      }
 
       // Get game ID from post relationship
       const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
@@ -208,19 +201,6 @@ export const GamePostPreview = ({
     }
   };
 
-  useAsync(
-    async () => {
-      if (previewData.gameId && username && username !== 'there') {
-        await refreshCompletionStatus();
-        return true;
-      }
-      return false;
-    },
-    {
-      depends: [previewData.gameId ?? null, username, refreshTrigger],
-    }
-  );
-
   const sendNavigation = (page: Page, gameId?: string) => {
 
     postMessage({
@@ -234,21 +214,31 @@ export const GamePostPreview = ({
 
   useAsync(
     async () => {
-      if (isWebViewReady && pendingNavigation) {
-
-        setPendingNavigation(null);
-
-        // Send the navigation message
-        sendNavigation(pendingNavigation.page, pendingNavigation.gameId);
-
-        // Clear pending navigation to prevent duplicate sends
-        setPendingNavigation(null);
-        return true;
+      // Only run if we actually have a pending navigation AND webview is ready
+      if (!pendingNavigation || !isWebViewReady) {
+        return null;
       }
-      return false;
+      
+      return {
+        page: pendingNavigation.page,
+        gameId: pendingNavigation.gameId ?? null,
+      };
     },
     {
-      depends: [isWebViewReady, pendingNavigation],
+      depends: [
+        isWebViewReady ? (pendingNavigation?.page ?? 'none') : 'waiting',
+        isWebViewReady ? (pendingNavigation?.gameId ?? 'none') : 'waiting'
+      ],
+      finally: (data) => {
+        if (data && typeof data === 'object' && 'page' in data && pendingNavigation) {
+          // Send the navigation message
+          const gameId = 'gameId' in data && data.gameId ? data.gameId as string : undefined;
+          sendNavigation(data.page as Page, gameId);
+          
+          // Clear pending navigation to prevent duplicate sends
+          setPendingNavigation(null);
+        }
+      },
     }
   );
 

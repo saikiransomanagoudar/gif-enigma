@@ -134,7 +134,7 @@ Devvit.addCustomPostType({
   name: 'gif-enigma',
   height: 'tall',
   render: (context) => {
-    let isWebViewReadyFlag: boolean = false;
+    const [isWebViewReady, setIsWebViewReady] = useState(false);
     const [postPreviewRefreshTrigger, setPostPreviewRefreshTrigger] = useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
       try {
@@ -151,9 +151,14 @@ Devvit.addCustomPostType({
       }
     };
     // Function to retrieve navigation state
-    const { data: username } = useAsync(async () => {
-      return (await context.reddit.getCurrentUsername()) ?? null;
-    });
+    const { data: username } = useAsync(
+      async () => {
+        return (await context.reddit.getCurrentUsername()) ?? null;
+      },
+      {
+        depends: [],
+      }
+    );
 
     const { data: navigationState } = useAsync(
       async () => {
@@ -204,7 +209,7 @@ Devvit.addCustomPostType({
 
         switch (event.type) {
           case 'webViewReady':
-            isWebViewReadyFlag = true;
+            setIsWebViewReady(true);
 
             // Send the navigation state from useAsync
             if (navigationState) {
@@ -1327,69 +1332,42 @@ Devvit.addCustomPostType({
       },
     });
 
-    const PostPreviewComponent = ({
-      context,
-      mount,
-      postMessage,
-    }: {
-      context: Context;
-      mount: any;
-      postMessage: any;
-    }) => {
-      const [isGame, setIsGame] = useState(false);
-      const [isLoading, setIsLoading] = useState(true);
+    const [isGame, setIsGame] = useState(false);
 
-      useAsync(
-        async () => {
-          if (!context.postId) return false;
+    useAsync(
+      async () => {
+        if (!context.postId) return false;
 
-          // Check if this post has a game ID associated with it
-          const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-          return !!gameId; // Convert to boolean
+        // Check if this post has a game ID associated with it
+        const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+        return !!gameId; // Convert to boolean
+      },
+      {
+        depends: [context.postId ?? ''],
+        finally: (result) => {
+          setIsGame(!!result);
         },
-        {
-          depends: [context.postId ?? ''],
-          finally: (result) => {
-            setIsGame(!!result);
-            setIsLoading(false);
-          },
-        }
-      );
-
-      if (isLoading) {
-        return (
-          <vstack height="100%" width="100%" alignment="center middle" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA">
-            <image
-              url="eyebrows.gif"
-              imageWidth={50}
-              imageHeight={50}
-              description="Loading"
-            />
-          </vstack>
-        );
       }
-
-      return isGame ? (
-        <GamePostPreview
-          context={context}
-          onMount={mount}
-          postMessage={postMessage}
-          isWebViewReady={isWebViewReadyFlag}
-          refreshTrigger={postPreviewRefreshTrigger}
-        />
-      ) : (
-        <CustomPostPreview
-          context={context}
-          onMount={mount}
-          postMessage={postMessage}
-          isWebViewReady={isWebViewReadyFlag}
-        />
-      );
-    };
+    );
 
     return (
       <zstack height="100%" width="100%" alignment="center middle">
-        <PostPreviewComponent context={context} mount={mount} postMessage={postMessage} />
+        {isGame ? (
+          <GamePostPreview
+            context={context}
+            onMount={mount}
+            postMessage={postMessage}
+            isWebViewReady={isWebViewReady}
+            refreshTrigger={postPreviewRefreshTrigger}
+          />
+        ) : (
+          <CustomPostPreview
+            context={context}
+            onMount={mount}
+            postMessage={postMessage}
+            isWebViewReady={isWebViewReady}
+          />
+        )}
       </zstack>
     );
   },
