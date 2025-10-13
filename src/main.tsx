@@ -1382,7 +1382,7 @@ Devvit.addMenuItem({
     const subreddit = await reddit.getCurrentSubreddit();
 
     const post = await reddit.submitPost({
-      title: 'GIF Enigma Game',
+      title: '🎮 GIF Enigma',
       subredditName: subreddit.name,
       preview: <Preview />,
     });
