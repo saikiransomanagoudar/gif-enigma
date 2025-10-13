@@ -20,6 +20,48 @@ import {
   trackGuess,
   getGameStatistics,
 } from '../game/server/gameHandler.server.js';
+
+// Helper function for navigation to post
+export async function navigateToPost(postId: string, context: Context) {
+  if (!postId) {
+    return;
+  }
+
+  // Make sure the postId has the proper format (add t3_ prefix if missing)
+  const formattedPostId = postId.startsWith('t3_')
+    ? postId
+    : `t3_${postId}`;
+
+  try {
+    // Method 1: Get the post object using Reddit API
+    const post = await context.reddit.getPostById(formattedPostId);
+
+    if (post) {
+      if (post.url) {
+        context.ui.navigateTo(post.url);
+      } else if (post.permalink) {
+        // Fallback to permalink if url is not available
+        const fullUrl = `https://www.reddit.com${post.permalink}`;
+        context.ui.navigateTo(fullUrl);
+      } else {
+        throw new Error('Post URL and permalink both missing');
+      }
+    } else {
+      throw new Error('Post not found');
+    }
+  } catch (error) {
+    // Fallback method: Construct the URL directly
+    // Clean the postId (remove t3_ prefix if present)
+    const cleanPostId = postId.replace('t3_', '');
+    // Get the current subreddit
+    const subreddit = await context.reddit.getCurrentSubreddit();
+    const subredditName = subreddit?.name || 'PlayGIFEnigma';
+
+    const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
+
+    context.ui.navigateTo(postUrl);
+  }
+}
 import { Page } from '../game/lib/types.js';
 import {
   fetchGeminiRecommendations,
@@ -95,14 +137,18 @@ Devvit.addCustomPostType({
     let isWebViewReadyFlag: boolean = false;
     const [postPreviewRefreshTrigger, setPostPreviewRefreshTrigger] = useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
-      // Store in Redis with the post ID as part of the key
-      const navStateKey = `navState:${context.postId || 'default'}`;
+      try {
+        // Store in Redis with the post ID as part of the key
+        const navStateKey = `navState:${context.postId || 'default'}`;
 
-      // Store navigation data
-      await context.redis.hSet(navStateKey, {
-        page,
-        ...(gameId ? { gameId } : {}),
-      });
+        // Store navigation data
+        await context.redis.hSet(navStateKey, {
+          page,
+          ...(gameId ? { gameId } : {}),
+        });
+      } catch (error) {
+        // Continue without storing state - the app will still work
+      }
     };
     // Function to retrieve navigation state
     const { data: username } = useAsync(async () => {
@@ -111,16 +157,20 @@ Devvit.addCustomPostType({
 
     const { data: navigationState } = useAsync(
       async () => {
-        const navStateKey = `navState:${context.postId || 'default'}`;
-        const storedState = await context.redis.hGetAll(navStateKey);
+        try {
+          const navStateKey = `navState:${context.postId || 'default'}`;
+          const storedState = await context.redis.hGetAll(navStateKey);
 
-        if (storedState?.page) {
-          return {
-            page: storedState.page as Page,
-            gameId: storedState.gameId,
-          };
+          if (storedState?.page) {
+            return {
+              page: storedState.page as Page,
+              gameId: storedState.gameId,
+            };
+          }
+          return { page: 'landing' as Page, gameId: null };
+        } catch (error) {
+          return { page: 'landing' as Page, gameId: null }; // Return default state on error
         }
-        return { page: 'landing' as Page, gameId: null };
       },
       {
         depends: [context.postId || 'default'],
@@ -382,7 +432,7 @@ Devvit.addCustomPostType({
               const username = event.data.username as string;
               let rank: number | undefined = undefined;
               // Check if user exists in the cumulative leaderboard
-              const userScore = await context.redis.zScore('cumulativeLeaderboard', username);              
+              const userScore = await context.redis.zScore('cumulativeLeaderboard', username);
               // Get ALL members from the cumulative leaderboard, no limit
               let members;
               try {
@@ -393,13 +443,13 @@ Devvit.addCustomPostType({
               } catch (err) {
                 members = await context.redis.zRange('cumulativeLeaderboard', 0, -1);
               }
-              
+
               const orderedUsernames = members.map((m: any) => (typeof m === 'string' ? m : m.member));
               const idx = orderedUsernames.indexOf(username);
               if (idx !== -1) {
                 rank = idx + 1;
               }
-              
+
               // Fetch user stats hash directly; fall back to score from sorted set
               let stats: any = null;
               const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
@@ -736,10 +786,12 @@ Devvit.addCustomPostType({
               };
 
               // Save the game state as completed
+              const finalUsername = resolvedUsername || event.data.username;
+
               const saveResult = await saveGameState(
                 {
                   gameId: event.data.gameId,
-                  username: resolvedUsername || event.data.username,
+                  username: finalUsername,
                   playerState,
                 },
                 context
@@ -764,7 +816,7 @@ Devvit.addCustomPostType({
                 await postCompletionComment(
                   {
                     gameId: event.data.gameId,
-                    username: event.data.username,
+                    username: resolvedUsername || event.data.username,
                     numGuesses: commentData.numGuesses || 1,
                     gifHints: commentData.gifHints || 0,
                     wordHints: commentData.wordHints || 0,
@@ -776,7 +828,7 @@ Devvit.addCustomPostType({
               }
 
               const gameResult = await getGame({ gameId: event.data.gameId }, context);
-              
+
               if (gameResult.success && gameResult.game && gameResult.game.word) {
                 // Calculate the score using the word from the game data
                 const scoreData = calculateScore({
@@ -785,17 +837,19 @@ Devvit.addCustomPostType({
                   revealedLetterCount: playerState.revealedLetters?.length || 0,
                   timeTaken: event.data.timeTaken || 0
                 });
-                
+
                 // Save the score
+                const scoreUsername = resolvedUsername || event.data.username;
+
                 await saveScore({
-                  username: event.data.username,
+                  username: scoreUsername,
                   gameId: event.data.gameId,
                   score: scoreData.score,
                   gifPenalty: scoreData.gifPenalty,
                   wordPenalty: scoreData.wordPenalty,
                   timeTaken: scoreData.timeTaken,
                   timestamp: Date.now()
-                }, context); 
+                }, context);
               }
 
               // Send a one-time welcome/thank-you PM to the user
@@ -823,7 +877,7 @@ Devvit.addCustomPostType({
                   await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
                 } catch (pmErr: any) {
                   const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
-                  
+
                   // If user hasn't whitelisted the app, mark as sent to prevent retry spam
                   if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
                     await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
@@ -845,7 +899,7 @@ Devvit.addCustomPostType({
                 error: String(error),
               });
             }
-            
+
             break;
 
           case 'REFRESH_POST_PREVIEW':
@@ -969,44 +1023,7 @@ Devvit.addCustomPostType({
             break;
 
           case 'NAVIGATE_TO_POST':
-            if (!event.data.postId) {
-              return;
-            }
-
-            // Make sure the postId has the proper format (add t3_ prefix if missing)
-            const formattedPostId = event.data.postId.startsWith('t3_')
-              ? event.data.postId
-              : `t3_${event.data.postId}`;
-
-            try {
-              // Method 1: Get the post object using Reddit API
-              const post = await context.reddit.getPostById(formattedPostId);
-
-              if (post) {
-                if (post.url) {
-                  context.ui.navigateTo(post.url);
-                } else if (post.permalink) {
-                  // Fallback to permalink if url is not available
-                  const fullUrl = `https://www.reddit.com${post.permalink}`;
-                  context.ui.navigateTo(fullUrl);
-                } else {
-                  throw new Error('Post URL and permalink both missing');
-                }
-              } else {
-                throw new Error('Post not found');
-              }
-            } catch (error) {
-              // Fallback method: Construct the URL directly
-              // Clean the postId (remove t3_ prefix if present)
-              const cleanPostId = event.data.postId.replace('t3_', '');
-              // Get the current subreddit
-              const subreddit = await context.reddit.getSubredditByName('PlayGIFEnigma');
-              const subredditName = subreddit?.name || 'PlayGIFEnigma';
-
-              const postUrl = `https://www.reddit.com/r/${subredditName}/comments/${cleanPostId}/`;
-
-              context.ui.navigateTo(postUrl);
-            }
+            await navigateToPost(event.data.postId, context);
             break;
 
           case 'GET_RANDOM_POST':
@@ -1341,11 +1358,12 @@ Devvit.addCustomPostType({
 
       if (isLoading) {
         return (
-          <vstack height="100%" width="100%" alignment="center middle">
-            <image 
+          <vstack height="100%" width="100%" alignment="center middle" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA">
+            <image
               url="eyebrows.gif"
               imageWidth={50}
               imageHeight={50}
+              description="Loading"
             />
           </vstack>
         );

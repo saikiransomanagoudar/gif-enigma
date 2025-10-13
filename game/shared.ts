@@ -554,6 +554,10 @@ export type BlocksToWebviewMessage =
         }>;
       };
       error?: string;
+    }
+    | {
+      type: 'NAVIGATE_TO_POST';
+      data: { postId: string };
     };
 
 export type DevvitMessage = {

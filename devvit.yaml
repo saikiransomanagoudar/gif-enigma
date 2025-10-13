@@ -1,6 +1,19 @@
 name: gif-enigma
 version: 0.11.0.29
 
+# Assets
+assets:
+  - name: eyebrows.gif
+    path: assets/eyebrows.gif
+  - name: lets-play.gif
+    path: assets/lets-play.gif
+  - name: lets-build.gif
+    path: assets/lets-build.gif
+  - name: loading.gif
+    path: assets/loading.gif
+  - name: gif-logo-emoji.jpg
+    path: assets/gif-logo-emoji.jpg
+
 # Scheduled jobs
 schedules:
   - cron: "0 * * * *"
