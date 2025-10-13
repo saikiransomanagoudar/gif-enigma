@@ -613,6 +613,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const handleGiveUp = () => {
     if (!gameData) return;
     
+    // Server will resolve the actual username even if 'anonymous' is sent
+    // This ensures consistency with the username used in getRandomGame
     const currentUsername = username || 'anonymous';
     
     const allIndices = new Set<number>();
@@ -635,43 +637,32 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
       timestamp: Date.now(),
     });
-    
-    const playerState = {
-      gifHintCount: 999,
-      revealedLetters: Array.from(allIndices),
-      guess: gameData.word,
-      lastPlayed: Date.now(),
-      isCompleted: true,
-      hasGivenUp: true,
-    };
 
-    window.parent.postMessage(
-      {
-        type: 'SAVE_GAME_STATE',
-        data: {
-          username: currentUsername,
-          gameId: gameData.id,
-          playerState,
-        },
-      },
-      '*'
-    );
-
+    // Send completion message - server will resolve username if it's 'anonymous'
     window.parent.postMessage(
       {
         type: 'MARK_GAME_COMPLETED',
         data: {
-          gameId: gameData.id,
           username: currentUsername,
+          gameId: gameData.id,
           gifHintCount: 999,
           revealedLetters: Array.from(allIndices),
           finalGuess: gameData.word,
           hasGivenUp: true,
+          timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+          commentData: {
+            numGuesses: guessCount,
+            gifHints: 999,
+            wordHints: 0,
+            hintTypeLabel: 'gave up',
+          },
         },
       },
       '*'
     );
 
+    // Save a score of 0 with maximum penalties for revealed answers
+    // This ensures the score is exactly 0 regardless of calculateScore logic
     window.parent.postMessage(
       {
         type: 'SAVE_SCORE',
@@ -687,6 +678,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       },
       '*'
     );
+
 
     window.parent.postMessage(
       {

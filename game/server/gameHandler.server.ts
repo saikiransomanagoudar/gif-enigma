@@ -52,15 +52,31 @@ export async function getRandomGame(
 ) {
   try {
     const { excludeIds = [], preferUserCreated = true, username } = params;
+    
+    // Resolve username to match the resolution done in MARK_GAME_COMPLETED
+    let resolvedUsername: string | null = null;
+    const incoming = String(username || '').trim();
+    if (incoming && incoming.toLowerCase() !== 'anonymous') {
+      resolvedUsername = incoming.replace(/^u\//i, '');
+    } else {
+      // If username is 'anonymous' or empty, try to fetch the actual username
+      const fetched = await context.reddit.getCurrentUsername();
+      if (fetched) resolvedUsername = fetched;
+    }
+    
     let completedGames: string[] = [];
-    if (username) {
-      const rangeResult = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+    if (resolvedUsername) {
+      const completedGamesKey = `user:${resolvedUsername}:completedGames`;
+      
+      const rangeResult = await context.redis.zRange(completedGamesKey, 0, -1, {
         by: 'score',
       });
+      
       completedGames = rangeResult.map((item: { member: any }) =>
         typeof item === 'string' ? item : item.member
       );
     }
+
 
     const allExcluded = [...new Set([...excludeIds, ...completedGames])];
 
@@ -68,6 +84,7 @@ export async function getRandomGame(
       by: 'score',
       reverse: true,
     });
+    
     const gamesWithDates: Array<{ gameId: string; createdAt: number; isUserCreated: boolean }> = [];
 
     for (const item of gameMembers) {
@@ -88,6 +105,9 @@ export async function getRandomGame(
       if (isRemoved) {
         continue;
       }
+
+      // Skip real-time Reddit API check during game selection to improve performance
+      // The check will happen when the user tries to actually play the game
 
       let hasValidGifs = false;
       if (gameData?.gifs) {
@@ -257,7 +277,6 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
     
     return { success: true };
   } catch (error) {
-    console.error('Error removing system users from leaderboard:', error);
     return { success: false, error: String(error) };
   }
 }
