@@ -7,5 +7,6 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 API_DEBUGGING_GUIDE.md
+TECHNICAL_README.md
 .env
 .env.local
