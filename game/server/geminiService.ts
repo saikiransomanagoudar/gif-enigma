@@ -140,43 +140,86 @@ export async function getRecommendations(
       // Attempt to parse the text from data.candidates[0].content.parts[0].text
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
-        let sanitizedText = text;
-
-        let recommendations = [];
+        let recommendations: string[] = [];
         let parseSuccessful = false;
 
-        // First parse attempt
-        recommendations = JSON.parse(sanitizedText);
-        parseSuccessful = Array.isArray(recommendations);
-
-        if (!parseSuccessful) {
-          // Look for anything that looks like a JSON array
-          const arrayMatch = text.match(/\[\s*(['"][^'"]*['"](\s*,\s*['"][^'"]*['"])*)\s*\]/s);
-          if (arrayMatch) {
-            const extractedArray = `[${arrayMatch[1]}]`;
-            recommendations = JSON.parse(extractedArray);
-            parseSuccessful = Array.isArray(recommendations);
+        // Strategy 1: Try direct JSON parse (wrapped in try-catch)
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) {
+            recommendations = parsed;
+            parseSuccessful = true;
           }
+        } catch (e) {
+          // JSON parse failed, try other strategies
+        }
 
-          // One more fallback - try to manually build the array
-          if (!parseSuccessful) {
-              // Extract anything that looks like a quoted string
-            const itemMatches = text.match(/['"]([^'"]+)['"]/g);
-            if (itemMatches && itemMatches.length > 0) {
-              recommendations = itemMatches.map((m) => m.replace(/['"]/g, ''));
+        // Strategy 2: Look for a JSON array pattern and extract it
+        if (!parseSuccessful) {
+          try {
+            // Match [ ... ] even if there's text before/after
+            const arrayMatch = text.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+              const parsed = JSON.parse(arrayMatch[0]);
+              if (Array.isArray(parsed)) {
+                recommendations = parsed;
+                parseSuccessful = true;
+              }
+            }
+          } catch (e) {
+            // Still failed, continue to next strategy
+          }
+        }
+
+        // Strategy 3: Extract quoted strings manually (handles broken JSON)
+        if (!parseSuccessful) {
+          try {
+            // Match both single and double quoted strings
+            const stringMatches = text.match(/"([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)'/g);
+            if (stringMatches && stringMatches.length > 0) {
+              recommendations = stringMatches.map((m) => {
+                // Remove outer quotes and unescape
+                const unquoted = m.slice(1, -1);
+                return unquoted.replace(/\\"/g, '"').replace(/\\'/g, "'");
+              });
               parseSuccessful = true;
             }
-          } 
+          } catch (e) {
+            // Manual extraction failed
+          }
+        }
+
+        // Strategy 4: Last resort - split by commas and clean up
+        if (!parseSuccessful) {
+          try {
+            // Remove [ ] and split by comma
+            const cleaned = text.replace(/[\[\]]/g, '');
+            const items = cleaned.split(',').map(item => 
+              item.trim().replace(/^["']|["']$/g, '')
+            ).filter(item => item.length > 0);
+            
+            if (items.length > 0) {
+              recommendations = items;
+              parseSuccessful = true;
+            }
+          } catch (e) {
+            // Even this failed
+          }
         }
 
         if (parseSuccessful && recommendations.length > 0) {
-          // Validate array contents
-          const validItems = recommendations.filter((item: any) => typeof item === 'string');
-          return {
-            success: true,
-            recommendations: validItems,
-            debug: { responseStructure },
-          };
+          // Validate and clean array contents
+          const validItems = recommendations
+            .filter((item: any) => typeof item === 'string' && item.trim().length > 0)
+            .map((item: string) => item.trim().toUpperCase());
+          
+          if (validItems.length > 0) {
+            return {
+              success: true,
+              recommendations: validItems,
+              debug: { responseStructure, parseStrategy: 'success', originalLength: recommendations.length },
+            };
+          }
         }
       }
 
@@ -302,24 +345,94 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
 
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
-        try {
-          const synonyms = JSON.parse(text);
+        let synonyms: string[][] = [];
+        let parseSuccessful = false;
 
-          if (Array.isArray(synonyms) && synonyms.length > 0) {
+        // Strategy 1: Try direct JSON parse
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Validate it's an array of arrays
+            if (parsed.every(item => Array.isArray(item))) {
+              synonyms = parsed;
+              parseSuccessful = true;
+            }
+          }
+        } catch (e) {
+          // JSON parse failed, try other strategies
+        }
+
+        // Strategy 2: Extract JSON array from text that might have extra content
+        if (!parseSuccessful) {
+          try {
+            const arrayMatch = text.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+              const parsed = JSON.parse(arrayMatch[0]);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                synonyms = parsed;
+                parseSuccessful = true;
+              }
+            }
+          } catch (e) {
+            // Still failed
+          }
+        }
+
+        // Strategy 3: Manual extraction (last resort)
+        if (!parseSuccessful) {
+          try {
+            // Look for nested arrays like [["a","b"],["c","d"]]
+            const nestedArrayPattern = /\[([\s\S]*?)\]/g;
+            const matches = [];
+            let match;
+            
+            while ((match = nestedArrayPattern.exec(text)) !== null) {
+              try {
+                const innerArray = JSON.parse(match[0]);
+                if (Array.isArray(innerArray) && innerArray.length > 0) {
+                  matches.push(innerArray);
+                }
+              } catch (e) {
+                // Skip invalid inner arrays
+              }
+            }
+            
+            if (matches.length > 0) {
+              synonyms = matches;
+              parseSuccessful = true;
+            }
+          } catch (e) {
+            // Manual extraction failed
+          }
+        }
+
+        if (parseSuccessful && synonyms.length > 0) {
+          // Validate and clean the data
+          const validSynonyms = synonyms
+            .filter(group => Array.isArray(group) && group.length > 0)
+            .map(group => 
+              group
+                .filter(item => typeof item === 'string' && item.trim().length > 0)
+                .map(item => item.trim().toLowerCase())
+            )
+            .filter(group => group.length > 0);
+
+          if (validSynonyms.length > 0) {
             return {
               success: true,
-              synonyms,
-              debug: { responseStructure },
+              synonyms: validSynonyms,
+              debug: { responseStructure, parseStrategy: 'success' },
             };
           }
-        } catch (parseError) {
-          return {
-            success: false,
-            error: `Parse error: ${String(parseError)}`,
-            synonyms: getDefaultSynonyms(word),
-            debug: { parseError: String(parseError), rawText: text },
-          };
         }
+
+        // If we got here, parsing failed - return fallback
+        return {
+          success: false,
+          error: `Could not parse synonyms from response`,
+          synonyms: getDefaultSynonyms(word),
+          debug: { rawText: text.substring(0, 200) },
+        };
       }
 
       return {
@@ -372,7 +485,7 @@ function getDefaultRecommendations(category: CategoryType, type: 'word' | 'phras
           'Zelda',
           'Skyrim',
           'Halo',
-          'Sonic',
+          'in gem',
           'Pokemon',
         ];
       case 'Books':

@@ -175,6 +175,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setCurrentRecIndex(0);
       currentWordRef.current = cachedData[0]; // Update ref immediately
       setSecretInput(cachedData[0]);
+      setIsLoadingRecommendations(false);
       
       // Check if synonyms are already cached
       if (synonymsCache.current[cachedData[0]]) {
@@ -185,7 +186,13 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
     
+    // Show loading state
     setIsLoadingRecommendations(true);
+    
+    // Immediately set fallback as a temporary placeholder to avoid "No recommendations" flash
+    const fallbackData = getFallbackRecommendations();
+    setSecretInput(fallbackData[0]);
+    currentWordRef.current = fallbackData[0];
     
     window.parent.postMessage(
       {
@@ -199,14 +206,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       '*'
     );
 
-    // Set a shorter timeout and use fallback data
+    // Set a timeout to permanently use fallback data if API doesn't respond
     setTimeout(() => {
-      if (isLoadingRecommendations && !secretInput) {
+      // Check if we still don't have real data in the cache
+      if (!recommendationsCache.current[cacheKey] || recommendationsCache.current[cacheKey].length === 0) {
         setIsLoadingRecommendations(false);
-        const fallbackData = getFallbackRecommendations();
+        
+        // Store in cache for future use
+        recommendationsCache.current[cacheKey] = fallbackData;
+        
         setRecommendations(fallbackData);
         setCurrentRecIndex(0);
-        currentWordRef.current = fallbackData[0]; // Update ref immediately
+        currentWordRef.current = fallbackData[0];
         setSecretInput(fallbackData[0]);
         fetchSynonyms(fallbackData[0]);
       }
@@ -377,12 +388,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           
           recommendationsCache.current[cacheKey] = filtered;
           
-          // Only update UI if this is for the current active type
-          if (cacheKey === currentCacheKey) {
+          // Only update UI if this is for the current active type AND we don't already have data
+          // (to avoid overwriting fallback data that was already shown)
+          if (cacheKey === currentCacheKey && filtered.length > 0) {
             setIsLoadingRecommendations(false);
-            setRecommendations(filtered);
-            setCurrentRecIndex(0);
-            if (filtered.length > 0) {
+            
+            // Only update if we don't have a secretInput yet, or if this is fresh data
+            if (!secretInput || recommendations.length === 0) {
+              setRecommendations(filtered);
+              setCurrentRecIndex(0);
               currentWordRef.current = filtered[0]; // Update ref immediately
               setSecretInput(filtered[0]);
               // Fetch synonyms immediately for the first recommendation
@@ -406,12 +420,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             }
           }
         } else {
-          setIsLoadingRecommendations(false);
-          setRecommendations([]);
-          currentWordRef.current = '';
-          setSecretInput('');
-          // Clear synonyms if no recommendations
-          setSynonyms([]);
+          // Only clear state if we don't already have fallback data
+          if (!secretInput) {
+            setIsLoadingRecommendations(false);
+            // Use fallback recommendations instead of leaving empty
+            const fallbackData = getFallbackRecommendations();
+            const cacheKey = `${currentCategory}-${inputType}`;
+            recommendationsCache.current[cacheKey] = fallbackData;
+            setRecommendations(fallbackData);
+            setCurrentRecIndex(0);
+            currentWordRef.current = fallbackData[0];
+            setSecretInput(fallbackData[0]);
+            fetchSynonyms(fallbackData[0]);
+          }
         }
       }
 
