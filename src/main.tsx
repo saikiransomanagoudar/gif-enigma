@@ -1333,6 +1333,7 @@ Devvit.addCustomPostType({
     });
 
     const [isGame, setIsGame] = useState(false);
+    const [isCheckingGameType, setIsCheckingGameType] = useState(true);
 
     useAsync(
       async () => {
@@ -1346,13 +1347,29 @@ Devvit.addCustomPostType({
         depends: [context.postId ?? ''],
         finally: (result) => {
           setIsGame(!!result);
+          setIsCheckingGameType(false);
         },
       }
     );
+    const screenWidth = context.dimensions?.width || 0;
+    const isSmallScreen = screenWidth < 420;
+    const cardSize = isSmallScreen
+      ? Math.floor((screenWidth || 320) * 0.4)
+      : Math.floor((screenWidth || 800) * 0.25);
 
     return (
       <zstack height="100%" width="100%" alignment="center middle">
-        {isGame ? (
+        {isCheckingGameType ? (
+          <vstack height="100%" width="100%" alignment="center middle" darkBackgroundColor="#1A2740" lightBackgroundColor="#E8E5DA">
+            <image
+              url="eyebrows.gif"
+              description="Loading"
+              imageHeight={cardSize}
+              imageWidth={cardSize}
+              resizeMode="fit"
+            />
+          </vstack>
+        ) : isGame ? (
           <GamePostPreview
             context={context}
             onMount={mount}
