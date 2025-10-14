@@ -35,8 +35,6 @@ Each GIF hint progressively reveals more details about the secret word or phrase
 - **GIF 3 (Adding Tension)**: Suggested search term – `carnivore call` &rarr; _Displays predatory behavior_
 - **GIF 4 (Iconic Reference)**: Suggested search term – `roaring dino` &rarr; _Features recognizable dinosaur imagery_
 
-#### _Note:_ These search terms are suggested by Google's Gemini API and serve as queries for the Tenor API, allowing you to select GIFs that create a progression of hints from subtle to more obvious.
-
 ## Additional Information
 
 - **Starting Score**: You start with a potential 100 points. Each hint reduces your score, but solving the enigma without using any GIF hints or Word/Phrase hints earns you a perfect 100 points.
