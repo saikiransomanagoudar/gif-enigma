@@ -1,6 +1,5 @@
 import { Devvit, Context, useState, useAsync } from '@devvit/public-api';
 import { ComicText } from '../utils/fonts/comicText.js';
-import { Page } from '../../game/lib/types.js';
 import { BlocksToWebviewMessage } from '../../game/shared.js';
 
 interface CustomPostPreviewProps {
@@ -16,92 +15,37 @@ export const CustomPostPreview = ({
   postMessage,
   isWebViewReady,
 }: CustomPostPreviewProps) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [username, setUsername] = useState('there');
-  const [_gifUrls, setGifUrls] = useState<{
-    playGif: string | null;
-    buildGif: string | null;
-  }>({
-    playGif: null,
-    buildGif: null,
-  });
-  const [pendingNavigation, setPendingNavigation] = useState<{
-    page: Page;
-    gameId?: string;
-  } | null>(null);
+  const screenWidth = context.dimensions?.width || 0;
+  const isSmallScreen = screenWidth < 420;
+  const cardSize = isSmallScreen
+    ? Math.floor((screenWidth || 320) * 0.4)
+    : Math.floor((screenWidth || 800) * 0.25);
   
-  useAsync(
+  // Load initial data once - use data directly, no state
+  const { data: initialData, loading } = useAsync(
     async () => {
       const playGifUrl = context.assets.getURL('eyebrows.gif');
       const buildGifUrl = context.assets.getURL('lets-build-optimized.gif');
-
-      const currentUsername = (await context.reddit.getCurrentUsername()) || '';
+      const currentUsername = (await context.reddit.getCurrentUsername()) || 'there';
 
       return {
-        playGifUrl: playGifUrl,
-        buildGifUrl: buildGifUrl,
-        currentUsername: currentUsername,
+        playGifUrl,
+        buildGifUrl,
+        currentUsername,
       };
     },
     {
       depends: [],
-      finally: (data, error) => {
-        if (data && !error) {
-          setGifUrls({
-            playGif: data.playGifUrl,
-            buildGif: data.buildGifUrl,
-          });
-
-          if (data.currentUsername) {
-            setUsername(data.currentUsername);
-          }
-        }
-
-        setIsLoading(false);
-      },
     }
   );
-
-  useAsync<{ shouldNavigate: boolean; page?: Page; gameId?: string }>(
-    async () => {
-      // Only run if we actually have a pending navigation AND webview is ready
-      if (!pendingNavigation || !isWebViewReady) {
-        return { shouldNavigate: false };
-      }
-      
-      return {
-        shouldNavigate: true,
-        page: pendingNavigation.page,
-        gameId: pendingNavigation.gameId,
-      };
-    },
-    {
-      depends: [
-        isWebViewReady ? (pendingNavigation?.page ?? 'none') : 'waiting',
-        isWebViewReady ? (pendingNavigation?.gameId ?? 'none') : 'waiting'
-      ],
-      finally: (data, error) => {
-        if (!error && data?.shouldNavigate && pendingNavigation) {
-          postMessage({
-            type: 'SET_NAVIGATION_STATE',
-            data: {
-              page: data.page,
-              ...(data.gameId ? { gameId: data.gameId } : {}),
-            },
-          });
-
-          setPendingNavigation(null);
-        }
-      },
-    }
-  );
+  
+  const username = initialData?.currentUsername || 'there';
+  const isLoading = loading;
 
   const handlePlayGame = async (retryCount = 0) => {
     const MAX_RETRIES = 3;
 
     try {
-      setIsLoading(true);
-
       const { getRandomGame } = await import('../../game/server/gameHandler.server.js');
 
       const params = {
@@ -167,8 +111,6 @@ export const CustomPostPreview = ({
       
     } catch (error) {
       context.ui.showToast('Error finding a game. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -182,14 +124,27 @@ export const CustomPostPreview = ({
       }
 
       onMount();
-      setPendingNavigation({
-        page: 'category',
-      });
+      
+      // Send navigation directly if webview is ready
+      if (isWebViewReady) {
+        postMessage({
+          type: 'SET_NAVIGATION_STATE',
+          data: {
+            page: 'category',
+          },
+        });
+      }
     } catch (error) {
       onMount();
-      setPendingNavigation({
-        page: 'category',
-      });
+      
+      if (isWebViewReady) {
+        postMessage({
+          type: 'SET_NAVIGATION_STATE',
+          data: {
+            page: 'category',
+          },
+        });
+      }
     }
   };
 
@@ -203,21 +158,28 @@ export const CustomPostPreview = ({
       }
 
       onMount();
-      setPendingNavigation({
-        page: 'howToPlay',
-      });
+      
+      if (isWebViewReady) {
+        postMessage({
+          type: 'SET_NAVIGATION_STATE',
+          data: {
+            page: 'howToPlay',
+          },
+        });
+      }
     } catch (error) {
       onMount();
-      setPendingNavigation({
-        page: 'howToPlay',
-      });
+      
+      if (isWebViewReady) {
+        postMessage({
+          type: 'SET_NAVIGATION_STATE',
+          data: {
+            page: 'howToPlay',
+          },
+        });
+      }
     }
   };
-
-  const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
-  const cardSize = isSmallScreen
-  ? Math.floor((context.dimensions?.width ?? 320) * 0.4)
-  : Math.floor((context.dimensions?.width ?? 800) * 0.25);
 
   return (
     <zstack width="100%" height="100%">
@@ -301,7 +263,7 @@ export const CustomPostPreview = ({
           onPress={handleHowToPlay}
         >
             <hstack gap="small" alignment="center middle">
-              <text size="large">🤔</text>
+              <text color="white" size="large">🤔</text>
               <ComicText size={isSmallScreen ? 0.16 : 0.20} color="#FF4500" bold>
                 How to play?
               </ComicText>
@@ -333,23 +295,39 @@ export const CustomPostPreview = ({
               
               // Mount the WebView first
               onMount();
-              setPendingNavigation({
-                page: 'leaderboard',
-              });
+              
+              if (isWebViewReady) {
+                postMessage({
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: 'leaderboard',
+                  },
+                });
+              }
             } catch (error) {
               onMount();
-              setPendingNavigation({
-                page: 'leaderboard',
-              });
+              
+              if (isWebViewReady) {
+                postMessage({
+                  type: 'SET_NAVIGATION_STATE',
+                  data: {
+                    page: 'leaderboard',
+                  },
+                });
+              }
             }
           }}
         >
           <hstack gap="small" alignment="center middle">
-            <text size="xlarge">🏆</text>
+            <vstack alignment="center middle">
+              <text size="xlarge">🏆</text>
+            </vstack>
             {!isSmallScreen && (
-              <ComicText size={0.20} color="#FF4500" bold>
-                Leaderboard
-              </ComicText>
+              <vstack alignment="center middle">
+                <ComicText size={0.20} color="#FF4500" bold>
+                  Leaderboard
+                </ComicText>
+              </vstack>
             )}
           </hstack>
         </vstack>
