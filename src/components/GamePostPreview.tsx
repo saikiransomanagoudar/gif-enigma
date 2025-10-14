@@ -12,6 +12,39 @@ interface GamePostPreviewProps {
   refreshTrigger: number;
 }
 
+// Helper function to handle navigation - defined outside component to prevent recreating
+const handleNavigation = async (params: {
+  context: Context;
+  postId: string | undefined;
+  page: string;
+  gameId?: string;
+  onMount: () => void;
+  postMessage: (message: BlocksToWebviewMessage) => void;
+  isWebViewReady: boolean;
+}) => {
+  await params.context.redis.del(`navState:${params.postId}`);
+  if (params.postId) {
+    await params.context.redis.hDel(`navState:${params.postId}`, ['page']);
+    await params.context.redis.hDel(`navState:${params.postId}`, ['gameId']);
+    const navData: any = { page: params.page };
+    if (params.gameId) {
+      navData.gameId = params.gameId;
+    }
+    await params.context.redis.hSet(`navState:${params.postId}`, navData);
+  }
+  params.onMount();
+  if (params.isWebViewReady) {
+    const messageData: any = { page: params.page };
+    if (params.gameId) {
+      messageData.gameId = params.gameId;
+    }
+    params.postMessage({
+      type: 'NAVIGATE',
+      data: messageData,
+    });
+  }
+};
+
 export const GamePostPreview = ({
   context,
   onMount,
@@ -19,305 +52,114 @@ export const GamePostPreview = ({
   isWebViewReady,
   refreshTrigger,
 }: GamePostPreviewProps) => {
-  const [previewData, setPreviewData] = useState<{
-    maskedWord?: string | null;
-    gifs?: string[];
-    gameId?: string;
-  }>({});
-  const [_isLoading, setIsLoading] = useState(true);
-  const [username, setUsername] = useState('there');
-  const [gifLoaded, _setGifLoaded] = useState(true); // Start with true since we can't track loading
-  const [_letterBoxes, setLetterBoxes] = useState<string[]>([]);
-  const [pendingNavigation, setPendingNavigation] = useState<{
-    page: Page;
-    gameId?: string;
-  } | null>(null);
-  const [_isDarkMode, setIsDarkMode] = useState(context.uiEnvironment?.colorScheme === 'dark');
-  const [hasCompletedGame, setHasCompletedGame] = useState(false);
-  const [_isWebViewMounted, setIsWebViewMounted] = useState(false);
-  const [usernameRetryCount, setUsernameRetryCount] = useState(0);
-  const isSmallScreen = (context.dimensions?.width ?? 0) < 420;
-  useAsync(
-    async () => {
-      if (context.postId) {
-        setPreviewData({});
-        setLetterBoxes([]);
-        setHasCompletedGame(false);
-        setUsername('there');
-        setUsernameRetryCount(0);
-      }
-      return null;
-    },
-    {
-      depends: [context.postId ?? ''],
-    }
-  );
-  useAsync(
-    async () => {
-      // Only retry if username is still default and we haven't tried too many times
-      if (username === 'there' && usernameRetryCount < 3) {
-        const currentUsername = await context.reddit.getCurrentUsername();
-        if (currentUsername && currentUsername !== 'there') {
-          return currentUsername;
-        }
+  // Memoize dimensions to prevent recalculation
+  const screenWidth = context.dimensions?.width || 0;
+  const isSmallScreen = screenWidth < 420;
+  const isVeryNarrow = screenWidth < 350; // Only for screens narrower than OnePlus 7T (358px)
+  const cardSize = isSmallScreen
+    ? Math.floor((screenWidth || 320) * 0.4)
+    : Math.floor((screenWidth || 800) * 0.25);
 
-        // Increment retry count for next attempt
+  // console.log(`GamePostPreview - screenWidth: ${screenWidth}, isVeryNarrow: ${isVeryNarrow}`);
+  
+  // Load data only once - NEVER re-run useAsync
+  const { data: gameData, loading: isLoading } = useAsync(
+    async () => {
+      // Don't proceed if no postId
+      if (!context.postId) {
         return null;
       }
-      return null;
-    },
-    {
-      depends: [usernameRetryCount],
-      finally: (result) => {
-        if (result) {
-          setUsername(result);
-        } else if (username === 'there' && usernameRetryCount < 3) {
-          setUsernameRetryCount((prev) => prev + 1);
-        }
-      },
-    }
-  );
-
-  useAsync(
-    async () => {
-      // Skip if no valid gameId or username
-      if (!previewData.gameId || !username || username === 'there') {
-        return false;
-      }
-
-      const gameId = previewData.gameId;
 
       try {
-        // Use the server-side function to check completion
-        const result = await hasUserCompletedGame(
-          { gameId: previewData.gameId, username: username },
-          context
-        );
+        // Get username
+        const currentUsername = await context.reddit.getCurrentUsername();
+        const username = currentUsername || 'anonymous';
 
-        return result.completed;
-      } catch (error) {
-        return false;
-      }
-    },
-    {
-      depends: [refreshTrigger, previewData.gameId ?? null, username],
-      finally: (result) => {
-        const isCompleted = result === true;
-        setHasCompletedGame(isCompleted);
-      },
-    }
-  );
+        // Get game ID
+        const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+        
+        if (!gameId) {
+          return null;
+        }
 
-  // Load game data for this post
-  useAsync(
-    async () => {
-      if (!context.postId) return null;
+        // Try to get preview data first, then fallback to game data
+        let previewData = null;
+        const previewDataRaw = await context.redis.hGetAll(`gamePreview:${gameId}`);
 
-      // Get game ID from post relationship
-      const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
-
-      if (!gameId) return null;
-
-      // Try to get preview data first
-      const previewData = await context.redis.hGetAll(`gamePreview:${gameId}`);
-
-      const redditPostId = context.postId;
-
-      if (previewData && previewData.maskedWord) {
-        return {
-          maskedWord: previewData.maskedWord || '',
-          gifs: JSON.parse(previewData.gifs || '[]'),
-          gameId: gameId,
-          redditPostId,
-        };
-      }
-
-      // Fallback to game data
-      const gameData = await context.redis.hGetAll(`game:${gameId}`);
-      if (gameData && gameData.maskedWord) {
-        return {
-          maskedWord: gameData.maskedWord || '',
-          gifs: JSON.parse(gameData.gifs || '[]'),
-          gameId: gameId,
-          redditPostId,
-        };
-      }
-
-      return null;
-    },
-    {
-      depends: [context.postId ?? ''],
-      finally: (data, error) => {
-        if (data && !error) {
-          setPreviewData(data);
-
-          // Create letter boxes array from masked word
-          if (data.maskedWord) {
-            const boxes = data.maskedWord.split('').map((char) => {
-              return char === '_' ? '' : char;
-            });
-            setLetterBoxes(boxes);
+        if (previewDataRaw && previewDataRaw.maskedWord) {
+          previewData = {
+            maskedWord: previewDataRaw.maskedWord || '',
+            gifs: JSON.parse(previewDataRaw.gifs || '[]'),
+            gameId: gameId,
+            redditPostId: context.postId,
+          };
+        } else {
+          const gameDataRaw = await context.redis.hGetAll(`game:${gameId}`);
+          
+          if (gameDataRaw && gameDataRaw.maskedWord) {
+            previewData = {
+              maskedWord: gameDataRaw.maskedWord || '',
+              gifs: JSON.parse(gameDataRaw.gifs || '[]'),
+              gameId: gameId,
+              redditPostId: context.postId,
+            };
           }
         }
-        setIsLoading(false);
-      },
-    }
-  );
 
-  const refreshCompletionStatus = async () => {
-    if (!previewData?.gameId || !username || username === 'there') {
-      return;
-    }
-
-    try {
-      // First check: Look for game in completed games set
-      const completedMember = await context.redis.zScore(
-        `user:${username}:completedGames`,
-        previewData.gameId
-      );
-
-      if (completedMember !== null) {
-        setHasCompletedGame(true);
-        return;
-      }
-
-      // Second check: Check game state's isCompleted flag
-      const gameStateRaw = await context.redis.hGetAll(
-        `gameState:${previewData.gameId}:${username}`
-      );
-
-      if (gameStateRaw && gameStateRaw.playerState) {
-        const playerState = JSON.parse(gameStateRaw.playerState);
-        if (playerState.isCompleted) {
-          setHasCompletedGame(true);
-          return;
+        if (!previewData) {
+          return null;
         }
-      }
-      // If we get here, the game is not completed
-      setHasCompletedGame(false);
-    } catch (error) {
-      // Default to not completed in case of error
-      setHasCompletedGame(false);
-    }
-  };
 
-  const sendNavigation = (page: Page, gameId?: string) => {
+        // Check completion status only if we have preview data
+        let hasCompletedGame = false;
+        if (username !== 'anonymous') {
+          try {
+            const result = await hasUserCompletedGame(
+              { gameId: previewData.gameId, username: username },
+              context
+            );
+            hasCompletedGame = result.completed === true;
+          } catch (error) {
+            hasCompletedGame = false;
+          }
+        }
 
-    postMessage({
-      type: 'NAVIGATE',
-      data: {
-        page: page,
-        params: gameId ? { gameId } : undefined,
-      },
-    });
-  };
-
-  useAsync(
-    async () => {
-      // Only run if we actually have a pending navigation AND webview is ready
-      if (!pendingNavigation || !isWebViewReady) {
+        return { username, previewData, hasCompletedGame };
+      } catch (error) {
+        console.error('GamePostPreview: Error loading game preview:', error);
         return null;
       }
-      
-      return {
-        page: pendingNavigation.page,
-        gameId: pendingNavigation.gameId ?? null,
-      };
     },
     {
-      depends: [
-        isWebViewReady ? (pendingNavigation?.page ?? 'none') : 'waiting',
-        isWebViewReady ? (pendingNavigation?.gameId ?? 'none') : 'waiting'
-      ],
-      finally: (data) => {
-        if (data && typeof data === 'object' && 'page' in data && pendingNavigation) {
-          // Send the navigation message
-          const gameId = 'gameId' in data && data.gameId ? data.gameId as string : undefined;
-          sendNavigation(data.page as Page, gameId);
-          
-          // Clear pending navigation to prevent duplicate sends
-          setPendingNavigation(null);
-        }
-      },
+      // CRITICAL: Empty dependencies to prevent infinite loop!
+      // Data loads once and never refreshes
+      depends: [],
     }
   );
 
-  const storeGameId = async (gameId: string) => {
-    if (context.postId) {
-      await context.redis.hSet(`navState:${context.postId}`, {
-        gameId,
-        page: 'game',
-      });
-    }
-  };
-
-  const handlePlayGame = async () => {
-    if (previewData.gameId) {
-      await context.redis.del(`navState:${context.postId}`);
-      await storeGameId(previewData.gameId);
-
-      onMount();
-
-      // Send navigation message
-      sendNavigation('game', previewData.gameId);
-    } else {
-      context.ui.showToast('Game not found');
-    }
-  };
-
-  const handleHowToPlay = async () => {
-    await context.redis.del(`navState:${context.postId}`);
-
-    if (context.postId) {
-      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-    }
-
-    // Store new navigation state explicitly
-    if (context.postId) {
-      await context.redis.hSet(`navState:${context.postId}`, {
-        page: 'howToPlay',
-      });
-    }
-
-    onMount();
-
-    sendNavigation('howToPlay');
-  };
-
-  const handleShowResults = async () => {
-    await context.redis.del(`navState:${context.postId}`);
-
-    if (context.postId) {
-      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-    }
-
-    // Store new navigation state explicitly
-    if (previewData.gameId) {
-      if (context.postId) {
-        await context.redis.hSet(`navState:${context.postId}`, {
-          page: 'gameResults',
-          gameId: previewData.gameId,
-        });
-      }
-
-      onMount();
-      sendNavigation('gameResults', previewData.gameId);
-    } else {
-      context.ui.showToast('Game not found');
-    }
-  };
-
-  // Get the first GIF for the preview
-  const getFirstGif = () => {
-    if (previewData.gifs && previewData.gifs.length > 0) {
-      return previewData.gifs[0];
-    }
-    return null;
-  };
-
-  const firstGif = getFirstGif();
+    // Early return for loading state
+  if (isLoading || !gameData) {
+    return (
+      <vstack
+        height="100%"
+        width="100%"
+        backgroundColor="#0d1629"
+        darkBackgroundColor="#1A2740"
+        lightBackgroundColor="#E8E5DA"
+        alignment="center middle"
+      >
+        <vstack alignment="center middle" gap="medium">
+          <image
+            url="eyebrows.gif"
+            description="Loading game..."
+            imageHeight={cardSize}
+            imageWidth={cardSize}
+            resizeMode="fit"
+          />
+        </vstack>
+      </vstack>
+    );
+  }
 
   return (
     <vstack
@@ -329,110 +171,334 @@ export const GamePostPreview = ({
       lightBackgroundColor="#E8E5DA"
     >
       {/* Header */}
-      <vstack alignment="center middle" padding="xsmall">
+      <vstack alignment="center middle">
+        <spacer size="medium" />
         <ComicText size={isSmallScreen ? 0.5 : 0.6} color="#FF4500">
           GIF Enigma
         </ComicText>
+        <spacer size="xsmall" />
       </vstack>
 
       {/* Main content area */}
       <vstack width="100%" padding="small" gap="small" grow alignment="center middle">
-        {/* First GIF clue */}
-        {firstGif && (
+        {/* First GIF clue - TV Screen Style */}
+        {gameData.previewData?.gifs?.[0] && (
           <vstack
-            height={100}
-            width="80%"
             backgroundColor="#0a1020"
-            cornerRadius="large"
-            padding="xsmall"
+            cornerRadius="medium"
+            padding="medium"
             alignment="center middle"
+            border="thick"
+            borderColor="#1a2030"
+            maxWidth={isSmallScreen ? "90%" : "450px"}
           >
-            <image url={firstGif} imageWidth={250} imageHeight={300} resizeMode="fit" />
-
-            {!gifLoaded && (
-              <text size="small" color="#ffffff" weight="bold">
-                Loading GIF...
-              </text>
-            )}
+            <image 
+              url={gameData.previewData.gifs[0]} 
+              imageWidth={isSmallScreen ? Math.min(screenWidth * 0.7, 340) : 320}
+              imageHeight={isSmallScreen ? Math.min(screenWidth * 0.7, 340) : 240}
+              resizeMode="fit" 
+            />
           </vstack>
         )}
       </vstack>
 
       <vstack padding="medium" alignment="center middle" gap="medium">
-        {hasCompletedGame === false ? (
-          <hstack gap="medium" alignment="center middle">
-            <hstack
-              cornerRadius="full"
-              backgroundColor="#FF4500"
-              padding="medium"
-              onPress={handlePlayGame}
-              alignment="center middle"
-            >
-              <vstack alignment="center middle">
-                <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
-                  Decode the GIF  
-                </ComicText>
-              </vstack>
-              <vstack alignment="center middle">
-                <text color="white" size="large">🔍</text>
-              </vstack>
-            </hstack>
-            <hstack
-              cornerRadius="full"
-              backgroundColor="#4267B2"
-              padding="medium"
-              onPress={handleHowToPlay}
-              alignment="center middle"
-            >
-              <vstack alignment="center middle">
-              <spacer size="xsmall" />
-                <ComicText size={isSmallScreen ? 0.13 : 0.14} color="white" bold>
-                  How To Play?  
-                </ComicText>
-              </vstack>
-              <vstack alignment="center middle">
-                <text color="white" size="large">🤔</text>
-              </vstack>
-            </hstack>
-          </hstack>
-        ) : (
-          // User has completed the game - show How This Game Works and Show Results buttons
-          <vstack gap="medium" alignment="center middle">
-            <hstack gap="medium" alignment="center middle">
-              <hstack
-                cornerRadius="full"
-                backgroundColor="#4267B2"
-                padding="medium"
-                onPress={handleHowToPlay}
-                alignment="center middle"
-              >
-                <vstack alignment="center middle">
-                <spacer size="xsmall" />
-                  <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
-                    How To Play?  
-                  </ComicText>
-                </vstack>
-                <vstack alignment="center middle">
-                  <text color="white" size="large">🤔</text>
-                </vstack>
-              </hstack>
+        {gameData.hasCompletedGame === false ? (
+          isVeryNarrow ? (
+            // Vertical layout for very narrow screens (Galaxy S8+)
+            <vstack gap="small" alignment="center middle">
               <hstack
                 cornerRadius="full"
                 backgroundColor="#FF4500"
                 padding="medium"
-                onPress={handleShowResults}
+                onPress={async () => {
+                  if (gameData.previewData?.gameId) {
+                    await context.redis.del(`navState:${context.postId}`);
+                    if (context.postId) {
+                      await context.redis.hSet(`navState:${context.postId}`, {
+                        gameId: gameData.previewData.gameId,
+                        page: 'game',
+                      });
+                    }
+                    onMount();
+                    if (isWebViewReady) {
+                      postMessage({
+                        type: 'NAVIGATE',
+                        data: {
+                          page: 'game',
+                          params: { gameId: gameData.previewData.gameId },
+                        },
+                      });
+                    }
+                  } else {
+                    context.ui.showToast('Game not found');
+                  }
+                }}
                 alignment="center middle"
               >
-                <vstack alignment="center middle">
+                <text color="white" size="large">🔍</text>
+                <spacer size="xsmall" />
+                <ComicText size={0.14} color="white" bold>
+                  Decode the GIF  
+                </ComicText>
+              </hstack>
+              <hstack
+                cornerRadius="full"
+                backgroundColor="#4267B2"
+                padding="medium"
+                onPress={async () => {
+                  await context.redis.del(`navState:${context.postId}`);
+                  if (context.postId) {
+                    await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                    await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                    await context.redis.hSet(`navState:${context.postId}`, {
+                      page: 'howToPlay',
+                    });
+                  }
+                  onMount();
+                  if (isWebViewReady) {
+                    postMessage({
+                      type: 'NAVIGATE',
+                      data: {
+                        page: 'howToPlay',
+                      },
+                    });
+                  }
+                }}
+                alignment="center middle"
+              >
+                <text color="white" size="large">🤔</text>
+                <spacer size="xsmall" />
+                <ComicText size={0.14} color="white" bold>
+                  How to play?  
+                </ComicText>
+              </hstack>
+            </vstack>
+          ) : (
+            // Horizontal layout for wider screens
+            <hstack gap="medium" alignment="center middle">
+              <zstack alignment="center middle">
+                <hstack
+                  cornerRadius="full"
+                  backgroundColor="#FF4500"
+                  padding="medium"
+                  onPress={async () => {
+                    if (gameData.previewData?.gameId) {
+                      await context.redis.del(`navState:${context.postId}`);
+                      if (context.postId) {
+                        await context.redis.hSet(`navState:${context.postId}`, {
+                          gameId: gameData.previewData.gameId,
+                          page: 'game',
+                        });
+                      }
+                      onMount();
+                      if (isWebViewReady) {
+                        postMessage({
+                          type: 'NAVIGATE',
+                          data: {
+                            page: 'game',
+                            params: { gameId: gameData.previewData.gameId },
+                          },
+                        });
+                      }
+                    } else {
+                      context.ui.showToast('Game not found');
+                    }
+                  }}
+                  alignment="center middle"
+                >
+                  <text color="white" size="large">🔍</text>
+                  <spacer size="xsmall" />
                   <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
-                    View Results  
+                    Decode the GIF  
                   </ComicText>
-                </vstack>
-                <vstack alignment="center middle">
-                  <text color="white" size="large">📊</text>
-                </vstack>
+                </hstack>
+              </zstack>
+              <hstack
+                cornerRadius="full"
+                backgroundColor="#4267B2"
+                padding="medium"
+                onPress={async () => {
+                  await context.redis.del(`navState:${context.postId}`);
+                  if (context.postId) {
+                    await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                    await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                    await context.redis.hSet(`navState:${context.postId}`, {
+                      page: 'howToPlay',
+                    });
+                  }
+                  onMount();
+                  if (isWebViewReady) {
+                    postMessage({
+                      type: 'NAVIGATE',
+                      data: {
+                        page: 'howToPlay',
+                      },
+                    });
+                  }
+                }}
+                alignment="center middle"
+              >
+                <text color="white" size="large">🤔</text>
+                <spacer size="xsmall" />
+                <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
+                  How to play?  
+                </ComicText>
               </hstack>
             </hstack>
+          )
+        ) : (
+          // User has completed the game - show How This Game Works and Show Results buttons
+          <vstack gap="medium" alignment="center middle">
+            {isVeryNarrow ? (
+              // Vertical layout for very narrow screens
+              <vstack gap="small" alignment="center middle">
+                <hstack
+                  cornerRadius="full"
+                  backgroundColor="#FF4500"
+                  padding="medium"
+                  onPress={async () => {
+                    await context.redis.del(`navState:${context.postId}`);
+                    if (context.postId) {
+                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                    }
+                    if (gameData.previewData?.gameId) {
+                      if (context.postId) {
+                        await context.redis.hSet(`navState:${context.postId}`, {
+                          page: 'gameResults',
+                          gameId: gameData.previewData.gameId,
+                        });
+                      }
+                      onMount();
+                      if (isWebViewReady) {
+                        postMessage({
+                          type: 'NAVIGATE',
+                          data: {
+                            page: 'gameResults',
+                            params: { gameId: gameData.previewData.gameId },
+                          },
+                        });
+                      }
+                    } else {
+                      context.ui.showToast('Game not found');
+                    }
+                  }}
+                  alignment="center middle"
+                >
+                  <text color="white" size="large">📊</text>
+                  <spacer size="xsmall" />
+                  <ComicText size={0.145} color="white" bold>
+                    View results  
+                  </ComicText>
+                </hstack>
+                <hstack
+                  cornerRadius="full"
+                  backgroundColor="#4267B2"
+                  padding="medium"
+                  onPress={async () => {
+                    await context.redis.del(`navState:${context.postId}`);
+                    if (context.postId) {
+                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                      await context.redis.hSet(`navState:${context.postId}`, {
+                        page: 'howToPlay',
+                      });
+                    }
+                    onMount();
+                    if (isWebViewReady) {
+                      postMessage({
+                        type: 'NAVIGATE',
+                        data: {
+                          page: 'howToPlay',
+                        },
+                      });
+                    }
+                  }}
+                  alignment="center middle"
+                >
+                  <text color="white" size="large">🤔</text>
+                  <spacer size="xsmall" />
+                  <ComicText size={0.14} color="white" bold>
+                    How to play?  
+                  </ComicText>
+                </hstack>
+              </vstack>
+            ) : (
+              // Horizontal layout for wider screens
+              <hstack gap="medium" alignment="center middle">
+                <hstack
+                  cornerRadius="full"
+                  backgroundColor="#FF4500"
+                  padding="medium"
+                  onPress={async () => {
+                    await context.redis.del(`navState:${context.postId}`);
+                    if (context.postId) {
+                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                    }
+                    if (gameData.previewData?.gameId) {
+                      if (context.postId) {
+                        await context.redis.hSet(`navState:${context.postId}`, {
+                          page: 'gameResults',
+                          gameId: gameData.previewData.gameId,
+                        });
+                      }
+                      onMount();
+                      if (isWebViewReady) {
+                        postMessage({
+                          type: 'NAVIGATE',
+                          data: {
+                            page: 'gameResults',
+                            params: { gameId: gameData.previewData.gameId },
+                          },
+                        });
+                      }
+                    } else {
+                      context.ui.showToast('Game not found');
+                    }
+                  }}
+                  alignment="center middle"
+                >
+                  <text color="white" size="large">📊</text>
+                  <spacer size="xsmall" />
+                  <ComicText size={isSmallScreen ? 0.145 : 0.155} color="white" bold>
+                    View results  
+                  </ComicText>
+                </hstack>
+                <hstack
+                  cornerRadius="full"
+                  backgroundColor="#4267B2"
+                  padding="medium"
+                  onPress={async () => {
+                    await context.redis.del(`navState:${context.postId}`);
+                    if (context.postId) {
+                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+                      await context.redis.hSet(`navState:${context.postId}`, {
+                        page: 'howToPlay',
+                      });
+                    }
+                    onMount();
+                    if (isWebViewReady) {
+                      postMessage({
+                        type: 'NAVIGATE',
+                        data: {
+                          page: 'howToPlay',
+                        },
+                      });
+                    }
+                  }}
+                  alignment="center middle"
+                >
+                  <text color="white" size="large">🤔</text>
+                  <spacer size="xsmall" />
+                  <ComicText size={isSmallScreen ? 0.14 : 0.15} color="white" bold>
+                    How to play?  
+                  </ComicText>
+                </hstack>
+              </hstack>
+            )}
           </vstack>
         )}
       </vstack>
