@@ -307,12 +307,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               onMouseLeave={() => setHover(null)}
             >
               <span className="inline-flex items-center justify-center">
-                <div className="text-xl">ℹ</div>
                 <ComicText
                   size={0.8}
                   className={`text-lg max-sm:text-[1px] ${ifhover === 'btn2' ? '!text-white' : '!text-black'}`}
                 >
-                  &nbsp;How to play? 🎮
+                  🤔 How to play?
                 </ComicText>
               </span>
             </button>
