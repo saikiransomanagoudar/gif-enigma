@@ -154,6 +154,13 @@ export type WebviewToBlockMessage =
       };
     }
   | {
+      type: 'CHECK_USER_COMMENT';
+      data: {
+        gameId: string;
+        username: string;
+      };
+    }
+  | {
       type: 'HAS_USER_COMPLETED_GAME';
       data: {
         gameId: string;
@@ -461,6 +468,12 @@ export type BlocksToWebviewMessage =
       type: 'POST_COMPLETION_COMMENT_RESULT';
       success: boolean;
       alreadyPosted?: boolean;
+      error?: string;
+    }
+  | {
+      type: 'CHECK_USER_COMMENT_RESULT';
+      success: boolean;
+      hasCommented?: boolean;
       error?: string;
     }
   | {

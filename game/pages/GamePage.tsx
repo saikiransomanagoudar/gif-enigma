@@ -332,6 +332,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         guess: gameFlowState === 'won' || gameFlowState === 'completed' ? gameData.word : guess,
         lastPlayed: Date.now(),
         isCompleted: gameFlowState === 'won' || gameFlowState === 'completed',
+        numGuesses: guessCount,
         // Preserve hasGivenUp flag if player gave up (gifHintCount === 999)
         hasGivenUp: gifHintCount === 999 ? true : undefined,
       };
@@ -348,7 +349,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
     }
-  }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState]);
+  }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState, guessCount]);
 
 
   useEffect(() => {
@@ -592,6 +593,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const handlePostComment = () => {
     if (!gameData) return;
     if (isCommentPosting || isCommentPosted) return;
+    
+    // Don't allow commenting if user gave up (gifHintCount === 999)
+    if (gifHintCount >= 999) {
+      return;
+    }
+    
     const currentUsername = username || 'anonymous';
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
 
@@ -1170,37 +1177,39 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                  {/* Comment Results Button - Primary/Highlighted */}
-                  <button
-                    onClick={handlePostComment}
-                    disabled={isCommentPosting || isCommentPosted}
-                    className={`flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3.5 text-white font-semibold transition-all duration-300 disabled:cursor-not-allowed ${
-                      isCommentPosted
-                        ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
-                        : isCommentPosting
-                          ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
-                          : 'bg-gradient-to-r from-yellow-400 to-amber-500 shadow-xl hover:scale-105 hover:shadow-2xl'
-                    }`}
-                    aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
-                    title={isCommentPosted ? 'Commented!' : 'Comment Results'}
-                    style={{
-                      minWidth: '208px',
-                      boxShadow: isCommentPosted
-                        ? '0 8px 20px rgba(16,185,129,0.4)'
-                        : isCommentPosting
-                          ? '0 8px 20px rgba(99,102,241,0.3)'
-                          : '0 10px 30px rgba(251,191,36,0.6), 0 0 40px rgba(245,158,11,0.4)'
-                    }}
-                  >
-                    <span className="text-xl">
-                      {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
-                    </span>
-                    <span className="whitespace-nowrap">
-                      <ComicText size={0.7} color="white">
-                        {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-                      </ComicText>
-                    </span>
-                  </button>
+                  {/* Comment Results Button - Only show if user didn't give up */}
+                  {gifHintCount < 999 && (
+                    <button
+                      onClick={handlePostComment}
+                      disabled={isCommentPosting || isCommentPosted}
+                      className={`flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3.5 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed ${
+                        isCommentPosted
+                          ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
+                          : isCommentPosting
+                            ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
+                            : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
+                      }`}
+                      aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
+                      title={isCommentPosted ? 'Commented!' : 'Comment Results'}
+                      style={{
+                        minWidth: '208px',
+                        boxShadow: isCommentPosted
+                          ? '0 8px 20px rgba(16,185,129,0.4)'
+                          : isCommentPosting
+                            ? '0 8px 20px rgba(99,102,241,0.3)'
+                            : '0 4px 12px rgba(217,119,6,0.4)'
+                      }}
+                    >
+                      <span className="text-xl">
+                        {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
+                      </span>
+                      <span className="whitespace-nowrap">
+                        <ComicText size={0.7} color="white">
+                          {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
+                        </ComicText>
+                      </span>
+                    </button>
+                  )}
 
                   {/* View Results Button - Secondary */}
                   <button

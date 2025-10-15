@@ -16,6 +16,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [username, setUsername] = useState<string | null>(null);
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
+  const [hasAlreadyCommented, setHasAlreadyCommented] = useState(false);
   const [gameState, setGameState] = useState<any>(null);
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
 
@@ -33,6 +34,22 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   useEffect(() => {
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
   }, []);
+
+  // Check if user has already commented on this game
+  useEffect(() => {
+    if (username && gameId && username !== 'anonymous') {
+      window.parent.postMessage(
+        {
+          type: 'CHECK_USER_COMMENT',
+          data: {
+            username,
+            gameId,
+          },
+        },
+        '*'
+      );
+    }
+  }, [username, gameId]);
 
   // Fetch game state when we have both username and gameId
   useEffect(() => {
@@ -108,9 +125,23 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
         setIsCommentPosting(false);
         if (actualMessage.success) {
-          setIsCommentPosted(true);
+          if (actualMessage.alreadyPosted) {
+            // User already commented before
+            setHasAlreadyCommented(true);
+            setIsCommentPosted(true);
+          } else {
+            // New comment posted successfully
+            setIsCommentPosted(true);
+          }
         } else {
           window.alert(actualMessage.error || 'Failed to post comment');
+        }
+      }
+
+      if (actualMessage.type === 'CHECK_USER_COMMENT_RESULT') {
+        if (actualMessage.success && actualMessage.hasCommented) {
+          setHasAlreadyCommented(true);
+          setIsCommentPosted(true);
         }
       }
     };
@@ -128,6 +159,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     if (isCommentPosting || isCommentPosted) return;
     const gifHintCount = gameState?.gifHintCount || 1;
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
+    const actualGuesses = gameState?.numGuesses || 1;
 
     setIsCommentPosting(true);
     window.parent.postMessage(
@@ -136,7 +168,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         data: {
           gameId: gameId,
           username: username,
-          numGuesses: 1,
+          numGuesses: actualGuesses,
           gifHints: gifHintsUsed,
         },
       },
@@ -308,30 +340,31 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             // Only show comment button if:
             // 1. Game state has loaded (isGameStateLoaded = true)
             // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
+            // 3. User hasn't already commented (hasAlreadyCommented = false)
             // Note: If gameState is null after loading, user hasn't played yet (show button)
             const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
-            const shouldShow = isGameStateLoaded && !hasGivenUp;
+            const shouldShow = isGameStateLoaded && !hasGivenUp && !hasAlreadyCommented;
             return shouldShow;
           })() && (
             <button
               onClick={handlePostComment}
               disabled={isCommentPosting || isCommentPosted || !username}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 w-full sm:w-auto sm:min-w-[220px] ${
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
                 isCommentPosted
-                  ? 'bg-gradient-to-r from-emerald-500 to-green-600'
+                  ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                   : isCommentPosting
-                    ? 'bg-gradient-to-r from-indigo-400 to-purple-500'
-                    : 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-indigo-600'
+                    ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
               }`}
               style={{
                 boxShadow: isCommentPosted
-                  ? '0 8px 20px rgba(16,185,129,0.35)'
+                  ? '0 8px 20px rgba(16,185,129,0.4)'
                   : isCommentPosting
-                    ? '0 6px 16px rgba(99,102,241,0.25)'
-                    : '0 8px 22px rgba(124,58,237,0.35)'
+                    ? '0 8px 20px rgba(99,102,241,0.3)'
+                    : '0 4px 12px rgba(217,119,6,0.4)'
               }}
             >
-              <span className="text-lg">
+              <span className="text-xl">
                 {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
               </span>
               <ComicText size={0.7} color="white">

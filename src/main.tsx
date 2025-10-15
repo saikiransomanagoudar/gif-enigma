@@ -319,6 +319,35 @@ Devvit.addCustomPostType({
             }
             break;
 
+          case 'CHECK_USER_COMMENT':
+            try {
+              if (!event.data || !event.data.gameId || !event.data.username) {
+                postMessage({
+                  type: 'CHECK_USER_COMMENT_RESULT',
+                  success: false,
+                  error: 'Missing required data: gameId and username are required',
+                });
+                return;
+              }
+
+              // Check Redis for existing comment
+              const commentKey = `comment:${event.data.gameId}:${event.data.username}`;
+              const existingComment = await context.redis.get(commentKey);
+
+              postMessage({
+                type: 'CHECK_USER_COMMENT_RESULT',
+                success: true,
+                hasCommented: !!existingComment,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'CHECK_USER_COMMENT_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
           case 'GET_RANDOM_GAME':
             try {
               // Make sure to include username if available to filter completed games

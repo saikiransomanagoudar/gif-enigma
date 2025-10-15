@@ -131,6 +131,11 @@ export async function postCompletionComment(
   try {
     const { gameId, username, numGuesses, gifHints, redditPostId } = params;
 
+    // Safety check: If gifHints is 999 or numGuesses is 999, user gave up - don't post comment
+    if (gifHints >= 999 || numGuesses >= 999) {
+      return { success: false, error: 'Cannot post comment for games where user gave up' };
+    }
+
     // First, check if a comment has already been posted for this user on this game
     const commentKey = `comment:${gameId}:${username}`;
     const existingComment = await context.redis.get(commentKey);
@@ -150,24 +155,102 @@ export async function postCompletionComment(
       return { success: false, error: 'No Reddit post ID found for this game' };
     }
 
-    // Create the completion message with GIF hints only
-    let hintsDescription = 'no hints';
+    // Determine performance tier and emoji
+    const usedNoHints = gifHints === 0;
+    let emoji = '';
+    let commentVariant = Math.floor(Math.random() * 3); // 0, 1, or 2 for variety
 
-    // Only show GIF hints in the comment
-    if (gifHints > 0) {
-      hintsDescription = `${gifHints} extra GIF hint${gifHints !== 1 ? 's' : ''}`;
+    // Calculate performance tier based on attempts and hints
+    if (numGuesses === 1 && usedNoHints) {
+      emoji = '🎉🏆✨';
+    } else if (numGuesses === 1) {
+      emoji = '🎉🔥';
+    } else if (numGuesses === 2 && gifHints <= 1) {
+      emoji = '💪⚡';
+    } else if (numGuesses <= 3) {
+      emoji = '💪';
+    } else if (numGuesses <= 5) {
+      emoji = '🤔';
+    } else {
+      emoji = '😅💪';
     }
 
-    // Build the final comment text
+    // Create hints description
+    let hintsDescription = '';
+    if (usedNoHints) {
+      hintsDescription = 'with just the first GIF';
+    } else if (gifHints === 1) {
+      hintsDescription = 'using 1 extra GIF hint';
+    } else {
+      hintsDescription = `using ${gifHints} extra GIF hints`;
+    }
+
+    // Build varied comment text based on performance
     let completionText = '';
 
-    if (numGuesses === 1) {
-      completionText = `I cracked it on my **first attempt** with **${hintsDescription}**! 🎉`;
+    if (numGuesses === 1 && usedNoHints) {
+      // Legendary performance - first try, no hints
+      const legendaryTexts = [
+        `I cracked it on my **first attempt** with **just the first GIF**! ${emoji}`,
+        `**First try**, **no extra hints** needed! Nailed it! ${emoji}`,
+        `Got it instantly with **only one GIF**! **First attempt**! ${emoji}`
+      ];
+      completionText = legendaryTexts[commentVariant];
+    } else if (numGuesses === 1) {
+      // Master performance - first try with hints
+      const masterTexts = [
+        `I solved it on my **first attempt** ${hintsDescription}! ${emoji}`,
+        `**First try!** Cracked it ${hintsDescription}! ${emoji}`,
+        `Got it right away on **attempt #1** ${hintsDescription}! ${emoji}`
+      ];
+      completionText = masterTexts[commentVariant];
+    } else if (numGuesses === 2) {
+      // Quick solver
+      const quickTexts = [
+        `Solved it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Cracked the code in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+      ];
+      completionText = quickTexts[commentVariant];
+    } else if (numGuesses <= 4) {
+      // Good performance
+      const goodTexts = [
+        `Figured it out in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Cracked it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+      ];
+      completionText = goodTexts[commentVariant];
+    } else if (numGuesses <= 7) {
+      // Persistent solver
+      const persistentTexts = [
+        `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+      ];
+      completionText = persistentTexts[commentVariant];
     } else {
-      completionText = `I cracked it in **${numGuesses} attempts** with **${hintsDescription}**.`;
+      // Very persistent solver (7+ attempts) - keep same wording
+      const veryPersistentTexts = [
+        `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+      ];
+      completionText = veryPersistentTexts[commentVariant];
+    }
+
+    // Add special badge for no-hint achievements
+    if (usedNoHints && numGuesses <= 3) {
+      completionText += ' 🧠';
     }
 
     try {
+      // Post the comment to Reddit
+      await context.reddit.submitComment({
+        id: postId,
+        text: completionText,
+      });
+
+      // Mark as posted in Redis to prevent duplicates
       await context.redis.set(commentKey, 'posted', {
         expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiry
       });
