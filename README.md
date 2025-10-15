@@ -1,4 +1,6 @@
-# GIF Enigma 🎬
+![gif-logo-emoji](https://github.com/user-attachments/assets/427d8177-63d1-47a7-8122-3854ba68d975)
+
+# GIF Enigma
 
 GIF Enigma is a word/phrase-guessing game where players interpret GIFs to uncover a hidden word or phrase. A fun and engaging challenge that tests your ability to think visually and make connections. Can you solve the enigma?
 
