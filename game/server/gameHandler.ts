@@ -105,13 +105,40 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     }
 
     // Award creation bonus XP to the creator
-    await awardCreationBonus(username, context);
+    const bonusResult = await awardCreationBonus(username, context);
+
+    // Automatically mark the game as completed for the creator
+    // This prevents the creator from playing their own game
+    if (username && username !== 'anonymous') {
+      try {
+        await context.redis.zAdd(`user:${username}:completedGames`, {
+          member: gameId,
+          score: Date.now(),
+        });
+        
+        // Also save a game state indicating the creator "completed" it
+        await context.redis.hSet(`gameState:${username}:${gameId}`, {
+          playerState: JSON.stringify({
+            gifHintCount: 0,
+            revealedLetters: [],
+            guess: word,
+            lastPlayed: Date.now(),
+            isCompleted: true,
+            isCreator: true, // Flag to indicate this user created the game
+          }),
+          lastUpdated: Date.now().toString(),
+        });
+      } catch (error) {
+        // Silently handle error - game creation succeeded even if marking failed
+      }
+    }
 
     return {
       success: true,
       gameId,
       postedToReddit: !!postId,
       redditPostId: postId || undefined,
+      bonusAwarded: bonusResult.bonusAwarded,
     };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -360,10 +387,6 @@ export async function getRecentGames(
     const result: GetRecentGamesResponse = {
       success: games.length > 0,
       games,
-      debug: {
-        gamesFound: games.length,
-        activeGamesTotal: gameIds.length,
-      },
     };
 
     if (games.length === 0) {

@@ -203,13 +203,11 @@ Devvit.addSchedulerJob({
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
     
-    console.log('[CACHE_PREWARMER] Scheduled job triggered');
-    
     try {
       const { preWarmCache } = await import('./cachePreWarmer.js');
       await preWarmCache(context);
     } catch (error) {
-      console.error('[CACHE_PREWARMER] Scheduled job failed:', error);
+      // Silently handle cache prewarming errors
     }
   },
 });

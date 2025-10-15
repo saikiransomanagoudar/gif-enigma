@@ -51,7 +51,6 @@ export async function getRandomGame(
   context: any
 ) {
   try {
-    console.log('[getRandomGame] Starting with params:', params);
     const { excludeIds = [], preferUserCreated = true, username } = params;
     
     // Resolve username to match the resolution done in MARK_GAME_COMPLETED
@@ -64,8 +63,6 @@ export async function getRandomGame(
       const fetched = await context.reddit.getCurrentUsername();
       if (fetched) resolvedUsername = fetched;
     }
-    
-    console.log('[getRandomGame] Resolved username:', resolvedUsername);
     
     let completedGames: string[] = [];
     let recentlyViewedGames: string[] = [];
@@ -80,7 +77,6 @@ export async function getRandomGame(
       completedGames = rangeResult.map((item: { member: any }) =>
         typeof item === 'string' ? item : item.member
       );
-      console.log('[getRandomGame] Found completed games:', completedGames.length);
       
       // Get recently viewed games (within last 5 minutes)
       const recentlyViewedKey = `user:${resolvedUsername}:recentlyViewed`;
@@ -91,7 +87,6 @@ export async function getRandomGame(
       recentlyViewedGames = viewedResult.map((item: { member: any }) =>
         typeof item === 'string' ? item : item.member
       );
-      console.log('[getRandomGame] Found recently viewed games:', recentlyViewedGames.length);
     }
 
     const allExcluded = [...new Set([...excludeIds, ...completedGames, ...recentlyViewedGames])];
@@ -101,13 +96,9 @@ export async function getRandomGame(
       reverse: true,
     });
     
-    console.log('[getRandomGame] Total active games:', gameMembers.length);
-    
     // Limit to 20 games for faster response - prioritize speed over selection variety
     const maxGamesToCheck = Math.min(gameMembers.length, 20);
     const gamesToCheck = gameMembers.slice(0, maxGamesToCheck);
-    
-    console.log('[getRandomGame] Checking games:', maxGamesToCheck);
     
     const gamesWithDates: Array<{ gameId: string; createdAt: number; isUserCreated: boolean }> = [];
     
@@ -184,14 +175,10 @@ export async function getRandomGame(
     // Use all found games instead of slicing to 10 since we already limited the search
     const recentGames = gamesWithDates;
     
-    console.log('[getRandomGame] Valid games found:', recentGames.length);
-
     if (recentGames.length === 0) {
       // Check if there are any games at all in the system
       const totalGamesCount = gameMembers.length;
       const hasPlayedAllGames = resolvedUsername && completedGames.length > 0 && totalGamesCount > 0;
-      
-      console.log('[getRandomGame] No valid games. hasPlayedAll:', hasPlayedAllGames);
       
       return {
         success: false,
@@ -216,15 +203,10 @@ export async function getRandomGame(
     const selectedGame = candidatePool[randomIndex];
     const randomGameId = selectedGame.gameId;
     
-    console.log('[getRandomGame] Selected game:', randomGameId);
-
     const gameResult = await getGame({ gameId: randomGameId }, context);
     
-    console.log('[getRandomGame] Returning result, success:', gameResult.success);
-
     return gameResult;
   } catch (error) {
-    console.error('[getRandomGame] Error:', error);
     return { success: false, error: String(error) };
   }
 }

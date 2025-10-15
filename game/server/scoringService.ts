@@ -371,8 +371,37 @@ export async function getCumulativeLeaderboard(
 export async function awardCreationBonus(
   username: string,
   context: Context
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
+    // Check how many games the user has created in the last 24 hours
+    const now = Date.now();
+    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000); // 24 hours in milliseconds
+    
+    // Track recent game creations in a sorted set with timestamp as score
+    const recentCreationsKey = `user:${username}:recentCreations`;
+    
+    // Get all game creations in the last 24 hours
+    const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
+      by: 'rank',
+    });
+    
+    // Filter creations to only include those in the last 24 hours
+    const creationsInLast24h = recentCreations.filter((item) => {
+      return item.score >= twentyFourHoursAgo;
+    });
+    
+    // Add current creation to the set
+    await context.redis.zAdd(recentCreationsKey, {
+      member: `game_${now}`,
+      score: now,
+    });
+    
+    // Clean up old entries (older than 24 hours)
+    await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
+    
+    // Check if user has created 4 or more games in the last 24 hours
+    // Note: creationsInLast24h doesn't include the current game yet, so we check if >= 4
+    const shouldAwardBonus = creationsInLast24h.length < 4;
     
     // Get or initialize user stats
     let userStats: any = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
@@ -388,9 +417,16 @@ export async function awardCreationBonus(
       userStats = await context.redis.hGetAll(`userStats:${username}`);
     }
     
-    // Update stats with creation bonus
+    // Update games created count (always increment this)
     const gamesCreated = Number(userStats.gamesCreated || 0) + 1;
-    const totalScore = Number(userStats.totalScore || 0) + CREATION_BONUS_XP;
+    
+    // Only award bonus if user hasn't exceeded the 4 games limit in 24 hours
+    let bonusXP = 0;
+    if (shouldAwardBonus) {
+      bonusXP = CREATION_BONUS_XP;
+    }
+    
+    const totalScore = Number(userStats.totalScore || 0) + bonusXP;
     
     await context.redis.hSet(`userStats:${username}`, {
       ...userStats,
@@ -399,11 +435,13 @@ export async function awardCreationBonus(
       lastPlayed: Date.now().toString(),
     });
     
-    // Update cumulative leaderboard with bonus
-    await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
+    // Update cumulative leaderboard with bonus (only if bonus was awarded)
+    if (shouldAwardBonus) {
+      await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
+    }
     
-    return { success: true };
+    return { success: true, bonusAwarded: shouldAwardBonus };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: String(error), bonusAwarded: false };
   }
 }

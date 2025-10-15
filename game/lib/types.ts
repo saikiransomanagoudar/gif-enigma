@@ -21,6 +21,7 @@ export interface PlayerGameState {
   lastPlayed: number;
   isCompleted: boolean;
   hasGivenUp?: boolean;
+  isCreator?: boolean; // Flag to indicate this user created the game
 }
 
 export interface GameData {
@@ -135,6 +136,7 @@ export interface SaveGameResponse {
   gameId?: string;
   postedToReddit?: boolean;
   redditPostId?: string;
+  bonusAwarded?: boolean;
   error?: string;
   settings?: {
     isOriginalContent: boolean;
