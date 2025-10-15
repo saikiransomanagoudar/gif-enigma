@@ -730,16 +730,13 @@ Devvit.addCustomPostType({
 
           case 'SAVE_GAME':
             try {
-              const username = await context.reddit.getCurrentUsername();
               const result = await saveGame(event.data, context);
+              
+              // Trigger preview refresh after game creation to reload GamePostPreview
               if (result.success && result.redditPostId) {
-                await context.redis.hSet(`post:${result.redditPostId}`, { gameId: result.gameId! });
-                await context.redis.hSet(`gamePreview:${result.gameId}`, {
-                  maskedWord: event.data.maskedWord,
-                  gifs: JSON.stringify(event.data.gifs),
-                  creatorUsername: username || 'Unknown',
-                });
+                setPostPreviewRefreshTrigger((prev) => prev + 1);
               }
+              
               postMessage({
                 type: 'SAVE_GAME_RESULT',
                 success: result.success,

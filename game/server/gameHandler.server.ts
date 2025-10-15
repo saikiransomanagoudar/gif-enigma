@@ -51,6 +51,7 @@ export async function getRandomGame(
   context: any
 ) {
   try {
+    console.log('[getRandomGame] Starting with params:', params);
     const { excludeIds = [], preferUserCreated = true, username } = params;
     
     // Resolve username to match the resolution done in MARK_GAME_COMPLETED
@@ -64,7 +65,11 @@ export async function getRandomGame(
       if (fetched) resolvedUsername = fetched;
     }
     
+    console.log('[getRandomGame] Resolved username:', resolvedUsername);
+    
     let completedGames: string[] = [];
+    let recentlyViewedGames: string[] = [];
+    
     if (resolvedUsername) {
       const completedGamesKey = `user:${resolvedUsername}:completedGames`;
       
@@ -75,23 +80,68 @@ export async function getRandomGame(
       completedGames = rangeResult.map((item: { member: any }) =>
         typeof item === 'string' ? item : item.member
       );
+      console.log('[getRandomGame] Found completed games:', completedGames.length);
+      
+      // Get recently viewed games (within last 5 minutes)
+      const recentlyViewedKey = `user:${resolvedUsername}:recentlyViewed`;
+      const viewedResult = await context.redis.zRange(recentlyViewedKey, 0, -1, {
+        by: 'score',
+      });
+      
+      recentlyViewedGames = viewedResult.map((item: { member: any }) =>
+        typeof item === 'string' ? item : item.member
+      );
+      console.log('[getRandomGame] Found recently viewed games:', recentlyViewedGames.length);
     }
 
-
-    const allExcluded = [...new Set([...excludeIds, ...completedGames])];
+    const allExcluded = [...new Set([...excludeIds, ...completedGames, ...recentlyViewedGames])];
 
     const gameMembers = await context.redis.zRange('activeGames', '-inf', '+inf', {
       by: 'score',
       reverse: true,
     });
     
+    console.log('[getRandomGame] Total active games:', gameMembers.length);
+    
+    // Limit to 20 games for faster response - prioritize speed over selection variety
+    const maxGamesToCheck = Math.min(gameMembers.length, 20);
+    const gamesToCheck = gameMembers.slice(0, maxGamesToCheck);
+    
+    console.log('[getRandomGame] Checking games:', maxGamesToCheck);
+    
     const gamesWithDates: Array<{ gameId: string; createdAt: number; isUserCreated: boolean }> = [];
+    
+    // Early exit: if we find 5 valid games, stop checking more
+    const targetValidGames = 5;
 
-    for (const item of gameMembers) {
+    for (const item of gamesToCheck) {
+      // Stop if we already have enough valid games
+      if (gamesWithDates.length >= targetValidGames) {
+        break;
+      }
+      
       const gameId = typeof item === 'string' ? item : item.member;
 
       if (allExcluded.includes(gameId)) {
         continue;
+      }
+
+      // Check if user has already played or given up on this game
+      if (resolvedUsername) {
+        const gameStateKey = `gameState:${gameId}:${resolvedUsername}`;
+        const gameState = await context.redis.hGetAll(gameStateKey);
+        
+        if (gameState && gameState.playerState) {
+          try {
+            const parsedState = JSON.parse(gameState.playerState);
+            // Skip games where user has completed or given up
+            if (parsedState.isCompleted || parsedState.hasGivenUp) {
+              continue;
+            }
+          } catch (e) {
+            // If parsing fails, continue checking this game
+          }
+        }
       }
 
       const gameData = await context.redis.hGetAll(`game:${gameId}`);
@@ -131,13 +181,25 @@ export async function getRandomGame(
 
     gamesWithDates.sort((a, b) => b.createdAt - a.createdAt);
 
-    const recentGames = gamesWithDates.slice(0, 10);
+    // Use all found games instead of slicing to 10 since we already limited the search
+    const recentGames = gamesWithDates;
+    
+    console.log('[getRandomGame] Valid games found:', recentGames.length);
 
     if (recentGames.length === 0) {
+      // Check if there are any games at all in the system
+      const totalGamesCount = gameMembers.length;
+      const hasPlayedAllGames = resolvedUsername && completedGames.length > 0 && totalGamesCount > 0;
+      
+      console.log('[getRandomGame] No valid games. hasPlayedAll:', hasPlayedAllGames);
+      
       return {
         success: false,
-        error: 'No valid recent games available',
+        error: hasPlayedAllGames 
+          ? 'You have played all available games! Check back later for new games or create your own.'
+          : 'No games available yet. Be the first to create one!',
         requestedUserCreated: preferUserCreated,
+        hasPlayedAll: hasPlayedAllGames,
       };
     }
 
@@ -153,11 +215,16 @@ export async function getRandomGame(
     const randomIndex = Math.floor(Math.random() * candidatePool.length);
     const selectedGame = candidatePool[randomIndex];
     const randomGameId = selectedGame.gameId;
+    
+    console.log('[getRandomGame] Selected game:', randomGameId);
 
     const gameResult = await getGame({ gameId: randomGameId }, context);
+    
+    console.log('[getRandomGame] Returning result, success:', gameResult.success);
 
     return gameResult;
   } catch (error) {
+    console.error('[getRandomGame] Error:', error);
     return { success: false, error: String(error) };
   }
 }

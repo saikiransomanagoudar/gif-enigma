@@ -14,10 +14,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const isMounted = useRef(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const isHandlingRequest = useRef(false); // Prevent duplicate requests
 
   useEffect(() => {
     setIsLoading(false);
     setShowSuccessMessage(false);
+    isHandlingRequest.current = false; // Reset on mount
     return () => {
       isMounted.current = false;
     };
@@ -75,10 +77,18 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   }, []);
 
   const handlePlayClick = () => {
+    // Prevent multiple simultaneous requests
+    if (isHandlingRequest.current) {
+      return;
+    }
+    
+    isHandlingRequest.current = true;
     setIsLoading(true);
     setShowSuccessMessage(false);
     let retryCount = 0;
     const maxRetries = 3;
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isHandled = false;
 
     const tryFindGame = () => {
       const handleGameResponse = (event: MessageEvent) => {
@@ -90,15 +100,29 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         }
 
         if (message.type === 'GET_RANDOM_GAME_RESULT') {
+          // Prevent handling the same response multiple times
+          if (isHandled) return;
+          isHandled = true;
+          
           window.removeEventListener('message', handleGameResponse);
+          if (timeoutId) clearTimeout(timeoutId);
 
           if (message.success && message.result && message.result.game) {
             const game = message.result.game;
             const redditPostId = game.redditPostId;
 
             if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
+              // Show brief success message and navigate quickly
               setShowSuccessMessage(true);
+              
+              // Use shorter delay (150ms) - just enough to see the animation
               setTimeout(() => {
+                // Reset state before navigation
+                setIsLoading(false);
+                setShowSuccessMessage(false);
+                isHandlingRequest.current = false;
+                
+                // Navigate immediately after state reset
                 window.parent.postMessage(
                   {
                     type: 'NAVIGATE_TO_POST',
@@ -106,22 +130,43 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
                   },
                   '*'
                 );
-              }, 1000);
+              }, 150);
             } else if (retryCount < maxRetries) {
+              isHandled = false; // Reset for retry
               retryCount++;
               setTimeout(tryFindGame, 500);
             } else {
               setIsLoading(false);
               setShowSuccessMessage(false);
-              alert('Could not find a valid game to play. Please try again.');
+              isHandlingRequest.current = false; // Reset flag
+              alert('⚠️ Could not find a valid game to play. Please try again.');
             }
           } else if (retryCount < maxRetries) {
+            isHandled = false; // Reset for retry
             retryCount++;
             setTimeout(tryFindGame, 500);
           } else {
             setIsLoading(false);
             setShowSuccessMessage(false);
-            alert('No games available right now. Please try again later or create a new game!');
+            isHandlingRequest.current = false; // Reset flag
+            
+            // Show contextual error messages
+            const result = message.result || {};
+            let errorMessage = '';
+            
+            if (result.hasPlayedAll) {
+              errorMessage = '🎉 Amazing! You\'ve completed all games! Check back later for new challenges.';
+            } else if (result.error && result.error.includes('No games available yet')) {
+              errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+            } else if (result.error) {
+              errorMessage = result.error;
+            } else if (message.error) {
+              errorMessage = message.error;
+            } else {
+              errorMessage = '😕 No games available right now. Try creating one!';
+            }
+            
+            alert(errorMessage);
           }
         }
       };
@@ -140,13 +185,14 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         '*'
       );
 
-      setTimeout(() => {
-        if (isMounted.current) {
+      // Safety timeout - if no response after 10 seconds, reset UI
+      timeoutId = setTimeout(() => {
+        if (isMounted.current && !isHandled) {
           window.removeEventListener('message', handleGameResponse);
-          if (retryCount >= maxRetries) {
-            setIsLoading(false);
-            setShowSuccessMessage(false);
-          }
+          setIsLoading(false);
+          setShowSuccessMessage(false);
+          isHandlingRequest.current = false; // Reset flag
+          alert('Request timed out. Please try again.');
         }
       }, 10000);
     };

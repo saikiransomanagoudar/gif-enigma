@@ -62,7 +62,7 @@ export const GamePostPreview = ({
 
   // console.log(`GamePostPreview - screenWidth: ${screenWidth}, isVeryNarrow: ${isVeryNarrow}`);
   
-  // Load data only once - NEVER re-run useAsync
+  // Load data with refreshTrigger dependency to support reloading when game is created
   const { data: gameData, loading: isLoading } = useAsync(
     async () => {
       // Don't proceed if no postId
@@ -75,16 +75,32 @@ export const GamePostPreview = ({
         const currentUsername = await context.reddit.getCurrentUsername();
         const username = currentUsername || 'anonymous';
 
-        // Get game ID
-        const gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+        // Get game ID with enhanced retry logic for newly created posts (especially for mobile)
+        let gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+        
+        // Enhanced retry logic with multiple attempts for mobile compatibility
+        let retryCount = 0;
+        const maxRetries = 5;
+        while (!gameId && retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 300 * (retryCount + 1))); // Increasing delay
+          gameId = await context.redis.hGet(`post:${context.postId}`, 'gameId');
+          retryCount++;
+        }
         
         if (!gameId) {
+          console.error(`GamePostPreview: No gameId found for post ${context.postId} after ${maxRetries} retries`);
           return null;
         }
 
-        // Try to get preview data first, then fallback to game data
+        // Try to get preview data first, then fallback to game data with retry
         let previewData = null;
-        const previewDataRaw = await context.redis.hGetAll(`gamePreview:${gameId}`);
+        let previewDataRaw = await context.redis.hGetAll(`gamePreview:${gameId}`);
+
+        // Retry for preview data if not found (mobile timing issue)
+        if (!previewDataRaw || !previewDataRaw.maskedWord) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          previewDataRaw = await context.redis.hGetAll(`gamePreview:${gameId}`);
+        }
 
         if (previewDataRaw && previewDataRaw.maskedWord) {
           previewData = {
@@ -94,6 +110,7 @@ export const GamePostPreview = ({
             redditPostId: context.postId,
           };
         } else {
+          // Fallback to game data
           const gameDataRaw = await context.redis.hGetAll(`game:${gameId}`);
           
           if (gameDataRaw && gameDataRaw.maskedWord) {
@@ -107,6 +124,7 @@ export const GamePostPreview = ({
         }
 
         if (!previewData) {
+          console.error(`GamePostPreview: No preview data found for game ${gameId}`);
           return null;
         }
 
@@ -131,9 +149,8 @@ export const GamePostPreview = ({
       }
     },
     {
-      // CRITICAL: Empty dependencies to prevent infinite loop!
-      // Data loads once and never refreshes
-      depends: [],
+      // Include refreshTrigger to allow reloading when game is created
+      depends: [context.postId || '', refreshTrigger],
     }
   );
 

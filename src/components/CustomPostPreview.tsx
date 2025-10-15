@@ -9,6 +9,10 @@ interface CustomPostPreviewProps {
   isWebViewReady: boolean;
 }
 
+// Global debounce tracker - persists across component renders
+let lastClickTime = 0;
+const DEBOUNCE_MS = 2000; // 2 second debounce
+
 export const CustomPostPreview = ({
   context,
   onMount,
@@ -20,6 +24,9 @@ export const CustomPostPreview = ({
   const cardSize = isSmallScreen
     ? Math.floor((screenWidth || 320) * 0.4)
     : Math.floor((screenWidth || 800) * 0.25);
+  
+  // Add state to prevent multiple clicks
+  const [isSearching, setIsSearching] = useState(false);
   
   // Load initial data once - use data directly, no state
   const { data: initialData, loading } = useAsync(
@@ -43,9 +50,29 @@ export const CustomPostPreview = ({
   const isLoading = loading;
 
   const handlePlayGame = async (retryCount = 0) => {
+    // Global debouncing - check time since last click (but allow retries to bypass)
+    const now = Date.now();
+    if (retryCount === 0 && now - lastClickTime < DEBOUNCE_MS) {
+      return;
+    }
+    
+    // Update timestamp only for initial clicks, not retries
+    if (retryCount === 0) {
+      lastClickTime = now;
+    }
+    
+    // Prevent multiple simultaneous calls
+    if (isSearching) {
+      return;
+    }
+    
+    setIsSearching(true);
     const MAX_RETRIES = 3;
 
     try {
+      // Don't show toast here - it stays visible and confuses users
+      // context.ui.showToast('🔍 Finding a game...');
+      
       const { getRandomGame } = await import('../../game/server/gameHandler.server.js');
 
       const params = {
@@ -54,16 +81,20 @@ export const CustomPostPreview = ({
         username: username || 'anonymous',
       };
 
-      // Add timeout to prevent hanging
+      // Reduce timeout to 8 seconds
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('getRandomGame timeout after 10 seconds')), 10000)
+        setTimeout(() => reject(new Error('Request timed out')), 8000)
       );
 
-      const result = await Promise.race([
+      const result: any = await Promise.race([
         getRandomGame(params, context),
         timeoutPromise
-      ]);
-
+      ]).catch(err => {
+        // Catch any errors including timeout
+        setIsSearching(false);
+        return { success: false, error: err.message || 'Failed to get game' };
+      });
+      
       if (result.success && result.game) {
         const game = result.game;
                 
@@ -73,9 +104,16 @@ export const CustomPostPreview = ({
             const post = await context.reddit.getPostById(game.redditPostId);
             
             if (post && !post.removed) {
-              // Show confirmation toast only after verifying the post is valid
-              context.ui.showToast('🎊 Found a new game!');
+              // Show brief success toast (will auto-clear on navigation)
+              context.ui.showToast({
+                text: '🎮 Game found!',
+                appearance: 'success',
+              });
               
+              // Reset state
+              setIsSearching(false);
+              
+              // Navigate immediately - the toast is just a brief flash
               if (post.url) {
                 context.ui.navigateTo(post.url);
               } else if (post.permalink) {
@@ -88,6 +126,7 @@ export const CustomPostPreview = ({
                 context.ui.navigateTo(postUrl);
               }
             } else {
+              setIsSearching(false);
               if (retryCount < MAX_RETRIES) {
                 handlePlayGame(retryCount + 1);
               } else {
@@ -95,6 +134,7 @@ export const CustomPostPreview = ({
               }
             }
           } catch (error) {
+            setIsSearching(false);
             // Try to find another game with retry limit
             if (retryCount < MAX_RETRIES) {
               handlePlayGame(retryCount + 1);
@@ -103,14 +143,37 @@ export const CustomPostPreview = ({
             }
           }
         } else {
+          setIsSearching(false);
           context.ui.showToast('Could not find a valid game to play. Please try again.');
         }
       } else {
-        context.ui.showToast('No games available! Create your first game by clicking "Let\'s Build"');
+        setIsSearching(false);
+        
+        // Show contextual error messages based on the scenario
+        if (result.hasPlayedAll) {
+          // User has played all available games
+          context.ui.showToast('🎉 Amazing! You\'ve completed all games! Check back later for new challenges.');
+        } else if (result.error && result.error.includes('No games available yet')) {
+          // No games exist in the system
+          context.ui.showToast('🎨 No games yet! Be the first to create one by tapping "Let\'s Build"');
+        } else if (result.error) {
+          // Other errors from backend
+          context.ui.showToast(result.error);
+        } else {
+          // Generic fallback
+          context.ui.showToast('😕 No games available right now. Try creating one!');
+        }
       }
       
     } catch (error) {
-      context.ui.showToast('Error finding a game. Please try again.');
+      setIsSearching(false);
+      // Handle timeout or other errors
+      const errorMessage = error instanceof Error && error.message.includes('timeout') 
+        ? 'Request timed out. Please try again.'
+        : error instanceof Error 
+          ? error.message
+          : 'Error finding a game. Please try again.';
+      context.ui.showToast(errorMessage);
     }
   };
 
