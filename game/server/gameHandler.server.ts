@@ -176,8 +176,14 @@ export async function getRandomGame(
         if (gameState && gameState.playerState) {
           try {
             const parsedState = JSON.parse(gameState.playerState);
-            // Skip games where user has completed or given up (including games they created)
-            if (parsedState.isCompleted || parsedState.hasGivenUp || parsedState.isCreator) {
+            // Skip games where user has completed, given up, or revealed answer (including games they created)
+            // gifHintCount of 999 indicates user gave up and revealed the answer
+            if (
+              parsedState.isCompleted || 
+              parsedState.hasGivenUp || 
+              parsedState.isCreator ||
+              parsedState.gifHintCount >= 999
+            ) {
               continue;
             }
           } catch (e) {

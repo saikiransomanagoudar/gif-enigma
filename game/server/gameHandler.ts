@@ -628,7 +628,8 @@ export async function saveGameState(
     }
 
     // Create a key for this user's state for this specific game
-    const gameStateKey = `gameState:${gameId}:${username}`;
+    // IMPORTANT: Use format gameState:username:gameId (consistent with getRandomGame check)
+    const gameStateKey = `gameState:${username}:${gameId}`;
 
     // Store the player state as a JSON string
     // Remove undefined fields before saving
@@ -671,7 +672,8 @@ export async function getGameState(
       return { success: false, error: 'Missing required parameters' };
     }
 
-    const gameStateKey = `gameState:${gameId}:${username}`;
+    // IMPORTANT: Use format gameState:username:gameId (consistent with saveGameState)
+    const gameStateKey = `gameState:${username}:${gameId}`;
     const gameState = await context.redis.hGetAll(gameStateKey);
 
     if (!gameState || Object.keys(gameState).length === 0) {
