@@ -96,48 +96,35 @@ export async function getRandomGame(
       reverse: true,
     });
     
-    // Limit to 20 games for faster response - prioritize speed over selection variety
-    const maxGamesToCheck = Math.min(gameMembers.length, 20);
+    // Limit to 50 games but process efficiently with batch operations
+    const maxGamesToCheck = Math.min(gameMembers.length, 50);
     const gamesToCheck = gameMembers.slice(0, maxGamesToCheck);
     
     const gamesWithDates: Array<{ gameId: string; createdAt: number; isUserCreated: boolean }> = [];
     
-    // Early exit: if we find 5 valid games, stop checking more
-    const targetValidGames = 5;
+    // Early exit: if we find 10 valid games, stop checking more
+    const targetValidGames = 10;
 
-    for (const item of gamesToCheck) {
-      // Stop if we already have enough valid games
-      if (gamesWithDates.length >= targetValidGames) {
-        break;
-      }
-      
-      const gameId = typeof item === 'string' ? item : item.member;
+    // Batch fetch all game data first to reduce round trips
+    const gameIds = gamesToCheck.map((item: any) => typeof item === 'string' ? item : item.member);
+    const gameDataPromises = gameIds.map((gameId: string) => 
+      context.redis.hGetAll(`game:${gameId}`)
+    );
+    const allGameData = await Promise.all(gameDataPromises);
 
+    // First pass: filter out games based on basic validation (no Redis calls)
+    const validGameCandidates: Array<{ gameId: string; gameData: any; index: number }> = [];
+    
+    for (let i = 0; i < gameIds.length; i++) {
+      const gameId = gameIds[i];
+      const gameData = allGameData[i];
+
+      // Skip already excluded games
       if (allExcluded.includes(gameId)) {
         continue;
       }
 
-      // Check if user has already played or given up on this game
-      if (resolvedUsername) {
-        const gameStateKey = `gameState:${gameId}:${resolvedUsername}`;
-        const gameState = await context.redis.hGetAll(gameStateKey);
-        
-        if (gameState && gameState.playerState) {
-          try {
-            const parsedState = JSON.parse(gameState.playerState);
-            // Skip games where user has completed or given up
-            if (parsedState.isCompleted || parsedState.hasGivenUp) {
-              continue;
-            }
-          } catch (e) {
-            // If parsing fails, continue checking this game
-          }
-        }
-      }
-
-      const gameData = await context.redis.hGetAll(`game:${gameId}`);
-      const createdAt = parseInt(gameData.createdAt || '0');
-
+      // Skip basic validation checks first (fast, no Redis)
       if (!gameData.redditPostId || !gameData.word) {
         continue;
       }
@@ -147,27 +134,73 @@ export async function getRandomGame(
         continue;
       }
 
+      let hasValidGifs = false;
+      if (gameData?.gifs) {
+        try {
+          const gifs = JSON.parse(gameData.gifs);
+          hasValidGifs = Array.isArray(gifs) && gifs.length > 0;
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!hasValidGifs) {
+        continue;
+      }
+
+      // This game passed basic validation
+      validGameCandidates.push({ gameId, gameData, index: i });
+    }
+
+    // Second pass: batch fetch game states for valid candidates (if user is logged in)
+    let gameStates: any[] = [];
+    if (resolvedUsername && validGameCandidates.length > 0) {
+      const gameStatePromises = validGameCandidates.map(({ gameId }) =>
+        context.redis.hGetAll(`gameState:${resolvedUsername}:${gameId}`)
+      );
+      gameStates = await Promise.all(gameStatePromises);
+    }
+
+    // Third pass: build final list of valid games
+    for (let i = 0; i < validGameCandidates.length; i++) {
+      // Stop if we already have enough valid games
+      if (gamesWithDates.length >= targetValidGames) {
+        break;
+      }
+
+      const { gameId, gameData } = validGameCandidates[i];
+      
+      // Check game state if available
+      if (resolvedUsername && gameStates[i]) {
+        const gameState = gameStates[i];
+        if (gameState && gameState.playerState) {
+          try {
+            const parsedState = JSON.parse(gameState.playerState);
+            // Skip games where user has completed or given up (including games they created)
+            if (parsedState.isCompleted || parsedState.hasGivenUp || parsedState.isCreator) {
+              continue;
+            }
+          } catch (e) {
+            // If parsing fails, include this game
+          }
+        }
+      }
+
+      const createdAt = parseInt(gameData.createdAt || '0');
+      
       // Skip real-time Reddit API check during game selection to improve performance
       // The check will happen when the user tries to actually play the game
 
-      let hasValidGifs = false;
-      if (gameData?.gifs) {
-        const gifs = JSON.parse(gameData.gifs);
-        hasValidGifs = Array.isArray(gifs) && gifs.length > 0;
-      }
+      const isUserCreated =
+        gameData.creatorId &&
+        gameData.creatorId !== 'anonymous' &&
+        gameData.creatorId !== 'system';
 
-      if (hasValidGifs) {
-        const isUserCreated =
-          gameData.creatorId &&
-          gameData.creatorId !== 'anonymous' &&
-          gameData.creatorId !== 'system';
-
-        gamesWithDates.push({
-          gameId,
-          createdAt,
-          isUserCreated: !!isUserCreated,
-        });
-      }
+      gamesWithDates.push({
+        gameId,
+        createdAt,
+        isUserCreated: !!isUserCreated,
+      });
     }
 
     gamesWithDates.sort((a, b) => b.createdAt - a.createdAt);

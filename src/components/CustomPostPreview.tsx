@@ -81,9 +81,9 @@ export const CustomPostPreview = ({
         username: username || 'anonymous',
       };
 
-      // Reduce timeout to 8 seconds
+      // Increase timeout to 12 seconds to handle large game databases
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), 8000)
+        setTimeout(() => reject(new Error('Request timed out')), 12000)
       );
 
       const result: any = await Promise.race([
@@ -106,7 +106,7 @@ export const CustomPostPreview = ({
             if (post && !post.removed) {
               // Show brief success toast (will auto-clear on navigation)
               context.ui.showToast({
-                text: '🎮 Game found!',
+                text: '🎮 New Game found!',
                 appearance: 'success',
               });
               
