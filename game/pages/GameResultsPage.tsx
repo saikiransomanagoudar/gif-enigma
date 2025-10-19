@@ -211,7 +211,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   return (
     <div className={`${backgroundColor} flex min-h-screen flex-col p-5`}>
       {/* Header */}
-      <header className="relative mb-5 flex w-full items-center justify-between">
+      <header className="relative mb-3 flex w-full items-center justify-between">
         <button
           onClick={handleBackClick}
           className="flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
@@ -230,35 +230,32 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         <div className="w-20"></div>
       </header>
 
+      {/* Answer Highlight */}
+      <div className="mb-5 text-center">
+        <div style={{ fontWeight: 'bold' }}>
+          <ComicText size={1.0} color="#EAB308">
+            {statistics.answer.toUpperCase()}
+          </ComicText>
+        </div>
+      </div>
+
       {/* Main Content */}
       <div className="mx-auto w-full max-w-3xl">
-        {/* Answer Section
-        <div className="mb-6 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 p-6 text-center shadow-lg">
-          <ComicText size={0.7} color="white">
-            The Answer Was
-          </ComicText>
-          <div className="mt-2">
-            <ComicText size={1.0} color="white">
-              {statistics.answer}
-            </ComicText>
-          </div>
-        </div> */}
-
         {/* Stats Cards */}
-        <div className="mb-6 grid grid-cols-2 gap-4">
-          <div className="rounded-xl bg-white/5 p-4 text-center backdrop-blur-sm dark:bg-gray-800/20">
-            <ComicText size={1.5} color="#2563EB">
+        <div className="mb-6 grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white/5 p-3 text-center backdrop-blur-sm dark:bg-gray-800/20">
+            <ComicText size={1.2} color="#2563EB">
               {statistics.totalPlayers}
             </ComicText>
-            <ComicText size={0.6} color={colors.textSecondary}>
+            <ComicText size={0.55} color={colors.textSecondary}>
               Players
             </ComicText>
           </div>
-          <div className="rounded-xl bg-white/5 p-4 text-center backdrop-blur-sm dark:bg-gray-800/20">
-            <ComicText size={1.5} color="#9333EA">
+          <div className="rounded-xl bg-white/5 p-3 text-center backdrop-blur-sm dark:bg-gray-800/20">
+            <ComicText size={1.2} color="#9333EA">
               {statistics.totalGuesses}
             </ComicText>
-            <ComicText size={0.6} color={colors.textSecondary}>
+            <ComicText size={0.55} color={colors.textSecondary}>
               Total Guesses
             </ComicText>
           </div>

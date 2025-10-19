@@ -43,6 +43,19 @@ Devvit.addSchedulerJob({
     // Check if this is a forced/manual run first
     const force = Boolean(event?.data && (event.data as any).force);
 
+    // Subreddit guard: only run in production subreddit (unless forced)
+    if (!force) {
+      try {
+        const subreddit = await context.reddit.getCurrentSubreddit();
+        const subredditName = subreddit.name.toLowerCase();        
+        if (subredditName !== 'playgifenigma') {
+          return;
+        }
+      } catch (error) {
+        return;
+      }
+    }
+
     // Time guard: only proceed at 09:00, 14:00, and 19:00 America/Chicago (unless forced)
     if (!force) {
       try {
@@ -57,7 +70,7 @@ Devvit.addSchedulerJob({
         const hour = Number(hhStr);
         const minute = Number(mmStr);
 
-        if (!((hour === 9 || hour === 14 || hour === 19) && minute === 0)) {
+        if (!((hour === 9 || hour === 19) && minute === 0)) {
           return;
         }
 

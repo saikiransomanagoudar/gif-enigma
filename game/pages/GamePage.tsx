@@ -49,7 +49,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [guessCount, setGuessCount] = useState(0);
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
-  const [showGiveUpModal, setShowGiveUpModal] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -702,7 +701,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       '*'
     );
     
-    setShowGiveUpModal(true);
+    // Navigate directly to Game Results page instead of showing modal
+    onNavigate('gameResults', { gameId: gameData.id });
   };
 
   const answer = gameData ? gameData.word.toUpperCase() : '';
@@ -1759,77 +1759,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             </div>
           </div>
         </div>
-      )}
-      {showGiveUpModal && (
-        <>
-          <div className="bg-opacity-60 fixed inset-0 z-40 bg-black backdrop-blur-sm transition-all duration-500"></div>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
-            <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-sm sm:max-w-md max-h-[95vh] overflow-y-auto rounded-xl border-2 border-red-600 bg-gradient-to-b from-gray-900 to-red-900 shadow-2xl">
-              <div className="relative border-b border-red-800 p-3 sm:p-4 text-center">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="bg-opacity-70 h-24 w-24 sm:h-32 sm:w-32 rounded-full bg-red-900 blur-xl"></div>
-                </div>
-
-                <div className="mb-1 inline-block transform">
-                  <div className="mb-1 text-3xl sm:text-4xl">🏳️</div>
-                </div>
-
-                <div className="relative z-10">
-                  <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-3 py-1.5 sm:px-4 sm:py-2 shadow-lg">
-                    <ComicText size={1.2} color="#ff6b6b">
-                      Game Over!
-                    </ComicText>
-                  </div>
-                  <div className="mt-1 sm:mt-2">
-                    <ComicText size={0.7} color="#ffa07a">
-                      Don't give up, try again next time
-                    </ComicText>
-                  </div>
-                </div>
-              </div>
-              <div className="p-3 sm:p-4 text-center">
-                <div className="bg-opacity-50 mb-3 sm:mb-4 rounded-lg border border-red-700 bg-red-900 p-2 sm:p-3">
-                  <ComicText size={0.6} color="#fff">
-                    The answer was:
-                  </ComicText>
-                  <div className="mt-1 sm:mt-2 rounded p-1.5 sm:p-2 text-lg sm:text-xl font-bold text-white shadow-lg break-words">
-                    {gameData?.word.toUpperCase()}
-                  </div>
-                </div>
-                <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2">
-                  <button
-                    onClick={() => {
-                      onNavigate('landing');
-                    }}
-                    className="w-full sm:w-auto flex cursor-pointer items-center gap-1.5 sm:gap-2 rounded-md px-4 py-2 sm:px-5 sm:py-2.5 text-white transition-all duration-200 justify-center bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
-                    aria-label="Try Another Game"
-                    title="Try Another Game"
-                  >
-                    <span className="text-base sm:text-lg">🎮</span>
-                    <span>
-                      <ComicText size={0.6} color="white">
-                        Try Another Game
-                      </ComicText>
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      onNavigate('leaderboard');
-                    }}
-                    className="w-full sm:w-auto flex cursor-pointer items-center gap-1.5 sm:gap-2 rounded-md px-4 py-2 sm:px-5 sm:py-2.5 text-white transition-all duration-200 justify-center bg-gradient-to-r from-sky-600 to-blue-600 shadow-lg hover:-translate-y-0.5 hover:shadow-xl"
-                    aria-label="View Leaderboard"
-                    title="View Leaderboard"
-                  >
-                    <span className="text-base sm:text-lg">🏆</span>
-                    <span>
-                      <ComicText size={0.6} color="white">View Leaderboard</ComicText>
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
       )}
     </div>
   );

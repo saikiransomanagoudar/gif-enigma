@@ -65,6 +65,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [currentRecIndex, setCurrentRecIndex] = useState<number>(0);
   const [secretInput, setSecretInput] = useState<string>('');
   const [synonyms, setSynonyms] = useState<string[][]>([]);
+  // @ts-ignore - Used internally for state management, display logic uses synonyms.length
   const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(false);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
   
@@ -72,6 +73,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const recommendationsCache = useRef<{ [key: string]: string[] }>({});
   const synonymsCache = useRef<{ [key: string]: string[][] }>({});
   const currentWordRef = useRef<string>(''); // Track current word immediately, before state updates
+  const hasShownDataRef = useRef<{ [key: string]: boolean }>({}); // Track if user has seen data for this cache key
+  const pendingRequestsRef = useRef<Set<string>>(new Set()); // Track all pending API requests by cache key
 
   // GIF states
   // @ts-ignore
@@ -117,6 +120,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (!recommendationsCache.current[oppositeCacheKey]) {
       // Fetch in background without showing loading state
       setTimeout(() => {
+        // Track this pre-fetch request
+        pendingRequestsRef.current.add(oppositeCacheKey);
+        
         window.parent.postMessage(
           {
             type: 'GET_GEMINI_RECOMMENDATIONS',
@@ -177,24 +183,32 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       currentWordRef.current = cachedData[0]; // Update ref immediately
       setSecretInput(cachedData[0]);
       setIsLoadingRecommendations(false);
+      hasShownDataRef.current[cacheKey] = true; // Mark as shown
       
-      // Check if synonyms are already cached
+      // Check if synonyms are already cached, otherwise show loading state
       if (synonymsCache.current[cachedData[0]]) {
         setSynonyms(synonymsCache.current[cachedData[0]]);
+        setIsLoadingSynonyms(false);
       } else {
+        // Show loading state instead of fallback
+        setSynonyms([]);
+        setIsLoadingSynonyms(true);
+        // Then fetch real synonyms in background
         fetchSynonyms(cachedData[0]);
       }
       return;
     }
     
-    // Show loading state
+    // Show loading state immediately - no fallback data shown
     setIsLoadingRecommendations(true);
+    setSecretInput('');
+    setSynonyms([]);
+    setIsLoadingSynonyms(true);
     
-    // Immediately set fallback as a temporary placeholder to avoid "No recommendations" flash
-    const fallbackData = getFallbackRecommendations();
-    setSecretInput(fallbackData[0]);
-    currentWordRef.current = fallbackData[0];
+    // Track that we're making a request for this specific cache key
+    pendingRequestsRef.current.add(cacheKey);
     
+    // Send API request immediately
     window.parent.postMessage(
       {
         type: 'GET_GEMINI_RECOMMENDATIONS',
@@ -206,27 +220,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
-
-    // Set a timeout to permanently use fallback data if API doesn't respond
+    
+    // Fallback timeout after 10 seconds in case API fails
     setTimeout(() => {
-      // Check if we still don't have real data in the cache
-      if (!recommendationsCache.current[cacheKey] || recommendationsCache.current[cacheKey].length === 0) {
-        setIsLoadingRecommendations(false);
-        
-        // Store in cache for future use
+      // Only show fallback if API hasn't responded yet (check if still pending)
+      if (pendingRequestsRef.current.has(cacheKey)) {
+        const fallbackData = getFallbackRecommendations();
         recommendationsCache.current[cacheKey] = fallbackData;
-        
         setRecommendations(fallbackData);
-        setCurrentRecIndex(0);
-        currentWordRef.current = fallbackData[0];
         setSecretInput(fallbackData[0]);
+        currentWordRef.current = fallbackData[0];
+        setIsLoadingRecommendations(false);
+        hasShownDataRef.current[cacheKey] = true;
         fetchSynonyms(fallbackData[0]);
+        pendingRequestsRef.current.delete(cacheKey);
       }
-    }, 5000); // 5 second timeout
+    }, 10000);
   };
 
   const getFallbackSynonyms = (word: string) => {
     const synonymMap: { [key: string]: string[][] } = {
+      // Words
       'ELEPHANT': [['animal', 'large', 'trunk', 'gray'], ['mammal', 'big', 'ivory', 'herd'], ['creature', 'huge', 'tusk', 'safari'], ['beast', 'massive', 'memory', 'zoo']],
       'BUTTERFLY': [['insect', 'wings', 'colorful', 'fly'], ['caterpillar', 'metamorphosis', 'beautiful', 'flutter'], ['pollinate', 'delicate', 'spring', 'garden'], ['transform', 'graceful', 'pattern', 'flower']],
       'RAINBOW': [['colors', 'rain', 'sky', 'arc'], ['spectrum', 'prism', 'light', 'beautiful'], ['seven', 'vibrant', 'nature', 'hope'], ['weather', 'bright', 'magical', 'end']],
@@ -234,7 +248,24 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       'OCEAN': [['sea', 'water', 'waves', 'blue'], ['deep', 'vast', 'marine', 'salt'], ['current', 'tide', 'shore', 'fish'], ['aquatic', 'huge', 'surf', 'boat']],
       'STARWARS': [['space', 'lightsaber', 'force', 'jedi'], ['galaxy', 'darth', 'vader', 'rebel'], ['yoda', 'luke', 'princess', 'leia'], ['death', 'star', 'empire', 'hope']],
       'POKEMON': [['pikachu', 'catch', 'trainer', 'battle'], ['ash', 'gym', 'evolution', 'pokeball'], ['gotta', 'catch', 'em', 'all'], ['monster', 'creature', 'adventure', 'friend']],
-      'HARRY': [['potter', 'wizard', 'hogwarts', 'magic'], ['spell', 'wand', 'voldemort', 'hermione'], ['ron', 'weasley', 'quidditch', 'dumbledore'], ['gryffindor', 'invisibility', 'cloak', 'phoenix']]
+      'HARRY': [['potter', 'wizard', 'hogwarts', 'magic'], ['spell', 'wand', 'voldemort', 'hermione'], ['ron', 'weasley', 'quidditch', 'dumbledore'], ['gryffindor', 'invisibility', 'cloak', 'phoenix']],
+      'BATMAN': [['dark', 'knight', 'gotham', 'hero'], ['bruce', 'wayne', 'cape', 'bat'], ['joker', 'villain', 'justice', 'fight'], ['superhero', 'batmobile', 'robin', 'cave']],
+      'FROZEN': [['ice', 'cold', 'snow', 'winter'], ['elsa', 'anna', 'princess', 'disney'], ['let it go', 'olaf', 'kingdom', 'magic'], ['sisters', 'love', 'frozen heart', 'snowman']],
+      
+      // Phrases - Movies
+      'MAY THE FORCE BE WITH YOU': [['star wars', 'jedi', 'force', 'power'], ['lightsaber', 'space', 'galaxy', 'sci-fi'], ['luke skywalker', 'rebellion', 'empire', 'hope'], ['iconic', 'movie quote', 'blessing', 'farewell']],
+      'I AM YOUR FATHER': [['star wars', 'darth vader', 'reveal', 'twist'], ['shocking', 'truth', 'dark side', 'villain'], ['luke', 'family', 'secret', 'father'], ['plot twist', 'iconic line', 'dramatic', 'revelation']],
+      'TO INFINITY AND BEYOND': [['toy story', 'buzz', 'catchphrase', 'space'], ['adventure', 'limitless', 'forever', 'pixar'], ['toys', 'flying', 'heroic', 'optimistic'], ['iconic quote', 'animated', 'childhood', 'dreams']],
+      
+      // Phrases - Gaming
+      'GAME OVER': [['defeat', 'lost', 'retry', 'arcade'], ['end', 'failure', 'try again', 'classic'], ['screen', 'gaming', 'finished', 'done'], ['retro', 'pixel', 'game end', 'loser']],
+      'LEVEL UP': [['progress', 'upgrade', 'advance', 'skill'], ['gaming', 'achievement', 'success', 'grow'], ['experience', 'power up', 'improve', 'rank'], ['rpg', 'stats', 'stronger', 'victory']],
+      'NEW HIGH SCORE': [['achievement', 'record', 'winner', 'best'], ['gaming', 'arcade', 'leaderboard', 'top'], ['success', 'victory', 'champion', 'first'], ['beat', 'highest', 'scoreboard', 'celebrate']],
+      
+      // Phrases - General
+      'ONCE UPON A TIME': [['story', 'fairy tale', 'beginning', 'fantasy'], ['narrative', 'opening', 'classic', 'magical'], ['storybook', 'imagination', 'adventure', 'tale'], ['princess', 'kingdom', 'enchanted', 'legend']],
+      'HAPPY BIRTHDAY': [['celebration', 'party', 'cake', 'gift'], ['congratulations', 'special day', 'wishes', 'joy'], ['balloons', 'candles', 'age', 'festive'], ['song', 'celebrate', 'present', 'friend']],
+      'GOOD MORNING': [['greeting', 'hello', 'wake up', 'sunrise'], ['breakfast', 'early', 'start', 'day'], ['cheerful', 'fresh', 'new day', 'positive'], ['coffee', 'sunshine', 'smile', 'energy']],
     };
 
     return synonymMap[word.toUpperCase()] || [
@@ -246,13 +277,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const fetchSynonyms = async (word: string) => {
-    // Check cache first
+    // Check cache first - but only use it if it's NOT fallback data
     if (synonymsCache.current[word]) {
       setSynonyms(synonymsCache.current[word]);
+      setIsLoadingSynonyms(false);
       return;
     }
     
+    // Show loading state immediately instead of fallback
+    setSynonyms([]);
     setIsLoadingSynonyms(true);
+    
     window.parent.postMessage(
       {
         type: 'GET_GEMINI_SYNONYMS',
@@ -260,17 +295,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
-
-    // Fallback for synonyms too
-    setTimeout(() => {
-      if (isLoadingSynonyms) {
-        setIsLoadingSynonyms(false);
+    
+    // Fallback timeout after 10 seconds in case API fails
+    const timeoutId = setTimeout(() => {
+      // Only show fallback if we still don't have data for this specific word
+      if (currentWordRef.current === word && (!synonymsCache.current[word] || synonymsCache.current[word].length === 0)) {
         const fallbackSynonyms = getFallbackSynonyms(word);
-        // Cache the fallback synonyms
-        synonymsCache.current[word] = fallbackSynonyms;
         setSynonyms(fallbackSynonyms);
+        setIsLoadingSynonyms(false);
       }
-    }, 3000); // 3 second timeout
+    }, 10000);
+    
+    // Store timeout ID so we can clear it if needed
+    return () => clearTimeout(timeoutId);
   };
 
   const getNextRecommendation = () => {
@@ -295,8 +332,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       // Check if synonyms are already cached for instant update
       if (synonymsCache.current[nextWord]) {
         setSynonyms(synonymsCache.current[nextWord]);
+        setIsLoadingSynonyms(false);
       } else {
-        // Fetch if not cached
+        // Show loading state instead of fallback
+        setSynonyms([]);
+        setIsLoadingSynonyms(true);
+        // Fetch real synonyms in background
         fetchSynonyms(nextWord);
       }
 
@@ -372,61 +413,63 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         if (msg.success && Array.isArray(msg.result)) {
           const filtered = msg.result.filter((r: string) => r.length >= 5);
           
-          // Determine which category/type this response is for
-          // We need to check if this is for the current active type or background pre-fetch
+          // Find which pending request this response is for
+          // Check both current and opposite types
           const currentCacheKey = `${currentCategory}-${inputType}`;
-          
-          // Always cache the results
-          // Try to match to current or opposite type based on result patterns
-          let cacheKey = currentCacheKey;
           const oppositeType: 'word' | 'phrase' = inputType === 'word' ? 'phrase' : 'word';
           const oppositeCacheKey = `${currentCategory}-${oppositeType}`;
           
-          // If current cache already exists and this looks different, it's probably for opposite type
-          if (recommendationsCache.current[currentCacheKey] && !recommendationsCache.current[oppositeCacheKey]) {
+          // Determine which cache key this response belongs to
+          let cacheKey = currentCacheKey;
+          if (pendingRequestsRef.current.has(currentCacheKey)) {
+            cacheKey = currentCacheKey;
+            pendingRequestsRef.current.delete(currentCacheKey);
+          } else if (pendingRequestsRef.current.has(oppositeCacheKey)) {
             cacheKey = oppositeCacheKey;
+            pendingRequestsRef.current.delete(oppositeCacheKey);
           }
+          // If neither pending, default to current (shouldn't happen)
           
+          // Store the API result in the correct cache
           recommendationsCache.current[cacheKey] = filtered;
           
-          // Only update UI if this is for the current active type AND we don't already have data
-          // (to avoid overwriting fallback data that was already shown)
+          // Only update UI if this is for the current active type
           if (cacheKey === currentCacheKey && filtered.length > 0) {
             setIsLoadingRecommendations(false);
             
-            // Only update if we don't have a secretInput yet, or if this is fresh data
-            if (!secretInput || recommendations.length === 0) {
-              setRecommendations(filtered);
-              setCurrentRecIndex(0);
-              currentWordRef.current = filtered[0]; // Update ref immediately
-              setSecretInput(filtered[0]);
-              // Fetch synonyms immediately for the first recommendation
-              fetchSynonyms(filtered[0]);
-              
-              // Pre-fetch synonyms for ALL recommendations in the background
-              filtered.slice(1).forEach((word: string, index: number) => {
-                // Stagger the requests slightly to avoid overwhelming the API
-                setTimeout(() => {
-                  if (!synonymsCache.current[word]) {
-                    window.parent.postMessage(
-                      {
-                        type: 'GET_GEMINI_SYNONYMS',
-                        data: { word },
-                      },
-                      '*'
-                    );
-                  }
-                }, (index + 1) * 500); // 500ms delay between each request
-              });
-            }
+            // Update UI with API data
+            setRecommendations(filtered);
+            setCurrentRecIndex(0);
+            currentWordRef.current = filtered[0]; // Update ref immediately
+            setSecretInput(filtered[0]);
+            hasShownDataRef.current[cacheKey] = true; // Mark as shown
+            
+            // Fetch synonyms for the first word
+            fetchSynonyms(filtered[0]);
+            
+            // Pre-fetch synonyms for ALL recommendations in the background
+            filtered.slice(1).forEach((word: string, index: number) => {
+              // Stagger the requests slightly to avoid overwhelming the API
+              setTimeout(() => {
+                if (!synonymsCache.current[word]) {
+                  window.parent.postMessage(
+                    {
+                      type: 'GET_GEMINI_SYNONYMS',
+                      data: { word },
+                    },
+                    '*'
+                  );
+                }
+              }, (index + 1) * 500); // 500ms delay between each request
+            });
           }
         } else {
-          // Only clear state if we don't already have fallback data
-          if (!secretInput) {
+          // Only show fallback if we don't already have data
+          const cacheKey = `${currentCategory}-${inputType}`;
+          if (!secretInput && !recommendationsCache.current[cacheKey]) {
             setIsLoadingRecommendations(false);
             // Use fallback recommendations instead of leaving empty
             const fallbackData = getFallbackRecommendations();
-            const cacheKey = `${currentCategory}-${inputType}`;
             recommendationsCache.current[cacheKey] = fallbackData;
             setRecommendations(fallbackData);
             setCurrentRecIndex(0);
@@ -434,12 +477,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             setSecretInput(fallbackData[0]);
             fetchSynonyms(fallbackData[0]);
           }
+          pendingRequestsRef.current.delete(cacheKey);
         }
       }
 
       if (msg.type === 'GET_GEMINI_SYNONYMS_RESULT') {
-        setIsLoadingSynonyms(false);
-        if (msg.success && Array.isArray(msg.result)) {
+        if (msg.success && Array.isArray(msg.result) && msg.result.length > 0) {
           // Cache successful synonyms response
           // Use msg.word if available (for pre-fetched synonyms), otherwise use currentWordRef
           const wordForCache = msg.word || currentWordRef.current;
@@ -449,11 +492,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           // Only update UI if this is for the current word (use ref for immediate comparison)
           if (wordForCache === currentWordRef.current) {
             setSynonyms(msg.result);
+            // Only stop loading if we actually have data now
+            if (msg.result.length >= 4) {
+              setIsLoadingSynonyms(false);
+            }
           }
         } else {
-          // Only clear if this is for the current word
-          if (!msg.word || msg.word === currentWordRef.current) {
-            setSynonyms([]);
+          // On failure, show fallback only for the current word
+          if (currentWordRef.current && !synonymsCache.current[currentWordRef.current]) {
+            const fallbackSynonyms = getFallbackSynonyms(currentWordRef.current);
+            setSynonyms(fallbackSynonyms);
+            setIsLoadingSynonyms(false); // Stop loading after showing fallback
           }
         }
       }
@@ -677,6 +726,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           const gif = selectedGifs[index];
           const defaultSynonym = synonyms[index]?.[0] || '';
           const boxNumber = index + 1;
+          // Show loading if we don't have enough synonyms yet (need at least 4)
+          const showLoading = synonyms.length < 4 || !defaultSynonym;
 
           return (
             <div
@@ -710,7 +761,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               ) : (
                 <button
                   onClick={() => {
-                    if (!isLoadingSynonyms && defaultSynonym) {
+                    if (!showLoading && defaultSynonym) {
                       setSelectedGifIndex(index);
                       setShowSearchInput(true);
                       setSearchTerm(defaultSynonym);
@@ -720,28 +771,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     }
                   }}
                   className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${
-                    isLoadingSynonyms && !defaultSynonym ? 'cursor-not-allowed opacity-60' : 'hover:scale-105'
+                    showLoading ? 'cursor-not-allowed opacity-60' : 'hover:scale-105'
                   }`}
                 >
                   <div className="mb-1 text-2xl transition-transform duration-300 hover:rotate-12">
-                    {isLoadingSynonyms && !defaultSynonym ? '⏳' : '➕'}
+                    {showLoading ? '⏳' : '➕'}
                   </div>
                   <div className="transition-all duration-300">
                     <ComicText size={0.6} color={colors.textSecondary}>
-                      {isLoadingSynonyms && !defaultSynonym ? (
+                      {showLoading ? (
                         <span className="hint-text transition-all duration-300 ease-in-out">
                           Loading synonyms...
                         </span>
                       ) : (
                         <>
-                          {/* {secretInput && (
-                            <span className="block">
-                              <span className="inline-block">{inputType === 'word' ? 'Word:' : 'Phrase:'}</span>{' '}
-                              <span className={`hint-text transition-all duration-300 ease-in-out ${categoryColor}`}>
-                                {secretInput}
-                              </span>
-                            </span>
-                          )} */}
                           {defaultSynonym ? (
                             <span className="block mt-1">
                               <span className="inline-block">Synonym:</span>{' '}
