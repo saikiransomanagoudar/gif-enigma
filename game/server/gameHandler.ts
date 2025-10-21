@@ -871,6 +871,7 @@ export async function getGameStatistics(
         totalPlayers: playersCount,
         totalGuesses,
         guesses,
+        creatorUsername: gameData.username,
       },
     };
   } catch (error) {

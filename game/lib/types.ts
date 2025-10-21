@@ -232,6 +232,7 @@ export interface GameStatistics {
   totalPlayers: number;
   totalGuesses: number;
   guesses: GuessData[];
+  creatorUsername?: string;
 }
 
 export interface GetGameStatisticsResponse {

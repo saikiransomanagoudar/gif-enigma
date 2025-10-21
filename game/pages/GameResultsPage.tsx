@@ -338,9 +338,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             // 1. Game state has loaded (isGameStateLoaded = true)
             // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
             // 3. User hasn't already commented (hasAlreadyCommented = false)
+            // 4. User is not the game creator
             // Note: If gameState is null after loading, user hasn't played yet (show button)
             const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
-            const shouldShow = isGameStateLoaded && !hasGivenUp && !hasAlreadyCommented;
+            const isCreator = statistics?.creatorUsername && username === statistics.creatorUsername;
+            const shouldShow = isGameStateLoaded && !hasGivenUp && !hasAlreadyCommented && !isCreator;
             return shouldShow;
           })() && (
             <button
