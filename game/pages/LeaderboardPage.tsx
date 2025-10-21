@@ -137,17 +137,17 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
               <div key={index} className="grid py-3 border-b dark:border-gray-700 items-center gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr auto' }}>
                 <div className="flex justify-start items-center pl-2">
                   {index === 0 ? (
-                    <span className="text-base leading-none inline-block w-5 text-center">🥇</span>
+                    <span className="text-2xl leading-none inline-block w-5 text-center">🥇</span>
                   ) : index === 1 ? (
-                    <span className="text-base leading-none inline-block w-5 text-center">🥈</span>
+                    <span className="text-2xl leading-none inline-block w-5 text-center">🥈</span>
                   ) : index === 2 ? (
-                    <span className="text-base leading-none inline-block w-5 text-center">🥉</span>
+                    <span className="text-2xl leading-none inline-block w-5 text-center">🥉</span>
                   ) : (
-                    <ComicText><span className="font-semibold inline-block w-5 text-left">{index + 1}</span></ComicText>
+                    <ComicText><span className="font-semibold inline-block w-5 text-center pl-2">{index + 1}</span></ComicText>
                   )}
                 </div>
                 <div className="flex justify-start">
-                  <ComicText><span className="max-sm:text-sm">{entry.username}</span></ComicText>
+                  <ComicText><span className={`max-sm:text-sm ${index < 3 ? 'text-lg font-semibold' : 'text-base'}`}>{entry.username}</span></ComicText>
                 </div>
                 <div className="flex justify-end pr-2">
                   <ComicText><span className="font-bold text-green-600">{entry.bestScore.toLocaleString()}</span></ComicText>
@@ -167,22 +167,22 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
         <div className="flex items-center justify-between px-3 py-3 max-w-full gap-2">
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <span className="text-base sm:text-lg">📊</span>
-            <ComicText size={0.65}>
-              <span className={`${isDarkMode ? "text-gray-300" : "text-gray-700"} whitespace-nowrap`}>Your Stats:</span>
+            <ComicText size={0.70}>
+              <span className={`${isDarkMode ? "text-gray-300" : "text-gray-700"} whitespace-nowrap`}>Your Stats</span>
             </ComicText>
           </div>
           {userStats ? (
-            <div className="flex items-center gap-2 sm:gap-4 flex-shrink min-w-0">
-              <ComicText size={0.65}>
-                <span className="font-bold text-green-600 truncate">{userStats.totalScore.toLocaleString()} pts</span>
+            <div className="flex items-center gap-2 sm:gap-4 flex-shrink overflow-x-auto scrollbar-hide">
+              <ComicText size={0.70}>
+                <span className="font-bold text-[#FF4500] whitespace-nowrap">#{userStats.rank.toLocaleString()}</span>
               </ComicText>
               <span className={`${isDarkMode ? "text-gray-400" : "text-gray-500"} flex-shrink-0`}>|</span>
-              <ComicText size={0.65}>
-                <span className="font-bold text-[#FF4500] truncate">#{userStats.rank.toLocaleString()}</span>
+              <ComicText size={0.70}>
+                <span className="font-bold text-green-600 whitespace-nowrap">{userStats.totalScore.toLocaleString()}</span>
               </ComicText>
             </div>
           ) : (
-            <ComicText size={0.65}>
+            <ComicText size={0.70}>
               <span className={isDarkMode ? "text-gray-400" : "text-gray-500"}>Loading...</span>
             </ComicText>
           )}
