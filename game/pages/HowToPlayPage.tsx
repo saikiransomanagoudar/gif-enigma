@@ -41,13 +41,13 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
         className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
+        transition={{ duration: 0.3 }}
       >
         <motion.header
           className="mb-6 flex items-center justify-between border-b-2 border-gray-400 pb-6"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
         >
           <motion.div
             onClick={() => onNavigate('landing')}
@@ -70,39 +70,38 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           className={`${textColor} space-y-10`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
         >
           <section>
             <motion.h3
               className="text-primary mb-4 text-center text-2xl font-bold"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
+              transition={{ duration: 0.3, delay: 0.3 }}
             >
               <ComicText size={1.25} className="text-[#E8E5DA]">
-                Play mode
+                Decoding
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['🎬', '👁️', '💡', '⌨️', '🏆'].map((_icon, index) => (
+              {['🖼️', '👁️', '💡', '⌨️'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.8 + index * 0.2 }}
+                  transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
                 >
                   <span className="mr-4 text-3xl">
-                    {['🖼️', '⌨️', '💡', '⚖️', '🔠', '🏆', '🎯'][index]}
+                    {icon}
                   </span>
-                  <ComicText className="text-lg">
+                  <ComicText size={0.9} className="text-lg">
                     {
                       [
-                        'Each question contains 4 GIFs as clues.',
-                        'Initially, only the first GIF is shown.',
-                        'If you need help, reveal more GIFs/letters as hints.',
-                        'Type your guess in the input field to guess the word/phrase.',
-                        'Score points and compete on the leaderboard.',
+                        'Each puzzle has 4 GIFs, only the first one is revealed at the start.',
+                        'Stuck? Reveal more GIFs or letters as hints (each hint costs points!).',
+                        'Type your guess, the fewer hints you use, the higher your score.',
+                        'Guess your answer and climb the leaderboard!',
                       ][index]
                     }
                   </ComicText>
@@ -115,16 +114,16 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             className="mt-8"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 1.4 }}
+            transition={{ duration: 0.3, delay: 0.8 }}
           >
             <motion.h3
               className="mb-4 text-center text-2xl font-bold text-[#E8E5DA]"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 1.6 }}
+              transition={{ duration: 0.3, delay: 0.9 }}
             >
               <ComicText size={1.25} className="">
-                Create mode
+                Creating
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
@@ -134,16 +133,16 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   className="flex items-center"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 1.8 + index * 0.2 }}
+                  transition={{ duration: 0.3, delay: 1.0 + index * 0.1 }}
                 >
                   <span className="mr-4 text-3xl">{icon}</span>
-                  <ComicText className="text-lg">
+                  <ComicText size={0.9} className="text-lg">
                     {
                       [
-                        'Select a secret word/phrase for others to guess.',
-                        'Your selected word/phrase will come with synonyms that serve as search query for GIFs.',
-                        'Select 4 GIFs (from Abstract to Direct match) for your secret word (choose wisely!).',
-                        'Create a game, and let others guess your word/phrase!',
+                        'Pick a secret word/phrase, shuffle through suggestions until you find the perfect one!',
+                        'Your selected word/phrase will come with synonyms that serve as search query for GIFs in each slot.',
+                        'Choose 4 GIFs, one for each synonym level (abstract to direct).',
+                        'Hit "Create GIF Enigma" to post your puzzle and earn XP as a creator!',
                       ][index]
                     }
                   </ComicText>
@@ -153,30 +152,22 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           </motion.section>
         </motion.div>
 
-        <motion.div
+        {/* <motion.div
           className="mt-10 flex flex-col items-center space-y-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 2 }}
+          transition={{ duration: 0.3, delay: 1.4 }}
         >
-          {/* <motion.h3
-            className="text-primary text-center text-2xl font-bold"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 2.2 }}
-          >
-            <ComicText>Decode the clues, manage your points, and crack the GIF enigma!</ComicText>
-          </motion.h3> */}
           <motion.button
             onClick={() => onNavigate('landing')}
             className="transform cursor-pointer rounded-full bg-[#E8E5DA] px-8 py-4 text-lg text-white shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 2.4 }}
+            transition={{ duration: 0.3, delay: 1.5 }}
           >
             <ComicText>Get Started!</ComicText>
           </motion.button>
-        </motion.div>
+        </motion.div> */}
       </motion.div>
     </PageTransition>
   );
