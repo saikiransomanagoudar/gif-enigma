@@ -36,6 +36,7 @@ export interface GameData {
   redditPostId?: string;
   preview?: GamePreviewData;
   isChatPost?: boolean;
+  acceptedSynonyms?: string[]; // Same-length semantic synonyms for validation
 }
 
 export interface GamePreviewData {
@@ -233,6 +234,7 @@ export interface GameStatistics {
   totalGuesses: number;
   guesses: GuessData[];
   creatorUsername?: string;
+  acceptedSynonyms?: string[];
 }
 
 export interface GetGameStatisticsResponse {

@@ -97,6 +97,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   // @ts-ignore
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [loadingStage, setLoadingStage] = useState<number>(0); // 0, 1, 2 for progress steps
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
@@ -110,6 +111,24 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
+
+  // Animate through loading stages - cycle through all stages continuously
+  useEffect(() => {
+    if (!isSearching) {
+      setLoadingStage(0);
+      return;
+    }
+    
+    const timer1 = setTimeout(() => setLoadingStage(1), 1500);
+    const timer2 = setTimeout(() => setLoadingStage(2), 3000);
+    const timer3 = setTimeout(() => setLoadingStage(0), 4500);
+    
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+    };
+  }, [isSearching, loadingStage]);
 
   // Pre-fetch both word and phrase recommendations on mount for instant toggling
   useEffect(() => {
@@ -888,18 +907,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
            {isSearching && (
              <div className="flex flex-col items-center justify-center pt-12 pb-8">
                <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
-               <ComicText size={0.7} color="#60A5FA" className="mt-12 text-center">
-                 Searching for GIFs...
-               </ComicText>
+               <div className="mt-2">
+                 <ComicText size={0.7} color="#60A5FA" className="text-center">
+                   {loadingStage === 0 && `🔍 Analyzing your ${inputType}...`}
+                   {loadingStage === 1 && '🎬 Searching GIF library...'}
+                   {loadingStage === 2 && '✨ Selecting best matches...'}
+                 </ComicText>
+               </div>
                <ComicText size={0.5} color="#94A3B8" className="mt-2 text-center">
-                 This may take a few moments while we fetch GIFs for the first time. Thanks for your patience!
+                 First load may take 10-15 seconds
                </ComicText>
              </div>
            )}
           {!isSearching && gifs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8">
               <ComicText size={0.6} color="#94A3B8" className="text-center">
-                No GIFs found. Try a different search term.
+                No GIFs found. Try a different word/phrase.
               </ComicText>
             </div>
           )}

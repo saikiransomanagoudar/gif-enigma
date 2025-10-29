@@ -19,6 +19,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [hasAlreadyCommented, setHasAlreadyCommented] = useState(false);
   const [gameState, setGameState] = useState<any>(null);
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
+  const [acceptedSynonyms, setAcceptedSynonyms] = useState<string[]>([]);
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -72,6 +73,14 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       }
     }
   }, [username, gameId]);
+
+  // Fetch synonyms for the answer word when statistics are loaded
+  // This is now retrieved from the game data (pre-computed at creation time)
+  useEffect(() => {
+    if (statistics?.acceptedSynonyms) {
+      setAcceptedSynonyms(statistics.acceptedSynonyms);
+    }
+  }, [statistics]);
 
   useEffect(() => {
     if (!gameId) {
@@ -154,6 +163,37 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     onNavigate('landing');
   };
 
+  // Helper function to check if a guess is correct (exact match or valid synonym)
+  const isGuessCorrect = (guess: string, answer: string): boolean => {
+    const normalizeString = (str: string) => 
+      str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
+    
+    const normalizedGuess = normalizeString(guess);
+    const normalizedAnswer = normalizeString(answer);
+    
+    // Check exact match first
+    if (normalizedGuess === normalizedAnswer) {
+      return true;
+    }
+    
+    // Check if lengths match (requirement for synonym validation)
+    if (normalizedGuess.length !== normalizedAnswer.length) {
+      return false;
+    }
+    
+    // Check if guess is in the acceptedSynonyms list (pre-computed at game creation)
+    if (acceptedSynonyms && acceptedSynonyms.length > 0) {
+      const normalizedSynonyms = acceptedSynonyms.map(syn => normalizeString(syn));
+      
+      // Check if the normalized guess matches any accepted synonym
+      return normalizedSynonyms.some(syn => 
+        syn === normalizedGuess && syn.length === normalizedAnswer.length
+      );
+    }
+    
+    return false;
+  };
+
   const handlePostComment = () => {
     if (!gameId || !username) return;
     if (isCommentPosting || isCommentPosted) return;
@@ -223,19 +263,19 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           </ComicText>
         </button>
         <div className="absolute left-1/2 -translate-x-1/2">
-          <ComicText size={1.2} color={colors.primary}>
-            Game Results
-          </ComicText>
+          <div style={{ fontWeight: 'normal' }}>
+            <ComicText size={1.2} color={colors.primary}>
+              Game Results
+            </ComicText>
+          </div>
         </div>
         <div className="w-20"></div>
       </header>
 
       {/* Answer Highlight */}
       <div className="mb-5 text-center">
-        <div style={{ fontWeight: 'bold' }}>
-          <ComicText size={1.0} color="#EAB308">
-            {statistics.answer.toUpperCase()}
-          </ComicText>
+        <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", fontSize: "24px", color: "#EAB308", fontWeight: "bold", letterSpacing: "1px" }}>
+          {statistics.answer.toUpperCase()}
         </div>
       </div>
 
@@ -279,43 +319,60 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             <div className="space-y-4">
               {statistics.guesses
                 .sort((a, b) => {
-                  // Check if each guess is correct
-                  const aIsCorrect = a.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
-                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
-                  const bIsCorrect = b.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
-                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
+                  // Check if each guess is correct (exact or synonym match)
+                  const aIsCorrect = isGuessCorrect(a.guess, statistics.answer);
+                  const bIsCorrect = isGuessCorrect(b.guess, statistics.answer);
                   
-                  // Correct answer always comes first
+                  // Correct answers always come first
                   if (aIsCorrect && !bIsCorrect) return -1;
                   if (!aIsCorrect && bIsCorrect) return 1;
                   
                   // Otherwise sort by count descending
                   return b.count - a.count;
                 })
-                .slice(0, 5) // Only show top 5
+                .slice(0, 10) // Show top 10 to accommodate multiple correct answers
                 .map((guessData, index) => {
-                  const isCorrect = guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                  const isCorrect = isGuessCorrect(guessData.guess, statistics.answer);
+                  const isExactMatch = guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
                     statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
-                  const displayText = isCorrect ? statistics.answer : guessData.guess;
                   
                   return (
                     <div key={index} className="space-y-1">
-                      {/* Guess text with checkmark */}
+                      {/* Guess text with checkmark/star indicator */}
                       <div className="flex items-center gap-2">
                         <div style={{ fontWeight: 'bold' }}>
-                          <ComicText size={0.7} color="#CA8A04">
-                            {displayText}
+                          <ComicText size={0.7} color={isCorrect ? "#10B981" : "#CA8A04"}>
+                            {guessData.guess.toUpperCase()}
                           </ComicText>
                         </div>
                         {isCorrect && (
-                          <span className="text-lg">✅</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-lg">{isExactMatch ? '✅' : '✨'}</span>
+                            {!isExactMatch && (
+                              <div 
+                                className="rounded-full px-2 py-0.5 border"
+                                style={{ 
+                                  backgroundColor: isDarkMode ? 'rgba(167, 139, 250, 0.2)' : 'rgba(124, 58, 237, 0.15)',
+                                  borderColor: isDarkMode ? '#A78BFA' : '#7C3AED'
+                                }}
+                              >
+                                <ComicText size={0.5} color={isDarkMode ? '#C4B5FD' : '#7C3AED'}>
+                                  close match
+                                </ComicText>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                       
                       {/* Progress Bar with count inside */}
                       <div className="relative h-6 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500"
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isCorrect 
+                              ? 'bg-gradient-to-r from-emerald-500 to-green-600'
+                              : 'bg-gradient-to-r from-blue-500 to-purple-600'
+                          }`}
                           style={{ width: `${guessData.percentage}%` }}
                         ></div>
                         <div className="absolute inset-0 flex items-center justify-center">

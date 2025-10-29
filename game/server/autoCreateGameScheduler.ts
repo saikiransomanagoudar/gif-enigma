@@ -5,8 +5,12 @@ import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server
 import type { CategoryType } from '../shared.js';
 
 const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'General'];
-const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// Weighted random selection: 80% word, 20% phrase
+const pickInputType = (): 'word' | 'phrase' => {
+  return Math.random() < 0.8 ? 'word' : 'phrase';
+};
 
 // Fallback data for when API is rate limited
 const fallbackData = {
@@ -114,7 +118,7 @@ Devvit.addSchedulerJob({
     }
 
     const category = pickRandom(categories);
-    const inputType = pickRandom(inputTypes);
+    const inputType = pickInputType();
 
     
 

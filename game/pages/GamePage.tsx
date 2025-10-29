@@ -41,7 +41,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [playedGameIds, setPlayedGameIds] = useState<string[]>([]);
   // @ts-ignore
   const [isScoreSaving, setIsScoreSaving] = useState(false);
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [showSuccessPopup, _setShowSuccessPopup] = useState(false);
   // @ts-ignore
   const [showErrorPopup, setShowErrorPopup] = useState(false);
   // @ts-ignore
@@ -49,6 +49,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [guessCount, setGuessCount] = useState(0);
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
+  const [winningGuess, setWinningGuess] = useState<string | null>(null);
+  const lastSubmittedGuessRef = useRef<string>('');
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -286,6 +288,25 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       if (actualMessage.type === 'TRACK_GUESS_RESULT') {
         // Guess tracking result received
       }
+      if (actualMessage.type === 'VALIDATE_GUESS_RESULT') {
+        if (actualMessage.success) {
+          if (actualMessage.isCorrect) {
+            // The guess is correct (either exact or synonym match)
+            // Store the last submitted guess for the modal
+            setWinningGuess(lastSubmittedGuessRef.current);
+            // console.log('🎯 Winning guess stored:', lastSubmittedGuessRef.current);
+            // console.log('🎯 Secret word:', gameData?.word?.toUpperCase().replace(/\s+/g, ''));
+            // Set state to trigger win modal
+            setIsCorrect(true);
+          } else {
+            // The guess is incorrect
+            setIsCorrect(false);
+          }
+        } else {
+          // Validation failed - treat as incorrect
+          setIsCorrect(false);
+        }
+      }
     };
 
     window.addEventListener('message', handleMessage);
@@ -350,9 +371,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState, guessCount]);
 
-
+  // Note: handleCorrectGuess and handleIncorrectGuess are now called
+  // directly from VALIDATE_GUESS_RESULT handler for better control
+  // over synonym vs exact match handling
   useEffect(() => {
+    // Trigger animations when isCorrect changes
     if (isCorrect === true) {
+      // Success animation is handled in VALIDATE_GUESS_RESULT
       handleCorrectGuess();
     }
     if (isCorrect === false) {
@@ -457,11 +482,25 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const handleCorrectGuess = () => {
     if (gameData) {
       const currentUsername = username || 'anonymous';
+      
+      // Store the revealed letter count BEFORE revealing all letters
+      // This is needed for accurate score calculation
+      const originalRevealedCount = revealedLetters.size;
+      
       setGameFlowState('won');
+
+      // Reveal all letters immediately
+      const allIndices = new Set<number>();
+      for (let i = 0; i < gameData.word.length; i++) {
+        if (gameData.word[i] !== ' ') {
+          allIndices.add(i);
+        }
+      }
+      setRevealedLetters(allIndices);
 
       const playerState = {
         gifHintCount,
-        revealedLetters: Array.from(revealedLetters),
+        revealedLetters: Array.from(allIndices), // Use all revealed letters
         guess: gameData.word,
         lastPlayed: Date.now(),
         isCompleted: true,
@@ -486,8 +525,23 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             gameId: gameData.id,
             username: currentUsername,
             gifHintCount,
-            revealedLetters: Array.from(revealedLetters),
+            revealedLetters: Array.from(allIndices), // Use all revealed letters
             finalGuess: gameData.word,
+          },
+        },
+        '*'
+      );
+
+      // Calculate and save score
+      window.parent.postMessage(
+        {
+          type: 'CALCULATE_SCORE',
+          data: {
+            word: gameData.word,
+            gifHintCount: gifHintCount,
+            revealedLetterCount: originalRevealedCount, // Use original count before revealing all
+            timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
+            username: currentUsername,
           },
         },
         '*'
@@ -500,15 +554,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
 
+      // Animate answer boxes to green
       const boxes = document.querySelectorAll('.answer-box');
       boxes.forEach((box) => {
         (box as HTMLElement).style.backgroundColor = '#86efac';
         (box as HTMLElement).style.transition = 'background-color 0.5s ease';
       });
+      
+      // Create confetti animation
       createConfetti();
-      setTimeout(() => {
-        window.alert('Congratulations! You guessed the secret word!');
-      }, 100);
+      
+      // Win modal will show automatically via gameFlowState === 'won'
+      // No need for alert() anymore
     }
   };
 
@@ -823,7 +880,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
 
     const cleanedGuess = guess.replace(/\s+/g, '').toUpperCase();
-    const cleanedAnswer = gameData.word.replace(/\s+/g, '').toUpperCase();
+    lastSubmittedGuessRef.current = cleanedGuess;
 
     // Track the guess attempt
     if (gameData.id && username) {
@@ -840,38 +897,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       );
     }
 
-    if (cleanedGuess === cleanedAnswer) {
-      const originalRevealedCount = revealedLetters.size;
-      setIsCorrect(true);
-      setShowSuccessPopup(true);
-      setTimeout(() => setShowSuccessPopup(false), 3000);
-      setGameFlowState('won');
-      const allIndices = new Set<number>();
-      for (let i = 0; i < gameData.word.length; i++) {
-        if (gameData.word[i] !== ' ') {
-          allIndices.add(i);
-        }
-      }
-      setRevealedLetters(allIndices);
-
-      window.parent.postMessage(
-        {
-          type: 'CALCULATE_SCORE',
-          data: {
-            word: gameData.word,
-            gifHintCount: gifHintCount,
-            revealedLetterCount: originalRevealedCount,
-            timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
-            username: username || 'anonymous',
-          },
+    // Use server-side validation to check if guess is correct
+    // This will handle exact matches AND semantically correct synonyms with same length
+    window.parent.postMessage(
+      {
+        type: 'VALIDATE_GUESS',
+        data: {
+          gameId: gameData.id,
+          guess: cleanedGuess,
         },
-        '*'
-      );
-    } else {
-      setIsCorrect(false);
-      setShowErrorPopup(true);
-      setTimeout(() => setShowErrorPopup(false), 2000);
-    }
+      },
+      '*'
+    );
   };
 
   const handleGifHint = () => {
@@ -1113,7 +1150,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     return (
       <>
         <div className="bg-opacity-60 fixed inset-0 z-40 bg-black backdrop-blur-sm transition-all duration-500"></div>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-5 overflow-y-auto">
           <div
             className="animate-float-up absolute h-8 w-8 rounded-full bg-yellow-400 opacity-30"
             style={{ left: '20%', top: '30%' }}
@@ -1121,10 +1158,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           <div
             className="animate-float-up absolute h-10 w-10 rounded-full bg-blue-500 opacity-30"
             style={{ left: '65%', top: '25%', animationDelay: '0.5s' }}
-          ></div>
-          <div
-            className="animate-float-up absolute h-6 w-6 rounded-full bg-green-400 opacity-30"
-            style={{ left: '80%', top: '60%', animationDelay: '1s' }}
           ></div>
           <div
             className="animate-float-up absolute h-8 w-8 rounded-full bg-red-500 opacity-30"
@@ -1135,54 +1168,103 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             style={{ left: '40%', top: '20%', animationDelay: '0.8s' }}
           ></div>
 
-          <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-md overflow-hidden rounded-xl border-2 border-blue-600 bg-gradient-to-b from-gray-900 to-blue-900 shadow-2xl">
-            <div className="relative border-b border-blue-800 p-6 text-center">
+          <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-md overflow-hidden rounded-xl border-2 border-blue-600 bg-gradient-to-b from-gray-900 to-blue-900 shadow-2xl my-auto">
+            <div className="relative border-b border-blue-800 p-4 text-center">
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="bg-opacity-70 h-36 w-36 rounded-full bg-blue-900 blur-xl"></div>
+                <div className="bg-opacity-70 h-24 w-24 rounded-full bg-blue-900 blur-xl"></div>
               </div>
 
-              <div className="mb-2 inline-block -rotate-3 transform">
-                <div className="mb-1 text-5xl">🎉</div>
+              <div className="mb-1 inline-block -rotate-3 transform">
+                <div className="text-4xl">🎉</div>
               </div>
 
               <div className="relative z-10">
-                <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-4 py-2 shadow-lg">
-                  <ComicText size={1.6} color="#FFD700">
+                <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-3 py-1 shadow-lg">
+                  <ComicText size={1.3} color="#FFD700">
                     Hurray!
                   </ComicText>
                 </div>
-                <div className="mt-2">
-                  <ComicText size={1} color="#FF4500">
+                <div className="mt-1">
+                  <ComicText size={0.8} color="#FF4500">
                     You guessed it right!
                   </ComicText>
                 </div>
               </div>
             </div>
-            <div className="p-6 text-center">
-              <div className="bg-opacity-50 mb-6 rounded-lg border border-blue-700 bg-blue-900 p-4">
-                <ComicText size={0.7} color="#fff">
-                  The answer was:
-                </ComicText>
-                <div className="mt-2 rounded p-2 text-2xl font-bold text-white shadow-lg">
-                  {gameData?.word.toUpperCase()}
-                </div>
+            <div className="p-4 text-center">
+              <div className="bg-opacity-50 mb-4 rounded-lg border border-blue-700 bg-blue-900 p-3">
+                {(() => {
+                  const secretWord = gameData?.word.toUpperCase().replace(/\s+/g, '');
+                  // console.log('🔍 Modal render - winningGuess:', winningGuess);
+                  // console.log('🔍 Modal render - secretWord:', secretWord);
+                  // console.log('🔍 Modal render - are they different?', winningGuess !== secretWord);
+                  
+                  if (winningGuess && winningGuess !== secretWord) {
+                    return (
+                      <>
+                        <div className="mb-2">
+                          <ComicText size={0.55} color="#94A3B8">
+                            Your guess:
+                          </ComicText>
+                          <div className="mt-1 text-xl font-bold text-emerald-300">
+                            {winningGuess}
+                          </div>
+                        </div>
+                        <div className="my-2 flex items-center justify-center gap-2">
+                          <div className="h-px flex-1 bg-blue-600/50"></div>
+                          <div 
+                            className="rounded-full px-2 py-0.5 border"
+                            style={{ 
+                              backgroundColor: 'rgba(167, 139, 250, 0.2)',
+                              borderColor: '#A78BFA'
+                            }}
+                          >
+                            <ComicText size={0.45} color="#C4B5FD">
+                              ✨ close match
+                            </ComicText>
+                          </div>
+                          <div className="h-px flex-1 bg-blue-600/50"></div>
+                        </div>
+                        <div className="mt-2">
+                          <ComicText size={0.55} color="#94A3B8">
+                            Original answer:
+                          </ComicText>
+                          <div className="mt-1 text-xl font-bold text-white">
+                            {gameData?.word.toUpperCase()}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  } else {
+                    return (
+                      <>
+                        <ComicText size={0.55} color="#94A3B8">
+                          The answer was:
+                        </ComicText>
+                        <div className="mt-1 text-xl font-bold text-white">
+                          {gameData?.word.toUpperCase()}
+                        </div>
+                      </>
+                    );
+                  }
+                })()}
               </div>
 
               {isScoreSaving ? (
-                <div className="flex flex-col items-center justify-center p-4">
-                  <div className="mb-3 h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-                  <ComicText size={0.7} color="#fff">
+                <div className="flex flex-col items-center justify-center p-3">
+                  <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+                  <ComicText size={0.6} color="#fff">
                     Calculating your score...
                   </ComicText>
                 </div>
               ) : (
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
                   {/* Comment Results Button - Only show if user didn't give up */}
                   {gifHintCount < 999 && (
                     <button
                       onClick={handlePostComment}
                       disabled={isCommentPosting || isCommentPosted}
-                      className={`flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3.5 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed ${
+                      className={`flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed ${
                         isCommentPosted
                           ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                           : isCommentPosting
@@ -1192,19 +1274,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                       aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
                       title={isCommentPosted ? 'Commented!' : 'Comment Results'}
                       style={{
-                        minWidth: '208px',
+                        minWidth: '192px',
                         boxShadow: isCommentPosted
-                          ? '0 8px 20px rgba(16,185,129,0.4)'
+                          ? '0 6px 16px rgba(16,185,129,0.4)'
                           : isCommentPosting
-                            ? '0 8px 20px rgba(99,102,241,0.3)'
+                            ? '0 6px 16px rgba(99,102,241,0.3)'
                             : '0 4px 12px rgba(217,119,6,0.4)'
                       }}
                     >
-                      <span className="text-xl">
+                      <span className="text-lg">
                         {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
                       </span>
                       <span className="whitespace-nowrap">
-                        <ComicText size={0.7} color="white">
+                        <ComicText size={0.6} color="white">
                           {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
                         </ComicText>
                       </span>
@@ -1218,17 +1300,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         onNavigate('gameResults', { gameId: gameData.id });
                       }
                     }}
-                    className="flex w-full sm:w-52 cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-3.5 text-white font-semibold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl"
+                    className="flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-5 py-2.5 text-white font-semibold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl"
                     aria-label="View Results"
                     title="View Results"
                     style={{
-                      minWidth: '208px',
-                      boxShadow: '0 8px 20px rgba(37,99,235,0.4)'
+                      minWidth: '192px',
+                      boxShadow: '0 6px 16px rgba(37,99,235,0.4)'
                     }}
                   >
-                    <span className="text-xl">📊</span>
+                    <span className="text-lg">📊</span>
                     <span className="whitespace-nowrap">
-                      <ComicText size={0.7} color="white">
+                      <ComicText size={0.6} color="white">
                         View Results
                       </ComicText>
                     </span>
@@ -1237,10 +1319,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               )}
 
               {finalScore && !isScoreSaving && (
-                <div className="mt-6 text-center">
-                  <div className="bg-opacity-60 border-opacity-60 inline-block rounded-full border border-blue-500 bg-blue-900 px-6 py-2 shadow-lg">
-                    <ComicText size={0.7} color="#FFFFFF">
-                      Your Score: <span className="text-2xl text-cyan-300">{finalScore.score}</span>
+                <div className="mt-3 text-center">
+                  <div className="bg-opacity-60 border-opacity-60 inline-block rounded-full border border-blue-500 bg-blue-900 px-5 py-1.5 shadow-lg">
+                    <ComicText size={0.6} color="#FFFFFF">
+                      Your Score: <span className="text-xl text-cyan-300">{finalScore.score}</span>
                     </ComicText>
                   </div>
                 </div>

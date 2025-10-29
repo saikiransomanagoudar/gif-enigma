@@ -656,3 +656,146 @@ function getDefaultSynonyms(word: string): string[][] {
     ]
   );
 }
+
+// NEW: Get same-length semantic synonyms for validation
+export async function getSemanticSynonyms(
+  params: { word: string },
+  context: Context
+): Promise<{ success: boolean; synonyms?: string[]; error?: string; debug?: any }> {
+  const { word } = params;
+
+  try {
+    // Get the API key from Devvit settings
+    const apiKey = await context.settings.get('gemini-api-key');
+
+    if (!apiKey) {
+      return {
+        success: false,
+        error: 'API key not configured',
+        synonyms: [],
+      };
+    }
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+
+    // Calculate word length (without spaces/punctuation)
+    const normalizedWord = word.replace(/\s+/g, '').replace(/[^\w]/g, '');
+    const wordLength = normalizedWord.length;
+
+    const prompt = `For the word or phrase "${word}", generate a list of SEMANTICALLY RELATED words or phrases that have EXACTLY ${wordLength} letters (excluding spaces and punctuation).
+
+CRITICAL REQUIREMENTS:
+1. Each synonym MUST have EXACTLY ${wordLength} letters when spaces and punctuation are removed
+2. Include words that are LOOSELY RELATED or could be visually represented similarly in GIFs
+3. Think broadly: related emotions, actions, expressions, situations, or concepts
+4. Focus on words players might reasonably guess from a visual GIF representation
+5. Include synonyms, related feelings, similar actions, and contextual connections
+6. Generate at least 15-20 valid options if possible
+
+Examples of LOOSE semantic connections we want:
+- If word is "ENERGETIC" (9 letters), include: "SCREAMING", "CELEBRATE", "VIVACIOUS", "ANIMATED", "THRILLING"
+- If word is "HAPPY" (5 letters), include: "JOLLY", "MERRY", "PEPPY", "CHEERY", "SUNNY"
+- If word is "EXCITED" (7 letters), include: "AMPED UP", "PUMPED", "HYPED UP", "CHARGED", "THRILLED"
+- If word is "RUNNING" (7 letters), include: "JOGGING", "RUSHING", "HURRIED", "DASHING", "SPRINTS"
+
+Think of: emotions expressed, body language shown, energy levels, similar activities, related concepts, or visual interpretations.
+
+Return ONLY a valid JSON array of strings with no additional text, formatting, or explanations.
+Example format: ["synonym1", "synonym2", "synonym3", ...]
+
+IMPORTANT: Each word in the array MUST have exactly ${wordLength} letters (excluding spaces/punctuation).`;
+
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 500,
+        topP: 0.9,
+        topK: 40,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
+          synonyms: [],
+        };
+      }
+
+      const data = (await response.json()) as GeminiResponse;
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          
+          if (Array.isArray(parsed)) {
+            // Filter to only include synonyms with the correct length
+            const validSynonyms = parsed
+              .filter((syn) => typeof syn === 'string')
+              .map((syn) => syn.trim())
+              .filter((syn) => {
+                const normalized = syn.replace(/\s+/g, '').replace(/[^\w]/g, '');
+                return normalized.length === wordLength;
+              });
+
+            return {
+              success: true,
+              synonyms: validSynonyms,
+              debug: { 
+                source: 'api',
+                requested: wordLength,
+                received: parsed.length,
+                valid: validSynonyms.length
+              },
+            };
+          }
+        } catch (parseError) {
+          return {
+            success: false,
+            error: `Parse error: ${String(parseError)}`,
+            synonyms: [],
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: 'No valid response from API',
+        synonyms: [],
+      };
+    } catch (fetchError) {
+      return {
+        success: false,
+        error: `Fetch error: ${String(fetchError)}`,
+        synonyms: [],
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: String(error),
+      synonyms: [],
+    };
+  }
+}

@@ -19,6 +19,7 @@ import {
   removeSystemUsersFromLeaderboard,
   trackGuess,
   getGameStatistics,
+  validateGuess,
 } from '../game/server/gameHandler.server.js';
 
 // Helper function for navigation to post
@@ -1322,6 +1323,37 @@ Devvit.addCustomPostType({
               postMessage({
                 type: 'TRACK_GUESS_RESULT',
                 success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'VALIDATE_GUESS':
+            try {
+              if (!event.data || !event.data.gameId || !event.data.guess) {
+                postMessage({
+                  type: 'VALIDATE_GUESS_RESULT',
+                  success: false,
+                  isCorrect: false,
+                  error: 'Missing required data: gameId and guess are required',
+                });
+                return;
+              }
+
+              const validationResult = await validateGuess(event.data, context);
+
+              postMessage({
+                type: 'VALIDATE_GUESS_RESULT',
+                success: validationResult.success,
+                isCorrect: validationResult.isCorrect,
+                matchType: validationResult.matchType,
+                error: validationResult.error || undefined,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'VALIDATE_GUESS_RESULT',
+                success: false,
+                isCorrect: false,
                 error: String(error),
               });
             }

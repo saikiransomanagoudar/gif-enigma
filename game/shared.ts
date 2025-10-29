@@ -200,6 +200,13 @@ export type WebviewToBlockMessage =
       };
     }
   | {
+      type: 'VALIDATE_GUESS';
+      data: {
+        gameId: string;
+        guess: string;
+      };
+    }
+  | {
       type: 'GET_GAME_STATISTICS';
       data: {
         gameId: string;
@@ -550,6 +557,13 @@ export type BlocksToWebviewMessage =
     | {
       type: 'TRACK_GUESS_RESULT';
       success: boolean;
+      error?: string;
+    }
+    | {
+      type: 'VALIDATE_GUESS_RESULT';
+      success: boolean;
+      isCorrect: boolean;
+      matchType?: 'exact' | 'synonym';
       error?: string;
     }
     | {

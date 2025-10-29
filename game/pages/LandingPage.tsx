@@ -278,10 +278,10 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </motion.button>
 
           <div className="mt-5 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none">
-            <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
+            {/* <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
               <span className="text-3xl">🎬</span>
               <span className="text-3xl">❓</span>
-            </div>
+            </div> */}
 
             <motion.h2
               initial={{ opacity: 0, y: -20 }}

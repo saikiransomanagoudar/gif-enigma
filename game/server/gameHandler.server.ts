@@ -13,6 +13,7 @@ import {
   getUnplayedGames,
   trackGuess,
   getGameStatistics,
+  validateGuess,
 } from './gameHandler';
 
 import {
@@ -44,6 +45,7 @@ export {
   getUnplayedGames,
   trackGuess,
   getGameStatistics,
+  validateGuess,
 };
 
 export async function getRandomGame(

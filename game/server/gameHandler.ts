@@ -12,6 +12,7 @@ import {
   GuessData,
 } from '../lib/types';
 import { awardCreationBonus } from './scoringService';
+import { getSemanticSynonyms } from './geminiService.js';
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
@@ -30,6 +31,21 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
+    // Fetch same-length semantic synonyms for validation (no AI during gameplay!)
+    let acceptedSynonyms: string[] = [];
+    try {
+      const semanticResult = await getSemanticSynonyms({ word }, context);
+      console.log(`Semantic synonyms: ${semanticResult.synonyms}`);
+      if (semanticResult.success && semanticResult.synonyms) {
+        acceptedSynonyms = semanticResult.synonyms;
+        // console.log(`Semantic synonyms: ${semanticResult.synonyms}`);
+        console.log(`[Game ${gameId}] Fetched ${acceptedSynonyms.length} semantic synonyms for "${word}"`);
+      }
+    } catch (error) {
+      console.log(`[Game ${gameId}] Failed to fetch semantic synonyms:`, error);
+      // Non-critical - game will work with exact match only
+    }
+
     const tx = await context.redis.watch('games');
     await tx.multi();
 
@@ -41,9 +57,8 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       gifs: JSON.stringify(gifs),
       createdAt: Date.now().toString(),
       username,
-    });
-
-    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
+      acceptedSynonyms: JSON.stringify(acceptedSynonyms), // Store for validation
+    });    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
     await tx.exec();
 
     let postId = null;
@@ -872,9 +887,101 @@ export async function getGameStatistics(
         totalGuesses,
         guesses,
         creatorUsername: gameData.username,
+        acceptedSynonyms: gameData.acceptedSynonyms ? JSON.parse(gameData.acceptedSynonyms) : [],
       },
     };
   } catch (error) {
     return { success: false, error: String(error) };
+  }
+}
+
+// Validate if a guess is semantically correct (matches meaning and length)
+export async function validateGuess(
+  params: {
+    gameId: string;
+    guess: string;
+  },
+  context: Context
+): Promise<{
+  success: boolean;
+  isCorrect: boolean;
+  matchType?: 'exact' | 'synonym';
+  error?: string;
+}> {
+  try {
+    const { gameId, guess } = params;
+
+    if (!gameId || !guess) {
+      return { success: false, isCorrect: false, error: 'Missing required parameters' };
+    }
+
+    // Get the game data to access the answer
+    const gameData = await context.redis.hGetAll(`game:${gameId}`);
+    
+    if (!gameData || !gameData.word) {
+      return { success: false, isCorrect: false, error: 'Game not found' };
+    }
+
+    const answer = gameData.word;
+    
+    // Normalize both strings (remove spaces and punctuation, convert to uppercase)
+    const normalizeString = (str: string) => 
+      str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
+    
+    const normalizedGuess = normalizeString(guess);
+    const normalizedAnswer = normalizeString(answer);
+
+    // Check for exact match first
+    if (normalizedGuess === normalizedAnswer) {
+      return {
+        success: true,
+        isCorrect: true,
+        matchType: 'exact',
+      };
+    }
+
+    // Check if lengths are the same (no spaces/punctuation)
+    if (normalizedGuess.length !== normalizedAnswer.length) {
+      return {
+        success: true,
+        isCorrect: false,
+      };
+    }
+
+    // Length matches - check if it's a valid synonym using pre-computed data
+    // NO AI CALLS during gameplay - synonyms were fetched at game creation
+    if (gameData.acceptedSynonyms) {
+      const acceptedSynonyms: string[] = JSON.parse(gameData.acceptedSynonyms);
+      const normalizedSynonyms = acceptedSynonyms.map((syn: string) => normalizeString(syn));
+      
+      const isValidSynonym = normalizedSynonyms.includes(normalizedGuess);
+      
+      if (isValidSynonym) {
+        return {
+          success: true,
+          isCorrect: true,
+          matchType: 'synonym',
+        };
+      }
+    }
+
+    // Not an exact match or valid synonym
+    return {
+      success: true,
+      isCorrect: false,
+    };
+
+    // Not a match
+    return {
+      success: true,
+      isCorrect: false,
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      isCorrect: false,
+      error: String(error),
+    };
   }
 }
