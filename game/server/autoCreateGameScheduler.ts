@@ -2,6 +2,7 @@ import { Devvit, ScheduledJobEvent, JobContext, Context } from '@devvit/public-a
 import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server.js';
 import { searchTenorGifs } from './tenorApi.server.js';
 import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server.js';
+import { validateGifWordMatch } from './geminiService.js';
 import type { CategoryType } from '../shared.js';
 
 const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'General'];
@@ -166,17 +167,53 @@ Devvit.addSchedulerJob({
     }
 
     const gifUrls: string[] = [];
+    const gifDescriptions: string[] = [];
+    const gifSearchTerms: string[] = [];
+    
     for (const synonymGroup of synonyms.slice(0, 4)) {
       const term = synonymGroup[0];
+      gifSearchTerms.push(term);
       const gifs = await searchTenorGifs(context, term, 1);
-      const gifUrl = gifs[0]?.media_formats?.tinygif?.url;
-      if (gifUrl) gifUrls.push(gifUrl);
+      
+      if (gifs[0]) {
+        const gifUrl = gifs[0].media_formats?.tinygif?.url;
+        const gifDescription = gifs[0].content_description || gifs[0].title || term;
+        
+        if (gifUrl) {
+          gifUrls.push(gifUrl);
+          gifDescriptions.push(gifDescription);
+        }
+      }
     }
 
     if (gifUrls.length !== 4) {
       
       return;
     }
+
+    // Validate that GIFs actually match the secret word
+    const validation = await validateGifWordMatch(
+      { 
+        word, 
+        gifDescriptions,
+        searchTerms: gifSearchTerms,
+      },
+      context
+    );
+
+    // Skip game creation if validation fails (match score < 0.5)
+    if (!validation.isValid || validation.matchScore < 0.5) {
+      console.log(
+        `[Scheduler] Skipped game creation - poor GIF match for "${word}". ` +
+        `Score: ${validation.matchScore}, Reason: ${validation.reasoning}`
+      );
+      return;
+    }
+
+    console.log(
+      `[Scheduler] Game validated for "${word}". ` +
+      `Match score: ${validation.matchScore}, Reason: ${validation.reasoning}`
+    );
 
     
     const maskedWord = word

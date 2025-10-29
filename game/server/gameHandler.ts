@@ -12,7 +12,7 @@ import {
   GuessData,
 } from '../lib/types';
 import { awardCreationBonus } from './scoringService';
-import { getSemanticSynonyms } from './geminiService.js';
+import { getSemanticSynonyms, validateGifWordMatch } from './geminiService.js';
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   try {
@@ -22,6 +22,8 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       category,
       questionText,
       gifs,
+      gifDescriptions,
+      searchTerms,
       postToSubreddit = true,
       isChatPost = false,
       inputType = 'word',
@@ -31,18 +33,27 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
+    // Validate GIF quality if provided (for analytics/debugging)
+    // NOTE: We don't reject games - validation is for user guidance during creation
+    if (gifDescriptions && gifDescriptions.length === 4) {
+      await validateGifWordMatch(
+        {
+          word,
+          gifDescriptions,
+          searchTerms: searchTerms || [],
+        },
+        context
+      );
+    }
+
     // Fetch same-length semantic synonyms for validation (no AI during gameplay!)
     let acceptedSynonyms: string[] = [];
     try {
       const semanticResult = await getSemanticSynonyms({ word }, context);
-      console.log(`Semantic synonyms: ${semanticResult.synonyms}`);
       if (semanticResult.success && semanticResult.synonyms) {
         acceptedSynonyms = semanticResult.synonyms;
-        // console.log(`Semantic synonyms: ${semanticResult.synonyms}`);
-        console.log(`[Game ${gameId}] Fetched ${acceptedSynonyms.length} semantic synonyms for "${word}"`);
       }
     } catch (error) {
-      console.log(`[Game ${gameId}] Failed to fetch semantic synonyms:`, error);
       // Non-critical - game will work with exact match only
     }
 

@@ -799,3 +799,183 @@ IMPORTANT: Each word in the array MUST have exactly ${wordLength} letters (exclu
     };
   }
 }
+
+/**
+ * Validates if GIF descriptions match the secret word/phrase to avoid contradictions
+ * @param word - The secret word or phrase
+ * @param gifDescriptions - Array of actual GIF content descriptions from Tenor
+ * @param searchTerms - Array of search terms used (for context)
+ * @param context - Devvit context
+ * @returns Validation result with match score and reasoning
+ */
+export async function validateGifWordMatch(
+  params: {
+    word: string; // Can be a word or phrase
+    gifDescriptions: string[];
+    searchTerms?: string[];
+  },
+  context: Context
+): Promise<{ 
+  success: boolean; 
+  isValid: boolean; 
+  matchScore: number; 
+  reasoning?: string; 
+  error?: string;
+}> {
+  try {
+    const { word, gifDescriptions, searchTerms = [] } = params;
+
+    const apiKey = await context.settings.get('gemini-api-key');
+
+    if (!apiKey) {
+      // If no API key, allow the game (don't block)
+      return {
+        success: true,
+        isValid: true,
+        matchScore: 0.5,
+        reasoning: 'Validation skipped - no API key',
+      };
+    }
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+
+    const prompt = `Evaluate if these GIFs match the secret word or phrase for a GIF-guessing game with progressive hints.
+
+SECRET WORD/PHRASE: "${word}"
+
+GIF DESCRIPTIONS (from Tenor API):
+${gifDescriptions.map((d, i) => `GIF ${i + 1}: "${d}"`).join('\n')}
+
+SEARCH TERMS USED:
+${searchTerms.map((t, i) => `[${i + 1}] "${t}"`).join(', ')}
+
+GAME MECHANICS:
+- GIF 1 is shown FIRST (most ABSTRACT hint) - should NOT contain the answer directly
+- GIF 2, 3, 4 are progressive hints (increasingly direct) - unlocked if player struggles
+- Players must guess the word/phrase based on visual hints only
+
+VALIDATION RULES:
+
+1. **GIF 1 (CRITICAL - First shown to player):**
+   - MUST be abstract/indirect (emotions, actions, related concepts)
+   - MUST NOT contain the secret word/phrase or direct words from it in the description
+   - MUST NOT show text/letters spelling out the answer
+   - Should evoke the feeling/concept without being obvious
+   - For phrases: should represent the overall concept, not specific words
+
+2. **GIFs 2-4 (Progressive hints):**
+   - Can be more direct but still require thinking
+   - Should progressively get clearer
+   - Avoid exact word/phrase matches in descriptions
+   - For phrases: can reference parts of the phrase but not the whole thing
+
+3. **Overall Match:**
+   - GIFs should represent related concepts, emotions, or visual interpretations
+   - Should NOT contradict the word/phrase meaning (e.g., "depleted" vs "MISSION")
+   - Should NOT be completely unrelated
+
+SCORING:
+- 0.9-1.0: Excellent - GIF 1 is abstract, progressively helpful, good match
+- 0.7-0.8: Good - Minor issues but playable
+- 0.5-0.6: Moderate - Acceptable but not ideal
+- 0.3-0.4: Poor - GIF 1 too direct OR confusing hints
+- 0.0-0.2: Bad - Contains answer in GIF 1 OR contradicts meaning
+
+CRITICAL FAILURES (score < 0.5):
+- GIF 1 description contains the secret word/phrase or key words from it
+- GIF 1 shows text/letters spelling the answer
+- GIFs show OPPOSITE meaning (e.g., "exhausted/depleted" for "ENERGETIC")
+- Completely unrelated GIFs
+
+Return ONLY a JSON object:
+{
+  "matchScore": 0.85,
+  "isValid": true,
+  "reasoning": "Brief explanation focusing on GIF 1 abstractness and overall match quality"
+}`;
+
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 200,
+        topP: 0.8,
+        topK: 20,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      // If validation fails, allow the game (don't block)
+      return {
+        success: true,
+        isValid: true,
+        matchScore: 0.5,
+        reasoning: 'Validation skipped - API error',
+      };
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      const text = data.candidates[0].content.parts[0].text.trim();
+
+      try {
+        const parsed = JSON.parse(text);
+
+        if (
+          typeof parsed === 'object' &&
+          typeof parsed.matchScore === 'number' &&
+          typeof parsed.isValid === 'boolean'
+        ) {
+          return {
+            success: true,
+            isValid: parsed.isValid,
+            matchScore: parsed.matchScore,
+            reasoning: parsed.reasoning || 'No reasoning provided',
+          };
+        }
+      } catch (parseError) {
+        // If parsing fails, allow the game
+        return {
+          success: true,
+          isValid: true,
+          matchScore: 0.5,
+          reasoning: 'Validation skipped - parse error',
+        };
+      }
+    }
+
+    // Default to allowing the game if validation is inconclusive
+    return {
+      success: true,
+      isValid: true,
+      matchScore: 0.5,
+      reasoning: 'Validation skipped - no valid response',
+    };
+  } catch (error) {
+    // If any error occurs, allow the game (fail-safe)
+    return {
+      success: true,
+      isValid: true,
+      matchScore: 0.5,
+      reasoning: `Validation skipped - error: ${String(error)}`,
+    };
+  }
+}

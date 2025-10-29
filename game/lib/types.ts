@@ -104,6 +104,8 @@ export interface CreatorData {
   category?: string | null;
   questionText?: string | null;
   gifs: string[];
+  gifDescriptions?: string[]; // GIF content descriptions for validation
+  searchTerms?: string[]; // Search terms used for each GIF
   postToSubreddit?: boolean;
   previewStyle?: 'basic' | 'enhanced';
   isChatPost?: boolean;

@@ -487,16 +487,21 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       // This is needed for accurate score calculation
       const originalRevealedCount = revealedLetters.size;
       
+      // Show modal FIRST to hide UI changes
       setGameFlowState('won');
 
-      // Reveal all letters immediately
+      // Reveal all letters after a short delay (modal will cover the UI update)
       const allIndices = new Set<number>();
       for (let i = 0; i < gameData.word.length; i++) {
         if (gameData.word[i] !== ' ') {
           allIndices.add(i);
         }
       }
-      setRevealedLetters(allIndices);
+      
+      // Delay revealing letters until after modal renders to prevent flash
+      setTimeout(() => {
+        setRevealedLetters(allIndices);
+      }, 100);
 
       const playerState = {
         gifHintCount,

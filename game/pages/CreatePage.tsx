@@ -699,6 +699,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         throw new Error('One or more selected GIFs have invalid URLs');
       }
 
+      // Extract GIF descriptions for validation
+      const gifDescriptions = validGifs.map((gif) => 
+        gif.content_description || gif.title || 'No description'
+      );
+
+      // Extract the search terms used (first term from each synonym group)
+      const searchTerms = synonyms.map((group) => group[0] || '');
+
       window.parent.postMessage(
         {
           type: 'SAVE_GAME',
@@ -708,6 +716,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             maskedWord,
             questionText,
             gifs: gifUrls,
+            gifDescriptions,
+            searchTerms,
             inputType,
           },
         },
