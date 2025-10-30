@@ -44,19 +44,44 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     // Helper: quick utility checks
     const isRedditCdn = (url?: string) => !!url && url.startsWith('https://i.redd.it/');
 
+    // Helper: Verify URL is accessible with retries (Reddit CDN propagation delay)
+    const verifyUrl = async (url: string, maxRetries: number = 2): Promise<boolean> => {
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const response = await fetch(url, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(1500) // 1.5s timeout
+          });
+          if (response.ok) {
+            return true;
+          }
+          // Wait before retry (CDN propagation)
+          if (i < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 800)); // Wait 800ms for CDN propagation
+          }
+        } catch (error) {
+          // Wait before retry
+          if (i < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+        }
+      }
+      return false;
+    };
+
     // Helper: fast upload with minimal retries
     const fastUpload = async (url: string): Promise<string> => {
       try {
         const uploadPromise = context.media.upload({ url, type: 'gif' });
         const result = await Promise.race([
           uploadPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 1000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 3000)) // Increased to 3s
         ]);
         // @ts-expect-error Result is from uploadPromise
         const mediaUrl: string = (result.mediaUrl as string) || url;
         return mediaUrl;
       } catch (err) {
-        throw err;
+        throw err; // Must throw so we don't accept failed uploads
       }
     };
 
@@ -67,10 +92,16 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
 
       try {
         const mediaUrl = await fastUpload(originalFormat.url);
+        // ONLY accept Reddit CDN URLs - Tenor URLs don't work in Reddit
         if (isRedditCdn(mediaUrl)) {
-          // Quick verification - if it fails, we'll catch it later
-          uploadedFormats[format] = { ...originalFormat, url: mediaUrl };
-          return { format, success: true };
+          // Verify URL is accessible with retries (handles CDN propagation delay)
+          const isAccessible = await verifyUrl(mediaUrl);
+          if (isAccessible) {
+            uploadedFormats[format] = { ...originalFormat, url: mediaUrl };
+            return { format, success: true };
+          } else {
+            return { format, success: false };
+          }
         }
         return { format, success: false };
       } catch (error) {
@@ -88,7 +119,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
       }
     });
 
-    // 3. Create final cached result (prefer gif, then tinygif) and ensure only i.redd.it is returned
+    // 3. Create final cached result (prefer gif, then tinygif) - MUST be Reddit CDN
     const preferredUrl = uploadedFormats.gif?.url || uploadedFormats.tinygif?.url || '';
 
     const cachedResult = {
@@ -100,7 +131,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
       url: preferredUrl
     };
 
-    // If we still don't have a valid Reddit CDN URL, do not cache to avoid re-serving bad URLs
+    // ONLY accept Reddit CDN URLs - if upload failed, return empty to skip this GIF
     if (!isRedditCdn(cachedResult.url)) {
       return {
         ...cachedResult,
@@ -138,12 +169,8 @@ export async function searchTenorGifs(
     const cachedData = await context.redis.get(cacheKey);
 
     if (cachedData) {
-      try {
-        const results = JSON.parse(cachedData);
-        return results;
-      } catch (parseError) {
-        // Cache corrupted, continue to API
-      }
+      const results = JSON.parse(cachedData);
+      return results;
     }
   } catch (cacheError) {
     // Cache error, continue to API
@@ -159,10 +186,10 @@ export async function searchTenorGifs(
   const seenIds = new Set<string>();
   let pos: string | undefined = undefined;
   let page = 0;
-  const MAX_PAGES = 4; // Allow more pages but with smarter batching
+  const MAX_PAGES = 5; // Allow more pages to ensure we get 16 GIFs
 
   while (collected.length < desiredCount && page < MAX_PAGES) {
-    // Fetch large batches but process them efficiently
+    // Fetch larger batches to ensure we get 16 valid GIFs
     const fetchLimit = 50; // Maximum per page
     const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
     const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
@@ -222,29 +249,18 @@ export async function searchTenorGifs(
         })
       );
 
-      // Add successful uploads with lenient verification
+      // ONLY add GIFs with valid Reddit CDN URLs
+      let addedInBatch = 0;
       for (const r of batchResults) {
+        // MUST be Reddit CDN URL - Tenor URLs don't work in Reddit
         if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
-          // Verify URL works with more lenient timeout
-          try {
-            const checkResponse = await fetch(r.url, {
-              method: 'HEAD',
-              signal: AbortSignal.timeout(2000) // Increased from 800ms to 2s
-            });
-            if (checkResponse.ok) {
-              collected.push(r);
-              seenIds.add(r.id);
-              if (collected.length >= desiredCount) break;
-            } else {
-              seenIds.add(r.id); // Mark as seen to avoid retrying
-            }
-          } catch {
-            // Skip broken/slow URLs
-            seenIds.add(r.id);
-          }
+          collected.push(r);
+          seenIds.add(r.id);
+          addedInBatch++;
+          if (collected.length >= desiredCount) break;
         }
       }
-
+      
       // Stop processing if we have enough verified GIFs
       if (collected.length >= desiredCount) break;
     }
@@ -262,4 +278,54 @@ export async function searchTenorGifs(
   await context.redis.expire(cacheKey, CACHE_TTL);
 
   return usableResults;
+}
+
+/**
+ * Search Tenor GIFs for multiple queries in parallel and cache all results in Redis.
+ * This is optimized for batch operations where you need GIFs for multiple synonyms at once.
+ * 
+ * @param context - Devvit context with Redis access
+ * @param queries - Array of search queries (synonyms)
+ * @param limit - Number of GIFs per query (default: 16)
+ * @returns Object mapping each query to its GIF results
+ */
+export async function searchMultipleTenorGifs(
+  context: Context,
+  queries: string[],
+  limit: number = 16
+): Promise<{ [query: string]: TenorGifResult[] }> {
+  if (!queries || queries.length === 0) {
+    return {};
+  }
+
+  // Remove duplicates and empty queries
+  const uniqueQueries = Array.from(new Set(queries.filter(q => q && q.trim() !== '')));
+
+  if (uniqueQueries.length === 0) {
+    return {};
+  }
+
+  try {
+    // Search all queries in parallel for maximum speed
+    const searchPromises = uniqueQueries.map(query => 
+      searchTenorGifs(context, query, limit)
+        .then(results => {
+          return { query, results };
+        })
+        .catch(() => {
+          return { query, results: [] };
+        })
+    );
+
+    const allResults = await Promise.all(searchPromises);
+
+    // Convert array to object map
+    const resultMap: { [query: string]: TenorGifResult[] } = {};
+    allResults.forEach(({ query, results }) => {
+      resultMap[query] = results;
+    });
+    return resultMap;
+  } catch (error) {
+    return {};
+  }
 }

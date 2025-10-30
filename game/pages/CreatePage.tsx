@@ -89,6 +89,16 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
   const [selectedGifInModal, setSelectedGifInModal] = useState<TenorGifResult | null>(null);
 
+  // Frontend memory cache for GIF results per synonym - avoids repeated fetches in current session
+  // Note: This is separate from Redis cache (backend). Redis cache has 24h TTL and benefits all users.
+  // We clear this frontend cache when word changes for proper display, but Redis cache remains intact.
+  const gifCache = useRef<{ [query: string]: TenorGifResult[] }>({});
+  const isBatchFetching = useRef<boolean>(false);
+  const currentCachedWord = useRef<string>(''); // Track which word the cache belongs to
+  const currentSearchTermRef = useRef<string>(''); // Track the current search term for caching results
+  const batchFetchingSynonyms = useRef<Set<string>>(new Set()); // Track which synonyms are being batch-fetched
+  const pendingDisplaySynonym = useRef<string | null>(null); // Track if user is waiting for a specific synonym
+
   // UI states
   const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
 
@@ -348,6 +358,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       currentWordRef.current = nextWord; // Update ref immediately
       setSecretInput(nextWord);
       
+      // IMPORTANT: Clear frontend GIF cache when word changes for proper display
+      // Note: Redis cache remains intact (24h TTL) so other users can benefit
+      gifCache.current = {};
+      isBatchFetching.current = false;
+      batchFetchingSynonyms.current.clear(); // Clear batch tracking
+      pendingDisplaySynonym.current = null; // Clear pending display
+      currentCachedWord.current = nextWord; // Track the new word
+      
       // Check if synonyms are already cached for instant update
       if (synonymsCache.current[nextWord]) {
         setSynonyms(synonymsCache.current[nextWord]);
@@ -533,6 +551,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           timeoutRef.current = null;
         }
         if (msg.success && Array.isArray(msg.results)) {
+          // IMPORTANT: Cache the results using the ref so subsequent clicks are instant
+          const searchedTerm = currentSearchTermRef.current;
+          if (searchedTerm && msg.results.length > 0) {
+            gifCache.current[searchedTerm] = msg.results;
+          }
+          
           setGifs(msg.results);
           if (msg.results.length === 0) {
             setMessage('No GIFs found for this search term. Try a different synonym.');
@@ -546,6 +570,44 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setMessage('Failed to load GIFs. Please try again.');
           setMessageType('error');
         }
+      }
+
+      if (msg.type === 'SEARCH_BATCH_TENOR_GIFS_RESULT') {
+        if (msg.success && msg.results) {
+          // Store all results in cache
+          let cachedCount = 0;
+          Object.keys(msg.results).forEach((query) => {
+            const gifsForQuery = msg.results![query];
+            gifCache.current[query] = gifsForQuery;
+            cachedCount += gifsForQuery.length;
+            // Remove from batch fetching set
+            batchFetchingSynonyms.current.delete(query);
+          });
+          
+          // Check if user is waiting for one of these synonyms
+          if (pendingDisplaySynonym.current && gifCache.current[pendingDisplaySynonym.current]) {
+            const waitingFor = pendingDisplaySynonym.current;
+            setGifs(gifCache.current[waitingFor]);
+            setIsSearching(false);
+            setMessage(`Found ${gifCache.current[waitingFor].length} GIFs! Click one to select it.`);
+            setMessageType('success');
+            pendingDisplaySynonym.current = null;
+          }
+        } else {          
+          // Clear the batch fetching set on error
+          batchFetchingSynonyms.current.clear();
+          
+          // If user was waiting, show error
+          if (pendingDisplaySynonym.current) {
+            setIsSearching(false);
+            setMessage('Failed to load GIFs. Please try again.');
+            setMessageType('error');
+            pendingDisplaySynonym.current = null;
+          }
+        }
+        
+        // Reset the batch fetching flag so it can be triggered again if needed
+        isBatchFetching.current = false;
       }
 
       if (msg.type === 'SAVE_GAME_RESULT') {
@@ -572,9 +634,33 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const searchGifs = async (term: string) => {
     if (!term) return;
+    
+    // IMPORTANT: Always clear previous GIFs first to prevent mixing
     setGifs([]);
-    setIsSearching(true);
     setSelectedGifInModal(null);
+    
+    // Track the search term for caching when results arrive
+    currentSearchTermRef.current = term;
+    
+    // ALWAYS clear GIFs first to prevent mixing between synonyms
+    setGifs([]);
+    
+    // Check cache first - instant response!
+    if (gifCache.current[term]) {
+      setGifs(gifCache.current[term]);
+      setIsSearching(false);
+      return;
+    }
+    
+    // Check if this synonym is currently being batch-fetched
+    if (batchFetchingSynonyms.current.has(term)) {
+      setIsSearching(true);
+      pendingDisplaySynonym.current = term; // Mark that we're waiting for this synonym
+      return; // Don't trigger a duplicate fetch
+    }
+        
+    // If not cached and not being batch-fetched, show loading and fetch individually
+    setIsSearching(true);
 
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -598,6 +684,52 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setMessage('Error starting search. Please try again.');
       setMessageType('error');
     }
+  };
+
+  /**
+   * Batch fetch GIFs for remaining synonyms (not the currently clicked one).
+   * This is called AFTER the clicked synonym's GIFs are already being fetched,
+   * so we fetch the other 3 synonyms in the background for instant future access.
+   */
+  const batchFetchRemainingGifs = (excludeSynonym: string) => {
+    // Only fetch if we have synonyms
+    if (synonyms.length < 4) {
+      return;
+    }
+
+    // Get all first synonyms (one per hint box)
+    const allSynonyms = synonyms.map(group => group[0]).filter(s => s && s.trim() !== '');
+    
+    if (allSynonyms.length === 0) {
+      return;
+    }
+
+    // Exclude the currently clicked synonym - we're already fetching it separately
+    const remainingSynonyms = allSynonyms.filter(s => s !== excludeSynonym);
+    
+    // Check if any remaining synonyms are not cached
+    const uncachedSynonyms = remainingSynonyms.filter(s => !gifCache.current[s]);
+    
+    if (uncachedSynonyms.length === 0) {
+      return;
+    }
+    
+    // Mark these synonyms as being batch-fetched
+    uncachedSynonyms.forEach(synonym => {
+      batchFetchingSynonyms.current.add(synonym);
+    });
+
+    // Fetch remaining synonyms' GIFs in one batch request (background)
+    window.parent.postMessage(
+      {
+        type: 'SEARCH_BATCH_TENOR_GIFS',
+        data: { 
+          queries: uncachedSynonyms,
+          limit: 16 
+        },
+      },
+      '*'
+    );
   };
 
   // const uploadGif = (gif: TenorGifResult) => {
@@ -791,12 +923,30 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <button
                   onClick={() => {
                     if (!showLoading && defaultSynonym) {
+                      // Validate frontend cache: If word changed, clear stale frontend cache
+                      // (Redis cache stays intact for other users - handled by backend TTL)
+                      if (currentCachedWord.current !== secretInput) {
+                        gifCache.current = {};
+                        isBatchFetching.current = false;
+                        batchFetchingSynonyms.current.clear();
+                        pendingDisplaySynonym.current = null;
+                        currentCachedWord.current = secretInput;
+                      }
+                      
+                      // First: Immediately fetch and display the clicked synonym's GIFs
                       setSelectedGifIndex(index);
                       setShowSearchInput(true);
                       setSearchTerm(defaultSynonym);
                       setMessage('');
                       setMessageType('info');
-                      searchGifs(defaultSynonym);
+                      searchGifs(defaultSynonym); // This shows loading and fetches the clicked synonym
+                      
+                      // Second: Background fetch the remaining 3 synonyms for instant future access
+                      // Only do this if not already fetching for this word
+                      if (!isBatchFetching.current) {
+                        isBatchFetching.current = true;
+                        batchFetchRemainingGifs(defaultSynonym);
+                      }
                     }
                   }}
                   className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${

@@ -49,6 +49,13 @@ export type WebviewToBlockMessage =
         media_filter?: string;
       };
     }
+  | {
+      type: 'SEARCH_BATCH_TENOR_GIFS';
+      data: {
+        queries: string[];
+        limit?: number;
+      };
+    }
   | { type: 'GET_TOP_SCORES' }
   | {
       type: 'SAVE_GAME';
@@ -289,6 +296,12 @@ export type BlocksToWebviewMessage =
       success: boolean;
       results?: any[];
       next?: string;
+      error?: string;
+    }
+  | {
+      type: 'SEARCH_BATCH_TENOR_GIFS_RESULT';
+      success: boolean;
+      results?: { [query: string]: any[] };
       error?: string;
     }
   | {

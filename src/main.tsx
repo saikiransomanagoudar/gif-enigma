@@ -6,7 +6,7 @@ import {
   useAsync,
 } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
-import { searchTenorGifs } from '../game/server/tenorApi.server.js';
+import { searchTenorGifs, searchMultipleTenorGifs } from '../game/server/tenorApi.server.js';
 import {
   saveGame,
   getGame,
@@ -723,6 +723,28 @@ Devvit.addCustomPostType({
             } catch (error) {
               postMessage({
                 type: 'SEARCH_TENOR_GIFS_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'SEARCH_BATCH_TENOR_GIFS':
+            try {
+              const batchResults = await searchMultipleTenorGifs(
+                context,
+                event.data.queries,
+                event.data.limit || 16
+              );
+
+              postMessage({
+                type: 'SEARCH_BATCH_TENOR_GIFS_RESULT',
+                success: true,
+                results: batchResults,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'SEARCH_BATCH_TENOR_GIFS_RESULT',
                 success: false,
                 error: String(error),
               });
