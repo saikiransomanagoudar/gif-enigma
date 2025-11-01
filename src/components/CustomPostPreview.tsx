@@ -49,17 +49,13 @@ export const CustomPostPreview = ({
   const username = initialData?.currentUsername || 'there';
   const isLoading = loading;
 
-  const handlePlayGame = async (retryCount = 0) => {
-    // Global debouncing - check time since last click (but allow retries to bypass)
+  const handlePlayGame = async () => {
+    // Global debouncing
     const now = Date.now();
-    if (retryCount === 0 && now - lastClickTime < DEBOUNCE_MS) {
+    if (now - lastClickTime < DEBOUNCE_MS) {
       return;
     }
-    
-    // Update timestamp only for initial clicks, not retries
-    if (retryCount === 0) {
-      lastClickTime = now;
-    }
+    lastClickTime = now;
     
     // Prevent multiple simultaneous calls
     if (isSearching) {
@@ -67,112 +63,264 @@ export const CustomPostPreview = ({
     }
     
     setIsSearching(true);
-    const MAX_RETRIES = 3;
 
     try {
-      // Don't show toast here - it stays visible and confuses users
-      // context.ui.showToast('🔍 Finding a game...');
-      
-      const { getRandomGame } = await import('../../game/server/gameHandler.server.js');
-
-      const params = {
-        excludeIds: [],
-        preferUserCreated: true,
-        username: username || 'anonymous',
+      // Helper function to check if a game has been completed by the user
+      const isGameCompleted = async (gameId: string): Promise<boolean> => {        
+        // Check 1: completedGames sorted set
+        const completedGamesResult = await context.redis.zRange(
+          `user:${username}:completedGames`, 
+          0, 
+          -1, 
+          { by: 'score' }
+        );
+        
+        const completedGameIds = completedGamesResult.map((item: any) =>
+          typeof item === 'string' ? item : item.member
+        );
+        
+        
+        if (completedGameIds.includes(gameId)) {
+          return true;
+        }
+        
+        // Check 2: gameState for completion flags
+        const gameState = await context.redis.hGetAll(`gameState:${username}:${gameId}`);
+        
+        if (gameState && gameState.playerState) {
+          try {
+            const parsedState = JSON.parse(gameState.playerState);
+            
+            if (parsedState.isCompleted || parsedState.hasGivenUp || parsedState.isCreator) {
+              return true;
+            }
+          } catch (e) {
+          }
+        }
+        
+        // Check 3: Look for a saved score (legacy completions before tracking was added)
+        const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+        if (scoreData && Object.keys(scoreData).length > 0) {
+          // Add to completedGames list for future checks
+          await context.redis.zAdd(`user:${username}:completedGames`, {
+            member: gameId,
+            score: Date.now(),
+          });
+          return true;
+        }
+        
+        return false;
       };
 
-      // Increase timeout to 12 seconds to handle large game databases
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timed out')), 12000)
-      );
-
-      const result: any = await Promise.race([
-        getRandomGame(params, context),
-        timeoutPromise
-      ]).catch(err => {
-        // Catch any errors including timeout
-        setIsSearching(false);
-        return { success: false, error: err.message || 'Failed to get game' };
-      });
-      
-      if (result.success && result.game) {
-        const game = result.game;
-                
-        if (game.redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
-          // Navigate to the specific game post directly
-          try {
-            const post = await context.reddit.getPostById(game.redditPostId);
+      // Check if user has a "sticky" assigned game
+      const assignedGameKey = `user:${username}:assignedGame`;
+      const assignedGameId = await context.redis.get(assignedGameKey);
             
-            if (post && !post.removed) {
-              // Show brief success toast (will auto-clear on navigation)
-              context.ui.showToast({
-                text: '🎮 New Game found!',
-                appearance: 'success',
-              });
-              
-              // Reset state
-              setIsSearching(false);
-              
-              // Navigate immediately - the toast is just a brief flash
-              if (post.url) {
-                context.ui.navigateTo(post.url);
-              } else if (post.permalink) {
-                const fullUrl = `https://www.reddit.com${post.permalink}`;
-                context.ui.navigateTo(fullUrl);
-              } else {
-                // Fallback: construct URL manually
-                const cleanPostId = game.redditPostId.replace('t3_', '');
-                const postUrl = `https://www.reddit.com/r/PlayGIFEnigma/comments/${cleanPostId}/`;
-                context.ui.navigateTo(postUrl);
-              }
-            } else {
-              setIsSearching(false);
-              if (retryCount < MAX_RETRIES) {
-                handlePlayGame(retryCount + 1);
-              } else {
-                context.ui.showToast('Could not find a valid game to play. Please try again.');
-              }
-            }
-          } catch (error) {
-            setIsSearching(false);
-            // Try to find another game with retry limit
-            if (retryCount < MAX_RETRIES) {
-              handlePlayGame(retryCount + 1);
-            } else {
-              context.ui.showToast('Error finding a game. Please try again.');
-            }
-          }
-        } else {
-          setIsSearching(false);
-          context.ui.showToast('Could not find a valid game to play. Please try again.');
-        }
-      } else {
-        setIsSearching(false);
+      // If there's an assigned game, verify it's still valid and unplayed
+      if (assignedGameId) {
+        // Check if user has already completed this game
+        const isCompleted = await isGameCompleted(assignedGameId);
         
-        // Show contextual error messages based on the scenario
-        if (result.hasPlayedAll) {
-          // User has played all available games
-          context.ui.showToast('🎉 Amazing! You\'ve completed all games! Check back later for new challenges.');
-        } else if (result.error && result.error.includes('No games available yet')) {
-          // No games exist in the system
-          context.ui.showToast('🎨 No games yet! Be the first to create one by tapping "Let\'s Build"');
-        } else if (result.error) {
-          // Other errors from backend
-          context.ui.showToast(result.error);
+        if (isCompleted) {
+          await context.redis.del(assignedGameKey);
         } else {
-          // Generic fallback
-          context.ui.showToast('😕 No games available right now. Try creating one!');
+          // Check if game is still valid
+          const gameData = await context.redis.hGetAll(`game:${assignedGameId}`);
+          
+          if (gameData && gameData.redditPostId && gameData.word && gameData.gifs && gameData.isRemoved !== 'true') {
+            // Game is still valid and unplayed! Navigate to it
+            try {
+              const post = await context.reddit.getPostById(gameData.redditPostId);
+              
+              if (post && !post.removed) {
+                
+                setIsSearching(false);
+                context.ui.showToast({
+                  text: '🎮 Your game is ready!',
+                  appearance: 'success',
+                });
+                
+                if (post.url) {
+                  context.ui.navigateTo(post.url);
+                } else if (post.permalink) {
+                  context.ui.navigateTo(`https://www.reddit.com${post.permalink}`);
+                }
+                return;
+              } else {
+                // Post was deleted/removed - clear assignment
+                await context.redis.del(assignedGameKey);
+              }
+            } catch (error) {
+              // Error fetching post - clear assignment
+              await context.redis.del(assignedGameKey);
+            }
+          } else {
+            // Game data invalid - clear assignment
+            await context.redis.del(assignedGameKey);
+          }
         }
       }
       
+      // Get completed games list for filtering
+      const completedGamesResult = await context.redis.zRange(
+        `user:${username}:completedGames`, 
+        0, 
+        -1, 
+        { by: 'score' }
+      );
+      
+      const completedGameIds = completedGamesResult.map((item: any) =>
+        typeof item === 'string' ? item : item.member
+      );
+
+      // Get all active games from Redis
+      let allGamesResult = await context.redis.zRange(
+        'activeGames', 
+        0, 
+        -1, 
+        { by: 'score' }
+      );
+
+      // Fallback: If Redis is empty, try to find games from Reddit posts
+      if (!allGamesResult || allGamesResult.length === 0) {
+        
+        const subreddit = await context.reddit.getCurrentSubreddit();
+        const listing = await context.reddit.getNewPosts({
+          subredditName: subreddit.name,
+          limit: 100,
+          pageSize: 100,
+        });
+        const posts = await listing.all();
+        
+        // Build game list from posts
+        const gameIds = [];
+        for (const post of posts) {
+          const postData = await context.redis.hGetAll(`post:${post.id}`);
+          if (postData && postData.gameId) {
+            gameIds.push(postData.gameId);
+          }
+        }
+        
+        allGamesResult = gameIds.map((id: string) => ({ member: id, score: 0 }));
+      }
+
+      if (!allGamesResult || allGamesResult.length === 0) {
+        setIsSearching(false);
+        context.ui.showToast('🎨 No games yet! Click "Let\'s Build" to create the first game.');
+        return;
+      }
+
+      // Filter to unplayed games
+      const unplayedGameIds = allGamesResult
+        .map((item: any) => typeof item === 'string' ? item : item.member)
+        .filter((gameId: string) => !completedGameIds.includes(gameId));
+
+      if (unplayedGameIds.length === 0) {
+        setIsSearching(false);
+        context.ui.showToast('🎉 Amazing! You\'ve played all available games! Check back later for new ones.');
+        return;
+      }
+
+      // Randomly pick one unplayed game and validate it
+      const MAX_ATTEMPTS = Math.min(20, unplayedGameIds.length);
+      
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const randomIndex = Math.floor(Math.random() * unplayedGameIds.length);
+        const randomGameId = unplayedGameIds[randomIndex];
+                
+        // Use the helper function to thoroughly check if game is completed
+        const isCompleted = await isGameCompleted(randomGameId);
+        
+        if (isCompleted) {
+          unplayedGameIds.splice(randomIndex, 1);
+          
+          if (unplayedGameIds.length === 0) {
+            break;
+          }
+          continue;
+        }
+        
+        const gameData = await context.redis.hGetAll(`game:${randomGameId}`);
+        
+        // Validate game data
+        if (!gameData || !gameData.redditPostId || !gameData.word || gameData.isRemoved === 'true') {
+          unplayedGameIds.splice(randomIndex, 1);
+          
+          if (unplayedGameIds.length === 0) {
+            break;
+          }
+          continue;
+        }
+        
+        // Validate GIFs
+        try {
+          const gifs = JSON.parse(gameData.gifs);
+          if (!Array.isArray(gifs) || gifs.length === 0) {
+            unplayedGameIds.splice(randomIndex, 1);
+            
+            if (unplayedGameIds.length === 0) {
+              break;
+            }
+            continue;
+          }
+        } catch (e) {
+          unplayedGameIds.splice(randomIndex, 1);
+          
+          if (unplayedGameIds.length === 0) {
+            break;
+          }
+          continue;
+        }
+        
+        // Verify Reddit post exists
+        try {
+          const post = await context.reddit.getPostById(gameData.redditPostId);
+          
+          if (post && !post.removed) {
+            await context.redis.set(assignedGameKey, randomGameId);
+            setIsSearching(false);
+            context.ui.showToast({
+              text: '🎮 Game found!',
+              appearance: 'success',
+            });
+            
+            // Navigate to the game
+            if (post.url) {
+              context.ui.navigateTo(post.url);
+            } else if (post.permalink) {
+              context.ui.navigateTo(`https://www.reddit.com${post.permalink}`);
+            }
+            return;
+          } else {
+            // Post removed - mark and try another
+            await context.redis.hSet(`game:${randomGameId}`, { isRemoved: 'true' });
+            unplayedGameIds.splice(randomIndex, 1);
+            
+            if (unplayedGameIds.length === 0) {
+              break;
+            }
+            continue;
+          }
+        } catch (error) {
+          await context.redis.hSet(`game:${randomGameId}`, { isRemoved: 'true' });
+          unplayedGameIds.splice(randomIndex, 1);
+          
+          if (unplayedGameIds.length === 0) {
+            break;
+          }
+          continue;
+        }
+      }
+
+      // Couldn't find valid game after attempts
+      setIsSearching(false);
+      context.ui.showToast('Could not find a valid game. Please try again or create a new one!');
+      
     } catch (error) {
       setIsSearching(false);
-      // Handle timeout or other errors
-      const errorMessage = error instanceof Error && error.message.includes('timeout') 
-        ? 'Request timed out. Please try again.'
-        : error instanceof Error 
-          ? error.message
-          : 'Error finding a game. Please try again.';
+      const errorMessage = error instanceof Error 
+        ? error.message
+        : 'Error finding a game. Please try again.';
       context.ui.showToast(errorMessage);
     }
   };

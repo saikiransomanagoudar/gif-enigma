@@ -904,6 +904,10 @@ Devvit.addCustomPostType({
                   timeTaken: scoreData.timeTaken,
                   timestamp: Date.now()
                 }, context);
+                
+                // Clear the assigned game for this user (so they get a new random one next time)
+                const assignedGameKey = `user:${scoreUsername}:assignedGame`;
+                await context.redis.del(assignedGameKey);
               }
 
               // Send a one-time welcome/thank-you PM to the user
