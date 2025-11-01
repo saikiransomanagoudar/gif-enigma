@@ -4,23 +4,24 @@
  */
 
 // Common profanity patterns (basic list - can be expanded)
+// Only includes explicitly offensive words, not common words with multiple meanings
 const PROFANITY_LIST = [
   // Explicit profanity
-  'fuck', 'shit', 'bitch', 'ass', 'damn', 'hell', 'crap', 'piss',
-  'cock', 'dick', 'pussy', 'cunt', 'bastard', 'whore', 'slut',
+  'fuck', 'shit', 'bitch', 'damn', 'crap', 'piss',
+  'cock', 'pussy', 'cunt', 'bastard', 'whore', 'slut',
   
   // Variations with common substitutions
-  'f*ck', 'sh*t', 'b*tch', 'a$$', 'd*mn', 'h*ll',
-  'fck', 'sht', 'btch', 'dck', 'cnt',
+  'f*ck', 'sh*t', 'b*tch', 'd*mn',
+  'fck', 'sht', 'btch', 'cnt',
   
   // Slurs and hate speech (abbreviated list - expand as needed)
   'nigger', 'nigga', 'fag', 'faggot', 'retard', 'retarded',
   
-  // Sexual content
-  'sex', 'porn', 'xxx', 'nude', 'naked', 'boob', 'tit', 'penis', 'vagina',
+  // Sexual content (explicit only, avoiding anatomical terms with medical uses)
+  'porn', 'xxx', 'nude', 'naked', 'boob', 'boobs', 'tit', 'tits',
   
-  // Violence/threats
-  'kill', 'murder', 'rape', 'die', 'death', 'suicide',
+  // Violence/threats (explicit only)
+  'murder', 'rape', 'kill',
 ];
 
 // Patterns for leetspeak and obfuscation
@@ -74,25 +75,36 @@ function generateLeetspeakVariations(word: string): string[] {
 }
 
 /**
- * Checks if text contains profanity
+ * Checks if text contains profanity (whole word match only)
  */
 export function containsProfanity(text: string): boolean {
   const normalized = normalizeForProfanityCheck(text);
+  
+  
+  const originalWords = text.toLowerCase().split(/\s+/);
   
   // Check against profanity list
   for (const word of PROFANITY_LIST) {
     const normalizedWord = normalizeForProfanityCheck(word);
     
-    // Check exact match
-    if (normalized === normalizedWord || normalized.includes(normalizedWord)) {
+    // Check exact match with the entire normalized text
+    if (normalized === normalizedWord) {
       return true;
     }
     
-    // Check leetspeak variations
-    const variations = generateLeetspeakVariations(normalizedWord);
-    for (const variation of variations) {
-      if (normalized === variation || normalized.includes(variation)) {
+    // Check each word separately (for multi-word phrases)
+    for (const origWord of originalWords) {
+      const normalizedOrigWord = normalizeForProfanityCheck(origWord);
+      if (normalizedOrigWord === normalizedWord) {
         return true;
+      }
+      
+      // Check leetspeak variations for this word
+      const variations = generateLeetspeakVariations(normalizedWord);
+      for (const variation of variations) {
+        if (normalizedOrigWord === variation) {
+          return true;
+        }
       }
     }
   }

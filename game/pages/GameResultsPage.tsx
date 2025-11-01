@@ -195,6 +195,35 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     return false;
   };
 
+  // Helper function to format a guess to match the answer's word structure
+  const formatGuessLikeAnswer = (guess: string, answer: string): string => {
+    const normalizeString = (str: string) => 
+      str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
+    
+    const normalizedGuess = normalizeString(guess);
+    const normalizedAnswer = normalizeString(answer);
+    
+    // Only format if the normalized strings match
+    if (normalizedGuess !== normalizedAnswer) {
+      return guess; // Return original if not a match
+    }
+    
+    // Split answer into words to get the spacing pattern
+    const answerWords = answer.split(/\s+/);
+    const result: string[] = [];
+    let guessIndex = 0;
+    
+    // Reconstruct the guess with the same word breaks as the answer
+    for (const word of answerWords) {
+      const wordLength = word.replace(/[^\w]/g, '').length;
+      const guessSegment = normalizedGuess.substring(guessIndex, guessIndex + wordLength);
+      result.push(guessSegment);
+      guessIndex += wordLength;
+    }
+    
+    return result.join(' ');
+  };
+
   const handlePostComment = () => {
     if (!gameId || !username) return;
     if (isCommentPosting || isCommentPosted) return;
@@ -337,13 +366,18 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                   const isExactMatch = guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
                     statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
                   
+                  // Format correct guesses to match the answer's spacing
+                  const displayGuess = isCorrect 
+                    ? formatGuessLikeAnswer(guessData.guess, statistics.answer).toUpperCase()
+                    : guessData.guess.toUpperCase();
+                  
                   return (
                     <div key={index} className="space-y-1">
                       {/* Guess text with checkmark/star indicator */}
                       <div className="flex items-center gap-2">
                         <div style={{ fontWeight: 'bold' }}>
                           <ComicText size={0.7} color={isCorrect ? "#10B981" : "#CA8A04"}>
-                            {guessData.guess.toUpperCase()}
+                            {displayGuess}
                           </ComicText>
                         </div>
                         {isCorrect && (
