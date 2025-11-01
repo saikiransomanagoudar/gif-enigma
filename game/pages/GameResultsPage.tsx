@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import { GameStatistics, NavigationProps, Page } from '../lib/types';
+import { filterGuesses } from '../lib/profanityFilter';
 
 interface GameResultsPageProps extends NavigationProps {
   onNavigate: (page: Page, params?: { gameId?: string }) => void;
@@ -305,19 +306,19 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         <div className="rounded-xl bg-white/5 p-6 backdrop-blur-sm dark:bg-gray-800/20">
           <div className="mb-4">
             <ComicText size={0.9} color={colors.primary}>
-              Guesses Made
+              Guesses made
             </ComicText>
           </div>
 
           {statistics.guesses.length === 0 ? (
             <div className="py-8 text-center">
               <ComicText size={0.7} color={colors.textSecondary}>
-                No guesses yet. Be the first to play!
+                No guesses yet.
               </ComicText>
             </div>
           ) : (
             <div className="space-y-4">
-              {statistics.guesses
+              {filterGuesses(statistics.guesses, 'mask')
                 .sort((a, b) => {
                   // Check if each guess is correct (exact or synonym match)
                   const aIsCorrect = isGuessCorrect(a.guess, statistics.answer);
