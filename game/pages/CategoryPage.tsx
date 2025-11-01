@@ -3,7 +3,7 @@ import { colors } from '../lib/styles';
 import { ComicText } from '../lib/fonts';
 import * as transitions from '../../src/utils/transitions';
 import { NavigationProps, Page } from '../lib/types';
-export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'General';
+export type CategoryType = 'Movies' | 'Gaming' | 'Books' | 'Pop Culture';
 
 export interface CategoryNavigationProps extends NavigationProps {
   onNavigate: (page: Page) => void;
@@ -43,25 +43,25 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       type: 'Movies',
       icon: '🎬',
       bgColor: '#FF5E5B',
-      description: 'Film titles, characters, quotes',
+      description: 'Themes, emotions, cinematic moments',
     },
     {
       type: 'Gaming',
       icon: '🎮',
       bgColor: '#8AC926',
-      description: 'Games, characters, gaming terms',
+      description: 'Concepts, mechanics, gaming vibes',
     },
     {
       type: 'Books',
       icon: '📚',
       bgColor: '#1982C4',
-      description: 'Titles, authors, characters & quotes',
+      description: 'Literary themes, devices & genres',
     },
     {
-      type: 'General',
-      icon: '🌐',
+      type: 'Pop Culture',
+      icon: '🔥',
       bgColor: '#6A4C93',
-      description: 'Anything and everything!',
+      description: 'Memes, trends & viral moments',
     },
   ];
 

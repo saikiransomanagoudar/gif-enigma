@@ -104,7 +104,7 @@ type WebViewMessage =
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
-  const [selectedCategory, setSelectedCategory] = useState<CategoryType>('General');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType>('Pop Culture');
   const [userData, setUserData] = useState<{ username: string; currentCounter: number } | null>(
     null
   );

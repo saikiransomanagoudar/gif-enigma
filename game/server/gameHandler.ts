@@ -62,7 +62,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     await tx.hSet(`game:${gameId}`, {
       word,
-      category: category || 'General',
+      category: category || 'Pop Culture',
       maskedWord: maskedWord || '',
       questionText: questionText || '',
       gifs: JSON.stringify(gifs),
@@ -381,7 +381,7 @@ export async function getRecentGames(
           id: gameId,
           word: rawGameData.word,
           maskedWord: rawGameData.maskedWord,
-          category: rawGameData.category || 'General',
+          category: rawGameData.category || 'Pop Culture',
           questionText: rawGameData.questionText,
           gifs: [],
           createdAt: rawGameData.createdAt,
@@ -456,7 +456,7 @@ export async function getGame(
       createdAt: rawGameData.createdAt,
       username: rawGameData.username,
       redditPostId: rawGameData.redditPostId,
-      category: rawGameData.category || 'General',
+      category: rawGameData.category || 'Pop Culture',
     };
 
     // 4. Process GIFs

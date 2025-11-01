@@ -57,7 +57,7 @@ export interface CreatePageProps extends NavigationProps {
   onNavigate: (page: Page) => void;
 }
 
-export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = 'General' }) => {
+export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = 'Pop Culture' }) => {
   const [inputType, setInputType] = useState<'word' | 'phrase'>('word');
   const [currentCategory, setCurrentCategory] = useState<CategoryType>(category);
 
@@ -179,9 +179,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const getFallbackRecommendations = () => {
     const fallbacks = {
-      'General': {
-        word: ['ELEPHANT', 'BUTTERFLY', 'RAINBOW', 'MOUNTAIN', 'OCEAN', 'FOREST', 'CASTLE', 'DRAGON', 'MAGIC', 'DREAM'],
-        phrase: ['ONCE UPON A TIME', 'HAPPY BIRTHDAY', 'GOOD MORNING', 'SEE YOU LATER', 'THANK YOU VERY MUCH', 'I LOVE YOU', 'HOW ARE YOU', 'WHAT TIME IS IT', 'HAVE A NICE DAY', 'GOOD NIGHT']
+      'Pop Culture': {
+        word: ['RICKROLL', 'CRINGE', 'UNHINGED', 'AWKWARD', 'HYPE', 'SHOCKED', 'SALTY', 'FLEXING', 'VIBES', 'ICONIC'],
+        phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP', 'MAIN CHARACTER', 'VIBE CHECK', 'FACE PALM', 'MIND BLOWN', 'EPIC FAIL', 'HOT TAKE']
       },
       'Movies': {
         word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN', 'FROZEN', 'TOYSTORY', 'PIRATES', 'WIZARD', 'GHOSTBUSTERS'],
@@ -197,7 +197,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
     };
 
-    const categoryData = fallbacks[currentCategory] || fallbacks['General'];
+    const categoryData = fallbacks[currentCategory] || fallbacks['Pop Culture'];
     return categoryData[inputType] || categoryData['word'];
   };
 
@@ -1208,7 +1208,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     ? '🎮'
                     : currentCategory === 'Books'
                       ? '📚'
-                      : '🌐'}
+                      : '🔥'}
               </span>
               <ComicText size={0.6} color={colors.textSecondary}>
                 Category: <span style={{ fontWeight: 'bold' }}>{currentCategory}</span>

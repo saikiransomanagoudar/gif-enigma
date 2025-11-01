@@ -3,7 +3,7 @@ import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.ser
 // import { searchTenorGifs } from './tenorApi.server'; // Disabled for now to avoid timeouts
 import { CategoryType } from '../pages/CategoryPage';
 
-const categories: CategoryType[] = ['General', 'Movies', 'Gaming', 'Books'];
+const categories: CategoryType[] = ['Pop Culture', 'Movies', 'Gaming', 'Books'];
 const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
 
 /**

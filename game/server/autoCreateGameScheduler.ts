@@ -5,12 +5,12 @@ import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server
 import { validateGifWordMatch } from './geminiService.js';
 import type { CategoryType } from '../shared.js';
 
-const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'General'];
+const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'Pop Culture'];
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-// Weighted random selection: 80% word, 20% phrase
+// Weighted random selection: 70% word, 30% phrase
 const pickInputType = (): 'word' | 'phrase' => {
-  return Math.random() < 0.8 ? 'word' : 'phrase';
+  return Math.random() < 0.7 ? 'word' : 'phrase';
 };
 
 // Fallback data for when API is rate limited
@@ -27,9 +27,9 @@ const fallbackData = {
     word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA', 'FRANKENSTEIN', 'ALICE', 'WONDERLAND', 'ROBINHOOD', 'MULAN'],
     phrase: ['ONCE UPON A TIME', 'THE END', 'CHAPTER ONE', 'TO BE CONTINUED', 'THE ADVENTURE BEGINS', 'THE MYSTERY DEEPENS', 'THE FINAL CHAPTER', 'THE LEGEND LIVES ON', 'THE STORY CONTINUES', 'THE TALE IS TOLD']
   },
-  'General': {
-    word: ['ELEPHANT', 'BUTTERFLY', 'RAINBOW', 'MOUNTAIN', 'OCEAN', 'FOREST', 'CASTLE', 'DRAGON', 'MAGIC', 'DREAM'],
-    phrase: ['ONCE UPON A TIME', 'HAPPY BIRTHDAY', 'GOOD MORNING', 'SEE YOU LATER', 'THANK YOU VERY MUCH', 'I LOVE YOU', 'HOW ARE YOU', 'WHAT TIME IS IT', 'HAVE A NICE DAY', 'GOOD NIGHT']
+  'Pop Culture': {
+    word: ['RICKROLL', 'CRINGE', 'UNHINGED', 'AWKWARD', 'HYPE', 'SHOCKED', 'SALTY', 'FLEXING', 'VIBES', 'ICONIC'],
+    phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP', 'MAIN CHARACTER', 'VIBE CHECK', 'FACE PALM', 'MIND BLOWN', 'EPIC FAIL', 'HOT TAKE']
   }
 };
 
@@ -138,7 +138,7 @@ Devvit.addSchedulerJob({
     } catch (error) {
       
       // Use fallback data
-      const categoryData = fallbackData[category] || fallbackData['General'];
+      const categoryData = fallbackData[category] || fallbackData['Pop Culture'];
       recommendations = categoryData[inputType] || categoryData['word'];
       
     }
