@@ -45,24 +45,24 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     const isRedditCdn = (url?: string) => !!url && url.startsWith('https://i.redd.it/');
 
     // Helper: Verify URL is accessible with retries (Reddit CDN propagation delay)
-    const verifyUrl = async (url: string, maxRetries: number = 2): Promise<boolean> => {
+    const verifyUrl = async (url: string, maxRetries: number = 4): Promise<boolean> => {
       for (let i = 0; i < maxRetries; i++) {
         try {
           const response = await fetch(url, {
             method: 'HEAD',
-            signal: AbortSignal.timeout(1500) // 1.5s timeout
+            signal: AbortSignal.timeout(3000) // Longer timeout for reliability
           });
           if (response.ok) {
             return true;
           }
-          // Wait before retry (CDN propagation)
+          // Wait longer before retry for CDN propagation
           if (i < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 800)); // Wait 800ms for CDN propagation
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Increased wait
           }
         } catch (error) {
           // Wait before retry
           if (i < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
       }
@@ -75,7 +75,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
         const uploadPromise = context.media.upload({ url, type: 'gif' });
         const result = await Promise.race([
           uploadPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 3000)) // Increased to 3s
+          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 6000)) // Very generous timeout
         ]);
         // @ts-expect-error Result is from uploadPromise
         const mediaUrl: string = (result.mediaUrl as string) || url;
@@ -170,7 +170,11 @@ export async function searchTenorGifs(
 
     if (cachedData) {
       const results = JSON.parse(cachedData);
-      return results;
+      // ONLY use cache if it has the full requested amount - avoid partial/incomplete results
+      if (results.length >= limit) {
+        return results;
+      }
+      // Cache has partial results (e.g., only 1 GIF) - fetch fresh to get full set
     }
   } catch (cacheError) {
     // Cache error, continue to API
@@ -186,11 +190,11 @@ export async function searchTenorGifs(
   const seenIds = new Set<string>();
   let pos: string | undefined = undefined;
   let page = 0;
-  const MAX_PAGES = 5; // Allow more pages to ensure we get 16 GIFs
+  const MAX_PAGES = 12; // Very aggressive - ensure we get 16 verified GIFs
 
   while (collected.length < desiredCount && page < MAX_PAGES) {
-    // Fetch larger batches to ensure we get 16 valid GIFs
-    const fetchLimit = 50; // Maximum per page
+    // Fetch maximum GIFs per page
+    const fetchLimit = 50; // Tenor's maximum
     const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
     const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
     const response: Response = await fetch(apiUrl, {
@@ -213,8 +217,8 @@ export async function searchTenorGifs(
       throw new Error('Invalid response structure from Tenor API');
     }
 
-    // Process results in parallel batches for maximum speed
-    const batchSize = 20; // Process 20 at a time for maximum speed
+    // Process results in smaller batches for maximum reliability
+    const batchSize = 4; // Very small batches = highest success rate with verification
     const results = data.results;
 
     for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
@@ -261,9 +265,12 @@ export async function searchTenorGifs(
         }
       }
       
-      // Stop processing if we have enough verified GIFs
+      // Early exit: Stop processing batches if we have enough GIFs
       if (collected.length >= desiredCount) break;
     }
+    
+    // Early exit: Stop fetching more pages if we have enough GIFs
+    if (collected.length >= desiredCount) break;
 
     pos = data.next;
     page += 1;
@@ -306,26 +313,79 @@ export async function searchMultipleTenorGifs(
   }
 
   try {
-    // Search all queries in parallel for maximum speed
-    const searchPromises = uniqueQueries.map(query => 
-      searchTenorGifs(context, query, limit)
-        .then(results => {
-          return { query, results };
-        })
-        .catch(() => {
-          return { query, results: [] };
-        })
-    );
+    // Add timeout wrapper to prevent hanging - 60 seconds for thorough verification
+    const searchWithTimeout = async () => {
+      const timeoutPromise = new Promise<{ [query: string]: TenorGifResult[] }>((_, reject) => {
+        setTimeout(() => reject(new Error('Batch search timeout')), 60000);
+      });
 
-    const allResults = await Promise.all(searchPromises);
+      const searchPromise = (async () => {
+        // OPTIMIZATION: Check cache first for ALL queries to avoid unnecessary fetches
+        const resultMap: { [query: string]: TenorGifResult[] } = {};
+        const uncachedQueries: string[] = [];
 
-    // Convert array to object map
-    const resultMap: { [query: string]: TenorGifResult[] } = {};
-    allResults.forEach(({ query, results }) => {
-      resultMap[query] = results;
-    });
-    return resultMap;
+        for (const query of uniqueQueries) {
+          try {
+            const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+            const cachedData = await context.redis.get(cacheKey);
+            if (cachedData) {
+              const cachedResults = JSON.parse(cachedData);
+              // ONLY use cache if it has the full requested amount
+              if (cachedResults.length >= limit) {
+                resultMap[query] = cachedResults;
+              } else {
+                // Partial cache - fetch fresh
+                uncachedQueries.push(query);
+              }
+            } else {
+              uncachedQueries.push(query);
+            }
+          } catch {
+            uncachedQueries.push(query);
+          }
+        }
+
+        // Only fetch uncached queries
+        if (uncachedQueries.length > 0) {
+          const searchPromises = uncachedQueries.map(query => 
+            searchTenorGifs(context, query, limit)
+              .then(results => {
+                return { query, results };
+              })
+              .catch(() => {
+                return { query, results: [] };
+              })
+          );
+
+          const fetchedResults = await Promise.all(searchPromises);
+          fetchedResults.forEach(({ query, results }) => {
+            resultMap[query] = results;
+          });
+        }
+
+        return resultMap;
+      })();
+
+      return Promise.race([searchPromise, timeoutPromise]);
+    };
+
+    return await searchWithTimeout();
   } catch (error) {
-    return {};
+    // Return partial results if available from cache
+    const resultMap: { [query: string]: TenorGifResult[] } = {};
+    for (const query of uniqueQueries) {
+      try {
+        const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+        const cachedData = await context.redis.get(cacheKey);
+        if (cachedData) {
+          resultMap[query] = JSON.parse(cachedData);
+        } else {
+          resultMap[query] = [];
+        }
+      } catch {
+        resultMap[query] = [];
+      }
+    }
+    return resultMap;
   }
 }

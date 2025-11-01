@@ -734,6 +734,25 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
+    
+    // TIMEOUT: If batch fetch doesn't complete in 55 seconds, silently clear batch tracking
+    // User can then click the synonym and it will fetch individually (seamless fallback)
+    setTimeout(() => {
+      uncachedSynonyms.forEach(synonym => {
+        // Only clear if still pending (not in cache)
+        if (!gifCache.current[synonym]) {
+          batchFetchingSynonyms.current.delete(synonym);
+        }
+      });
+      
+      // If user is waiting for a pending synonym, trigger individual fetch seamlessly
+      if (pendingDisplaySynonym.current && !gifCache.current[pendingDisplaySynonym.current]) {
+        const waitingSynonym = pendingDisplaySynonym.current;
+        pendingDisplaySynonym.current = null;
+        // Fetch individually - user won't see any error, just normal loading
+        searchGifs(waitingSynonym);
+      }
+    }, 55000);
   };
 
   // const uploadGif = (gif: TenorGifResult) => {
