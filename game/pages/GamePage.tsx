@@ -1684,7 +1684,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 ? '🎮'
                 : gameData.category === 'Books'
                   ? '📚'
-                  : '🌐'}
+                  : '🔥'}
           </span>
           <ComicText size={0.6} color={colors.textSecondary}>
             Category: <span style={{ fontWeight: 'bold' }}>{gameData.category}</span>

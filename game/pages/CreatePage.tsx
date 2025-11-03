@@ -88,6 +88,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   ]);
   const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
   const [selectedGifInModal, setSelectedGifInModal] = useState<TenorGifResult | null>(null);
+  const [currentModalSynonym, setCurrentModalSynonym] = useState<string>(''); // Track which synonym is being searched
 
   // Frontend memory cache for GIF results per synonym - avoids repeated fetches in current session
   // Note: This is separate from Redis cache (backend). Redis cache has 24h TTL and benefits all users.
@@ -958,6 +959,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       
                       // First: Immediately fetch and display the clicked synonym's GIFs
                       setSelectedGifIndex(index);
+                      setCurrentModalSynonym(defaultSynonym); // Set the synonym for modal display
                       setShowSearchInput(true);
                       setSearchTerm(defaultSynonym);
                       setMessage('');
@@ -1049,7 +1051,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <Modal
-        title="Select GIF of your choice"
+        title={currentModalSynonym ? `Select a GIF for ${currentModalSynonym}` : "Select a GIF of your choice"}
         isOpen={showSearchInput}
         onClose={() => {
           transitions.fadeOut(document.querySelector('.modal-content'), {
@@ -1070,6 +1072,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setShowSearchInput(false);
           setIsSearching(false);
           setSelectedGifInModal(null);
+          setCurrentModalSynonym(''); // Clear the synonym when closing
         }}
         onConfirm={() => {
           if (selectedGifInModal) {

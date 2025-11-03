@@ -90,9 +90,17 @@ export const Modal: React.FC<ModalProps> = ({
           }}
         >
           <div className="mb-3 flex items-center justify-between">
-            <ComicText size={0.8} color={colors.textPrimary}>
-              {title}
-            </ComicText>
+            <div>
+              {title.includes('Select a GIF for') && title !== "Select a GIF of your choice" ? (
+                <ComicText size={0.8} color={colors.textPrimary}>
+                  Select a GIF for <span style={{ color: '#FBBF24' }}>{title.replace('Select a GIF for ', '')}</span>
+                </ComicText>
+              ) : (
+                <ComicText size={0.8} color={colors.textPrimary}>
+                  {title}
+                </ComicText>
+              )}
+            </div>
             <button
               onClick={handleClose}
               className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-gray-700 text-white transition-all duration-200 hover:rotate-90 hover:bg-gray-600"
