@@ -138,18 +138,12 @@ Devvit.addCustomPostType({
     const [isWebViewReady, setIsWebViewReady] = useState(false);
     const [postPreviewRefreshTrigger, setPostPreviewRefreshTrigger] = useState(0);
     const storeNavigationState = async (page: Page, gameId?: string) => {
-      try {
-        // Store in Redis with the post ID as part of the key
-        const navStateKey = `navState:${context.postId || 'default'}`;
-
-        // Store navigation data
-        await context.redis.hSet(navStateKey, {
-          page,
-          ...(gameId ? { gameId } : {}),
-        });
-      } catch (error) {
-        // Continue without storing state - the app will still work
-      }
+      const navStateKey = `navState:${context.postId || 'default'}`;
+      // Store navigation data
+      await context.redis.hSet(navStateKey, {
+        page,
+        ...(gameId ? { gameId } : {}),
+      });
     };
     // Function to retrieve navigation state
     const { data: username } = useAsync(
@@ -175,7 +169,7 @@ Devvit.addCustomPostType({
           }
           return { page: 'landing' as Page, gameId: null };
         } catch (error) {
-          return { page: 'landing' as Page, gameId: null }; // Return default state on error
+          return { page: 'landing' as Page, gameId: null };
         }
       },
       {
@@ -224,7 +218,6 @@ Devvit.addCustomPostType({
 
               postMessage(navResponse);
             } else {
-              // Default to landing if navigation state isn't available yet
               postMessage({
                 type: 'SET_NAVIGATION_STATE',
                 data: {
@@ -235,14 +228,11 @@ Devvit.addCustomPostType({
             break;
 
           case 'requestNavigationState':
-
-            // CRITICAL FIX: Force retrieve the latest navigation state instead of using cached data
             try {
               const navStateKey = `navState:${context.postId || 'default'}`;
               const freshState = await context.redis.hGetAll(navStateKey);
 
               if (freshState && freshState.page) {
-                // Create a properly typed response object
                 const navResponse: BlocksToWebviewMessage = {
                   type: 'SET_NAVIGATION_STATE',
                   data: {
@@ -250,21 +240,18 @@ Devvit.addCustomPostType({
                   },
                 };
 
-                // Add gameId if it exists
                 if (freshState.gameId) {
-                  // Use a type assertion to add the gameId property
                   (navResponse.data as any).gameId = freshState.gameId;
                 }
 
                 postMessage(navResponse);
               } else {
-                // Default to landing if navigation state isn't available
                 postMessage({
                   type: 'SET_NAVIGATION_STATE',
                   data: {
                     page: 'landing',
                   },
-                  success: true, // Add the required success property
+                  success: true,
                 } as BlocksToWebviewMessage);
               }
             } catch (error) {
@@ -694,14 +681,14 @@ Devvit.addCustomPostType({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: result.success,
                 result: result.synonyms,
-                word: word, // Include the word so frontend knows which word these synonyms belong to
+                word: word,
                 error: result.error,
               } as BlocksToWebviewMessage);
             } catch (error) {
               postMessage({
                 type: 'GET_GEMINI_SYNONYMS_RESULT',
                 success: false,
-                word: event.data?.word, // Include word even in error
+                word: event.data?.word,
                 error: String(error),
               } as BlocksToWebviewMessage);
             }
@@ -753,9 +740,7 @@ Devvit.addCustomPostType({
 
           case 'SAVE_GAME':
             try {
-              const result = await saveGame(event.data, context);
-              
-              // Trigger preview refresh after game creation to reload GamePostPreview
+              const result = await saveGame(event.data, context);     
               if (result.success && result.redditPostId) {
                 setPostPreviewRefreshTrigger((prev) => prev + 1);
               }
@@ -921,7 +906,7 @@ Devvit.addCustomPostType({
                 const text =
                   '**Nice work decoding a GIF Enigma!** 🎉\n\n' +
                   'If you want more interesting GIF puzzles in your feed **please join us at [r/PlayGIFEnigma](https://www.reddit.com/r/PlayGIFEnigma)**.' +
-                  'And as always, if you have any feedback or ideas, feel free to reply here or contact us via mod mail.';
+                  'And, if you have any feedback or ideas, feel free to reply here or contact us via mod mail.';
 
                 // Normalize username input and send with error handling
                 const rawUsername = String(pmTarget || '').trim();
@@ -936,7 +921,6 @@ Devvit.addCustomPostType({
                 } catch (pmErr: any) {
                   const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
 
-                  // If user hasn't whitelisted the app, mark as sent to prevent retry spam
                   if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
                     await context.redis.hSet(pmFlagKey, { [pmFlagField]: '1' });
                   }
@@ -1054,7 +1038,6 @@ Devvit.addCustomPostType({
             const targetPage = event.data?.page;
             const targetGameId = event.data?.params?.gameId;
             if (targetPage) {
-              // CRITICAL FIX: Force clear any existing navigation state first
               const navStateKey = `navState:${context.postId || 'default'}`;
               await context.redis.del(navStateKey);
 
@@ -1127,9 +1110,7 @@ Devvit.addCustomPostType({
 
               // Create a set to store removed post IDs
               const removedPostIds = new Set<string>();
-
-              // Get posts from various listings
-              // Get posts from top posts
+              // Get top posts
               const topPosts = await subreddit.getTopPosts();
               const allTopPosts = await topPosts.all();
 
@@ -1494,17 +1475,30 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
-  label: '🔁 Test Auto Game Post (Manual)',
+  label: '🔤 Trigger Word-Based Post',
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_, context) => {
     await context.scheduler.runJob({
       name: 'auto_create_post',
-      data: { force: true },
+      data: { force: true, inputType: 'word' },
       runAt: new Date(),
     });
+    context.ui.showToast('✅ Triggered word-based game post!');
+  },
+});
 
-    context.ui.showToast('✅ Triggered auto game post manually!');
+Devvit.addMenuItem({
+  label: '💬 Trigger Phrase-Based Post',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    await context.scheduler.runJob({
+      name: 'auto_create_post',
+      data: { force: true, inputType: 'phrase' },
+      runAt: new Date(),
+    });
+    context.ui.showToast('✅ Triggered phrase-based game post!');
   },
 });
 

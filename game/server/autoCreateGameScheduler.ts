@@ -42,7 +42,7 @@ const fallbackSynonyms = {
 
 Devvit.addSchedulerJob({
   name: 'auto_create_post',
-  onRun: async (event: ScheduledJobEvent<{ force?: boolean } | undefined>, rawContext: JobContext) => {
+  onRun: async (event: ScheduledJobEvent<{ force?: boolean; inputType?: 'word' | 'phrase' } | undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
 
     // Check if this is a forced/manual run first
@@ -61,7 +61,6 @@ Devvit.addSchedulerJob({
       }
     }
 
-    // Time guard: only proceed at 09:00, 14:00, and 19:00 America/Chicago (unless forced)
     if (!force) {
       try {
         const now = new Date();
@@ -97,20 +96,19 @@ Devvit.addSchedulerJob({
         const yyyy = dateParts.year;
         const mm = dateParts.month;
         const dd = dateParts.day;
-        const hh = dateParts.hour; // 00-23 in CT
+        const hh = dateParts.hour;
         const lockKey = `autoPostLock:${yyyy}-${mm}-${dd}:${hh}`;
 
         try {
           // @ts-ignore Devvit Redis supports NX/EX options
           const setResult = await (context as any).redis.set(lockKey, '1', {
             nx: true,
-            ex: 7200, // 2 hours expiry to be safe across delays
+            ex: 7200,
           });
           if (!setResult) {
-            return; // lock already held; another worker posted
+            return;
           }
         } catch (_lockErr) {
-          // If locking fails unexpectedly, fail-open would risk duplicates; returning is safer
           return;
         }
       } catch (tzErr) {
@@ -119,9 +117,8 @@ Devvit.addSchedulerJob({
     }
 
     const category = pickRandom(categories);
-    const inputType = pickInputType();
-
-    
+    // Use the inputType from event data if provided (manual trigger), otherwise use weighted random
+    const inputType = (event?.data as any)?.inputType || pickInputType();
 
     let recommendations: string[] = [];
     let synonyms: string[][] = [];
@@ -139,7 +136,7 @@ Devvit.addSchedulerJob({
       
       // Use fallback data
       const categoryData = fallbackData[category] || fallbackData['Pop Culture'];
-      recommendations = categoryData[inputType] || categoryData['word'];
+      recommendations = (categoryData as any)[inputType] || categoryData['word'];
       
     }
 
@@ -174,7 +171,6 @@ Devvit.addSchedulerJob({
       const term = synonymGroup[0];
       gifSearchTerms.push(term);
       const gifs = await searchTenorGifs(context, term, 1);
-      
       if (gifs[0]) {
         const gifUrl = gifs[0].media_formats?.tinygif?.url;
         const gifDescription = gifs[0].content_description || gifs[0].title || term;
@@ -191,7 +187,6 @@ Devvit.addSchedulerJob({
       return;
     }
 
-    // Validate that GIFs actually match the secret word
     const validation = await validateGifWordMatch(
       { 
         word, 
@@ -201,20 +196,9 @@ Devvit.addSchedulerJob({
       context
     );
 
-    // Skip game creation if validation fails (match score < 0.5)
     if (!validation.isValid || validation.matchScore < 0.5) {
-      console.log(
-        `[Scheduler] Skipped game creation - poor GIF match for "${word}". ` +
-        `Score: ${validation.matchScore}, Reason: ${validation.reasoning}`
-      );
       return;
     }
-
-    console.log(
-      `[Scheduler] Game validated for "${word}". ` +
-      `Match score: ${validation.matchScore}, Reason: ${validation.reasoning}`
-    );
-
     
     const maskedWord = word
       .split('')
@@ -225,7 +209,6 @@ Devvit.addSchedulerJob({
       inputType === 'phrase'
         ? 'Can you decode the phrase from this GIF?'
         : 'Can you decode the word from this GIF?';
-
     await saveGame(
       {
         word,
@@ -237,9 +220,7 @@ Devvit.addSchedulerJob({
         inputType,
       },
       context
-    );
-
-    
+    );    
   },
 });
 
@@ -247,7 +228,6 @@ Devvit.addSchedulerJob({
   name: 'clean_leaderboards',
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
-    
     await removeSystemUsersFromLeaderboard(context);
   },
 });
@@ -256,12 +236,7 @@ Devvit.addSchedulerJob({
   name: 'cache_prewarmer',
   onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
-    
-    try {
-      const { preWarmCache } = await import('./cachePreWarmer.js');
-      await preWarmCache(context);
-    } catch (error) {
-      // Silently handle cache prewarming errors
-    }
+    const { preWarmCache } = await import('./cachePreWarmer.js');
+    await preWarmCache(context);
   },
 });
