@@ -43,25 +43,25 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       type: 'Movies',
       icon: '🎬',
       bgColor: '#FF5E5B',
-      description: 'Themes, emotions, cinematic moments',
+      description: 'Themes, emotions & cinematic moments',
     },
     {
       type: 'Gaming',
       icon: '🎮',
       bgColor: '#8AC926',
-      description: 'Concepts, mechanics, gaming vibes',
+      description: 'Concepts, mechanics & game elements',
     },
     {
       type: 'Books',
       icon: '📚',
       bgColor: '#1982C4',
-      description: 'Literary themes, devices & genres',
+      description: 'Themes, characters & literary genres',
     },
     {
       type: 'Pop Culture',
       icon: '🔥',
       bgColor: '#6A4C93',
-      description: 'Memes, trends & viral moments',
+      description: 'Memes, slang & viral moments',
     },
   ];
 
