@@ -83,6 +83,11 @@ export async function saveScore(
       return { success: false, error: 'Username and Game ID are required' };
     }
 
+    // Don't save scores for anonymous users
+    if (username.toLowerCase() === 'anonymous') {
+      return { success: false, error: 'Anonymous users cannot save scores' };
+    }
+
     // Store user score for this game in a hash
     await context.redis.hSet(`score:${gameId}:${username}`, {
       username: username,
@@ -337,6 +342,11 @@ export async function getCumulativeLeaderboard(
       const item = leaderboardItems[i];
       const username = typeof item.member === 'string' ? item.member : '';
 
+      // Skip anonymous users
+      if (!username || username.toLowerCase() === 'anonymous') {
+        continue;
+      }
+
       // Get user stats
       const userStats = await context.redis.hGetAll(`userStats:${username}`) || {};
 
@@ -349,7 +359,7 @@ export async function getCumulativeLeaderboard(
       }
 
       leaderboard.push({
-        rank: i + 1,
+        rank: leaderboard.length + 1,
         username: username,
         score: Number(userStats.totalScore ?? item.score),
         gamesPlayed: Number(userStats.gamesPlayed || 0),
@@ -367,7 +377,6 @@ export async function getCumulativeLeaderboard(
   }
 }
 
-// Award creation bonus XP when a user creates a game
 export async function awardCreationBonus(
   username: string,
   context: Context
@@ -398,9 +407,6 @@ export async function awardCreationBonus(
     
     // Clean up old entries (older than 24 hours)
     await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
-    
-    // Check if user has created 4 or more games in the last 24 hours
-    // Note: creationsInLast24h doesn't include the current game yet, so we check if >= 4
     const shouldAwardBonus = creationsInLast24h.length < 4;
     
     // Get or initialize user stats

@@ -176,28 +176,19 @@ export async function getRandomGame(
       if (resolvedUsername && gameStates[i]) {
         const gameState = gameStates[i];
         if (gameState && gameState.playerState) {
-          try {
-            const parsedState = JSON.parse(gameState.playerState);
-            // Skip games where user has completed, given up, or revealed answer (including games they created)
-            // gifHintCount of 999 indicates user gave up and revealed the answer
-            if (
-              parsedState.isCompleted || 
-              parsedState.hasGivenUp || 
-              parsedState.isCreator ||
-              parsedState.gifHintCount >= 999
-            ) {
-              continue;
-            }
-          } catch (e) {
-            // If parsing fails, include this game
+          const parsedState = JSON.parse(gameState.playerState);
+          if (
+            parsedState.isCompleted || 
+            parsedState.hasGivenUp || 
+            parsedState.isCreator ||
+            parsedState.gifHintCount >= 999
+          ) {
+            continue;
           }
         }
       }
 
       const createdAt = parseInt(gameData.createdAt || '0');
-      
-      // Skip real-time Reddit API check during game selection to improve performance
-      // The check will happen when the user tries to actually play the game
 
       const isUserCreated =
         gameData.creatorId &&
@@ -212,12 +203,9 @@ export async function getRandomGame(
     }
 
     gamesWithDates.sort((a, b) => b.createdAt - a.createdAt);
-
-    // Use all found games instead of slicing to 10 since we already limited the search
     const recentGames = gamesWithDates;
     
     if (recentGames.length === 0) {
-      // Check if there are any games at all in the system
       const totalGamesCount = gameMembers.length;
       const hasPlayedAllGames = resolvedUsername && completedGames.length > 0 && totalGamesCount > 0;
       
