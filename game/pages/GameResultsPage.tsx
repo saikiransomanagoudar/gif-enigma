@@ -349,15 +349,24 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             <div className="space-y-4">
               {filterGuesses(statistics.guesses, 'mask')
                 .sort((a, b) => {
-                  // Check if each guess is correct (exact or synonym match)
+                  // Check if each guess is exact match or close match
                   const aIsCorrect = isGuessCorrect(a.guess, statistics.answer);
                   const bIsCorrect = isGuessCorrect(b.guess, statistics.answer);
                   
-                  // Correct answers always come first
-                  if (aIsCorrect && !bIsCorrect) return -1;
-                  if (!aIsCorrect && bIsCorrect) return 1;
+                  const aIsExactMatch = a.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
+                  const bIsExactMatch = b.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                    statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
                   
-                  // Otherwise sort by count descending
+                  // Priority 1: Exact matches first
+                  if (aIsExactMatch && !bIsExactMatch) return -1;
+                  if (!aIsExactMatch && bIsExactMatch) return 1;
+                  
+                  // Priority 2: Close matches (correct but not exact) second
+                  if (aIsCorrect && !aIsExactMatch && !bIsCorrect) return -1;
+                  if (bIsCorrect && !bIsExactMatch && !aIsCorrect) return 1;
+                  
+                  // Priority 3: Within same category, sort by count descending
                   return b.count - a.count;
                 })
                 .slice(0, 10) // Show top 10 to accommodate multiple correct answers
@@ -399,7 +408,6 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                           </div>
                         )}
                       </div>
-                      
                       {/* Progress Bar with count inside */}
                       <div className="relative h-6 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                         <div
