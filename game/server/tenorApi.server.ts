@@ -28,7 +28,7 @@ const CACHE_TTL = 60 * 60 * 24; // 1 day
 
 const GIF_CACHE_PREFIX = 'tenor_gif:';
 
-async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promise<TenorGifResult> {
+async function cacheTenorGif(context: Context, tenorGif: TenorGifResult, maxRetries: number = 4): Promise<TenorGifResult> {
   const cacheKey = `${GIF_CACHE_PREFIX}${tenorGif.id}`;
 
   try {
@@ -45,24 +45,24 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
     const isRedditCdn = (url?: string) => !!url && url.startsWith('https://i.redd.it/');
 
     // Helper: Verify URL is accessible with retries (Reddit CDN propagation delay)
-    const verifyUrl = async (url: string, maxRetries: number = 4): Promise<boolean> => {
-      for (let i = 0; i < maxRetries; i++) {
+    const verifyUrl = async (url: string, retries: number = maxRetries): Promise<boolean> => {
+      for (let i = 0; i < retries; i++) {
         try {
           const response = await fetch(url, {
             method: 'HEAD',
-            signal: AbortSignal.timeout(3000) // Longer timeout for reliability
+            signal: AbortSignal.timeout(2500) // Balanced: faster than 3s, safer than 2s
           });
           if (response.ok) {
             return true;
           }
-          // Wait longer before retry for CDN propagation
-          if (i < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Increased wait
+          // Moderate wait before retry
+          if (i < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 700)); // Balanced: faster than 1s, safer than 500ms
           }
         } catch (error) {
           // Wait before retry
-          if (i < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+          if (i < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 700)); // Balanced timing
           }
         }
       }
@@ -75,13 +75,13 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
         const uploadPromise = context.media.upload({ url, type: 'gif' });
         const result = await Promise.race([
           uploadPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 6000)) // Very generous timeout
+          new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 5000)) // Balanced: 5s (was 4s/6s)
         ]);
         // @ts-expect-error Result is from uploadPromise
         const mediaUrl: string = (result.mediaUrl as string) || url;
         return mediaUrl;
       } catch (err) {
-        throw err; // Must throw so we don't accept failed uploads
+        throw err; 
       }
     };
 
@@ -158,7 +158,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult): Promis
 export async function searchTenorGifs(
   context: Context,
   query: string,
-  limit: number = 16
+  limit: number = 12
 ): Promise<TenorGifResult[]> {
   if (!query || query.trim() === '') {
     return [];
@@ -184,97 +184,177 @@ export async function searchTenorGifs(
 
   const clientKey = 'gif_enigma_devvit';
 
-  // Smart strategy: fetch in batches and process until we have exactly 16
+  // Smart strategy: fetch in batches and process until we have exactly 12
   const desiredCount = Math.max(1, limit);
   const collected: TenorGifResult[] = [];
   const seenIds = new Set<string>();
-  let pos: string | undefined = undefined;
-  let page = 0;
-  const MAX_PAGES = 12; // Very aggressive - ensure we get 16 verified GIFs
-
-  while (collected.length < desiredCount && page < MAX_PAGES) {
-    // Fetch maximum GIFs per page
-    const fetchLimit = 50; // Tenor's maximum
-    const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
-    const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
-    const response: Response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'GIF-Enigma/1.0',
-        'Referer': 'https://www.reddit.com',
-        'Origin': 'https://www.reddit.com',
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Tenor API returned status ${response.status}: ${errorText}`);
-    }
-
-    const data: any = await response.json();
-    if (!data || !data.results) {
-      throw new Error('Invalid response structure from Tenor API');
-    }
-
-    // Process results in smaller batches for maximum reliability
-    const batchSize = 4; // Very small batches = highest success rate with verification
-    const results = data.results;
-
-    for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
-      const batch = results.slice(i, i + batchSize);
-
-      const batchResults: TenorGifResult[] = await Promise.all(
-        batch.map(async (result: any) => {
-          const mediaFormats = { ...result.media_formats };
-          const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
-          requiredFormats.forEach((format) => {
-            if (!mediaFormats[format]) {
-              mediaFormats[format] = { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
-            }
-          });
-
-          const transformed = {
-            id: result.id,
-            title: result.title || '',
-            media_formats: mediaFormats,
-            content_description: result.content_description || result.title || '',
-            created: result.created || Date.now(),
-            hasaudio: result.hasaudio || false,
-            url: result.url || '',
-          };
-
-          try {
-            const cachedGif = await cacheTenorGif(context, transformed);
-            return cachedGif;
-          } catch (error) {
-            return transformed;
-          }
-        })
+  
+  // Helper: Check if a GIF is visually similar to already collected GIFs
+  const isSimilarToCollected = (newGif: TenorGifResult): boolean => {
+    const newFormat = newGif.media_formats?.gif || newGif.media_formats?.tinygif;
+    if (!newFormat || !newFormat.dims) return false;
+    
+    const newWidth = newFormat.dims[0] || 0;
+    const newHeight = newFormat.dims[1] || 0;
+    const newAspectRatio = newWidth > 0 && newHeight > 0 ? newWidth / newHeight : 0;
+    const newDuration = Math.round((newFormat.duration || 0) * 10) / 10;
+    const newDesc = (newGif.content_description || newGif.title || '').toLowerCase().trim();
+    
+    // Extract key words from description (ignore common words)
+    const commonWords = new Set(['gif', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for']);
+    const newWords = new Set(
+      newDesc.split(/\s+/).filter(w => w.length > 2 && !commonWords.has(w))
+    );
+    
+    // Check against all collected GIFs
+    for (const existing of collected) {
+      const existingFormat = existing.media_formats?.gif || existing.media_formats?.tinygif;
+      if (!existingFormat || !existingFormat.dims) continue;
+      
+      const existingWidth = existingFormat.dims[0] || 0;
+      const existingHeight = existingFormat.dims[1] || 0;
+      const existingAspectRatio = existingWidth > 0 && existingHeight > 0 ? existingWidth / existingHeight : 0;
+      const existingDuration = Math.round((existingFormat.duration || 0) * 10) / 10;
+      const existingDesc = (existing.content_description || existing.title || '').toLowerCase().trim();
+      const existingWords = new Set(
+        existingDesc.split(/\s+/).filter(w => w.length > 2 && !commonWords.has(w))
       );
-
-      // ONLY add GIFs with valid Reddit CDN URLs
-      let addedInBatch = 0;
-      for (const r of batchResults) {
-        // MUST be Reddit CDN URL - Tenor URLs don't work in Reddit
-        if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
-          collected.push(r);
-          seenIds.add(r.id);
-          addedInBatch++;
-          if (collected.length >= desiredCount) break;
-        }
+      
+      // Calculate similarity score
+      let similarityScore = 0;
+      
+      // 1. Same aspect ratio (within 5% tolerance) = +40 points
+      if (newAspectRatio > 0 && existingAspectRatio > 0) {
+        const ratioDiff = Math.abs(newAspectRatio - existingAspectRatio) / existingAspectRatio;
+        if (ratioDiff < 0.05) similarityScore += 40;
       }
       
-      // Early exit: Stop processing batches if we have enough GIFs
-      if (collected.length >= desiredCount) break;
+      // 2. Same duration (within 0.2s) = +30 points
+      if (Math.abs(newDuration - existingDuration) < 0.2) {
+        similarityScore += 30;
+      }
+      
+      // 3. Description word overlap = +30 points (if >50% words match)
+      if (newWords.size > 0 && existingWords.size > 0) {
+        const intersection = new Set([...newWords].filter(w => existingWords.has(w)));
+        const overlap = intersection.size / Math.min(newWords.size, existingWords.size);
+        if (overlap > 0.5) similarityScore += 30;
+      }
+      
+      // If similarity score >= 70, consider it a duplicate
+      if (similarityScore >= 70) {
+        return true;
+      }
     }
     
-    // Early exit: Stop fetching more pages if we have enough GIFs
-    if (collected.length >= desiredCount) break;
+    return false;
+  };
+  
+  let pos: string | undefined = undefined;
+  let page = 0;
+  const MAX_PAGES = 10; // Balanced: enough candidates to get 12 verified GIFs
 
-    pos = data.next;
-    page += 1;
-    if (!pos) break; // no more pages
+  while (collected.length < desiredCount && page < MAX_PAGES) {
+    // OPTIMIZATION: Fetch 2 pages in parallel for speed (still within API limits)
+    const pagesToFetch = Math.min(2, MAX_PAGES - page);
+    const fetchPromises: Promise<any>[] = [];
+    
+    for (let p = 0; p < pagesToFetch; p++) {
+      const fetchLimit = 50; // Tenor's maximum
+      const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
+      const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
+      
+      fetchPromises.push(
+        fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'GIF-Enigma/1.0',
+            'Referer': 'https://www.reddit.com',
+            'Origin': 'https://www.reddit.com',
+          },
+        }).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Tenor API returned status ${response.status}`);
+          }
+          return response.json();
+        })
+      );
+      
+      // Only increment for the first page, subsequent pages need the 'next' token
+      if (p === 0) break; // For now, fetch one page at a time (parallel processing happens per page)
+    }
+    
+    const pageResults = await Promise.all(fetchPromises);
+    
+    for (const data of pageResults) {
+      if (!data || !data.results) continue;
+
+      // Process results in larger batches for speed (still safe with verification)
+      const batchSize = 8; // Increased from 6 - faster parallel processing
+      const results = data.results;
+
+      for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
+        const batch = results.slice(i, i + batchSize);
+
+        const batchResults: TenorGifResult[] = await Promise.all(
+          batch.map(async (result: any) => {
+            const mediaFormats = { ...result.media_formats };
+            const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
+            requiredFormats.forEach((format) => {
+              if (!mediaFormats[format]) {
+                mediaFormats[format] = { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
+              }
+            });
+
+            const transformed = {
+              id: result.id,
+              title: result.title || '',
+              media_formats: mediaFormats,
+              content_description: result.content_description || result.title || '',
+              created: result.created || Date.now(),
+              hasaudio: result.hasaudio || false,
+              url: result.url || '',
+            };
+
+            try {
+              // Use 3 retries for balance of speed and reliability
+              const cachedGif = await cacheTenorGif(context, transformed, 3);
+              return cachedGif;
+            } catch (error) {
+              return transformed;
+            }
+          })
+        );
+
+        // ONLY add GIFs with valid Reddit CDN URLs
+        let addedInBatch = 0;
+        for (const r of batchResults) {
+          // MUST be Reddit CDN URL - Tenor URLs don't work in Reddit
+          if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
+            // Multi-factor similarity check to catch duplicates with different sizes/crops
+            if (isSimilarToCollected(r)) {
+              continue; // Skip visual duplicate (same GIF, different size/crop)
+            }
+            
+            collected.push(r);
+            seenIds.add(r.id);
+            addedInBatch++;
+            if (collected.length >= desiredCount) break;
+          }
+        }
+        
+        // Early exit: Stop processing batches if we have enough GIFs
+        if (collected.length >= desiredCount) break;
+      }
+      
+      // Early exit: Stop fetching more pages if we have enough GIFs
+      if (collected.length >= desiredCount) break;
+
+      pos = data.next;
+      page += 1;
+      if (!pos) break; // no more pages
+    }
   }
 
   // Results are already verified during collection, just slice to desired count
@@ -293,13 +373,13 @@ export async function searchTenorGifs(
  * 
  * @param context - Devvit context with Redis access
  * @param queries - Array of search queries (synonyms)
- * @param limit - Number of GIFs per query (default: 16)
+ * @param limit - Number of GIFs per query (default: 12)
  * @returns Object mapping each query to its GIF results
  */
 export async function searchMultipleTenorGifs(
   context: Context,
   queries: string[],
-  limit: number = 16
+  limit: number = 12
 ): Promise<{ [query: string]: TenorGifResult[] }> {
   if (!queries || queries.length === 0) {
     return {};
@@ -313,10 +393,10 @@ export async function searchMultipleTenorGifs(
   }
 
   try {
-    // Add timeout wrapper to prevent hanging - 60 seconds for thorough verification
+    // Add timeout wrapper to prevent hanging
     const searchWithTimeout = async () => {
       const timeoutPromise = new Promise<{ [query: string]: TenorGifResult[] }>((_, reject) => {
-        setTimeout(() => reject(new Error('Batch search timeout')), 60000);
+        setTimeout(() => reject(new Error('Batch search timeout')), 50000); // Balanced timeout
       });
 
       const searchPromise = (async () => {

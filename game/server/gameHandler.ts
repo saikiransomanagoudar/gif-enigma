@@ -68,6 +68,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       gifs: JSON.stringify(gifs),
       createdAt: Date.now().toString(),
       username,
+      inputType: inputType || 'word',
       acceptedSynonyms: JSON.stringify(acceptedSynonyms), // Store for validation
     });    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
     await tx.exec();

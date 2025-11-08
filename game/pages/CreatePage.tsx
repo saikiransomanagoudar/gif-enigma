@@ -610,7 +610,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             setMessageType('success');
             pendingDisplaySynonym.current = null;
           }
-        } else {          
+        } else {
           // Clear the batch fetching set on error
           batchFetchingSynonyms.current.clear();
           
@@ -687,7 +687,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     window.parent.postMessage(
       {
         type: 'SEARCH_TENOR_GIFS',
-        data: { query: term, limit: 16 },
+        data: { query: term, limit: 12 },
       },
       '*'
     );
@@ -695,7 +695,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setIsSearching(false);
       setMessage('Search timed out. Please try again.');
       setMessageType('error');
-    }, 30000);
+    }, 25000); // Balanced timeout - not too aggressive
   };
 
   /**
@@ -730,14 +730,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         type: 'SEARCH_BATCH_TENOR_GIFS',
         data: { 
           queries: uncachedSynonyms,
-          limit: 16 
+          limit: 12 
         },
       },
       '*'
     );
     
-    // TIMEOUT: If batch fetch doesn't complete in 55 seconds, silently clear batch tracking
-    // User can then click the synonym and it will fetch individually (seamless fallback)
     setTimeout(() => {
       uncachedSynonyms.forEach(synonym => {
         // Only clear if still pending (not in cache)
@@ -753,7 +751,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         // Fetch individually - user won't see any error, just normal loading
         searchGifs(waitingSynonym);
       }
-    }, 55000);
+    }, 50000); // Balanced timeout for batch fetch
   };
 
   // const uploadGif = (gif: TenorGifResult) => {
@@ -1093,9 +1091,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                    {loadingStage === 2 && '✨ Selecting best matches...'}
                  </ComicText>
                </div>
-               <ComicText size={0.5} color="#94A3B8" className="mt-2 text-center">
+               {/* <ComicText size={0.5} color="#94A3B8" className="mt-2 text-center">
                  First load may take 10-15 seconds
-               </ComicText>
+               </ComicText> */}
              </div>
            )}
           {!isSearching && gifs.length === 0 && (
