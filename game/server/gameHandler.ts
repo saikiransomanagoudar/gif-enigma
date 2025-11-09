@@ -70,7 +70,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       const subreddit = await context.reddit.getCurrentSubreddit();
       const subredditName = subreddit?.name || 'PlayGIFEnigma';
       const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
-      const postTitle = `Can you decode the ${inputType} from this GIF?`;
+      const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
       const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
       await context.redis.hSet(`gamePreview:${gameId}`, {
         maskedWord: maskedWord || '',
