@@ -285,25 +285,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           );
         }
       }
-      if (actualMessage.type === 'TRACK_GUESS_RESULT') {
-        // Guess tracking result received
-      }
       if (actualMessage.type === 'VALIDATE_GUESS_RESULT') {
         if (actualMessage.success) {
           if (actualMessage.isCorrect) {
-            // The guess is correct (either exact or synonym match)
-            // Store the last submitted guess for the modal
             setWinningGuess(lastSubmittedGuessRef.current);
-            // console.log('🎯 Winning guess stored:', lastSubmittedGuessRef.current);
-            // console.log('🎯 Secret word:', gameData?.word?.toUpperCase().replace(/\s+/g, ''));
-            // Set state to trigger win modal
             setIsCorrect(true);
           } else {
-            // The guess is incorrect
             setIsCorrect(false);
           }
         } else {
-          // Validation failed - treat as incorrect
           setIsCorrect(false);
         }
       }
@@ -371,13 +361,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState, guessCount]);
 
-  // Note: handleCorrectGuess and handleIncorrectGuess are now called
-  // directly from VALIDATE_GUESS_RESULT handler for better control
-  // over synonym vs exact match handling
   useEffect(() => {
-    // Trigger animations when isCorrect changes
     if (isCorrect === true) {
-      // Success animation is handled in VALIDATE_GUESS_RESULT
       handleCorrectGuess();
     }
     if (isCorrect === false) {
@@ -482,15 +467,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const handleCorrectGuess = () => {
     if (gameData) {
       const currentUsername = username || 'anonymous';
-      
-      // Store the revealed letter count BEFORE revealing all letters
-      // This is needed for accurate score calculation
       const originalRevealedCount = revealedLetters.size;
       
-      // Show modal FIRST to hide UI changes
       setGameFlowState('won');
 
-      // Reveal all letters after a short delay (modal will cover the UI update)
       const allIndices = new Set<number>();
       for (let i = 0; i < gameData.word.length; i++) {
         if (gameData.word[i] !== ' ') {
@@ -498,14 +478,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
       
-      // Delay revealing letters until after modal renders to prevent flash
       setTimeout(() => {
         setRevealedLetters(allIndices);
       }, 100);
 
       const playerState = {
         gifHintCount,
-        revealedLetters: Array.from(allIndices), // Use all revealed letters
+        revealedLetters: Array.from(allIndices),
         guess: gameData.word,
         lastPlayed: Date.now(),
         isCompleted: true,
@@ -537,7 +516,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
 
-      // Calculate and save score
       window.parent.postMessage(
         {
           type: 'CALCULATE_SCORE',
@@ -559,18 +537,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         '*'
       );
 
-      // Animate answer boxes to green
       const boxes = document.querySelectorAll('.answer-box');
       boxes.forEach((box) => {
         (box as HTMLElement).style.backgroundColor = '#86efac';
         (box as HTMLElement).style.transition = 'background-color 0.5s ease';
       });
       
-      // Create confetti animation
       createConfetti();
-      
-      // Win modal will show automatically via gameFlowState === 'won'
-      // No need for alert() anymore
+
     }
   };
 
@@ -680,9 +654,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   const handleGiveUp = () => {
     if (!gameData) return;
-    
-    // Server will resolve the actual username even if 'anonymous' is sent
-    // This ensures consistency with the username used in getRandomGame
+
     const currentUsername = username || 'anonymous';
     
     const allIndices = new Set<number>();

@@ -55,13 +55,11 @@ export async function getRandomGame(
   try {
     const { excludeIds = [], preferUserCreated = true, username } = params;
     
-    // Resolve username to match the resolution done in MARK_GAME_COMPLETED
     let resolvedUsername: string | null = null;
     const incoming = String(username || '').trim();
     if (incoming && incoming.toLowerCase() !== 'anonymous') {
       resolvedUsername = incoming.replace(/^u\//i, '');
     } else {
-      // If username is 'anonymous' or empty, try to fetch the actual username
       const fetched = await context.reddit.getCurrentUsername();
       if (fetched) resolvedUsername = fetched;
     }
@@ -113,20 +111,16 @@ export async function getRandomGame(
       context.redis.hGetAll(`game:${gameId}`)
     );
     const allGameData = await Promise.all(gameDataPromises);
-
-    // First pass: filter out games based on basic validation (no Redis calls)
     const validGameCandidates: Array<{ gameId: string; gameData: any; index: number }> = [];
     
     for (let i = 0; i < gameIds.length; i++) {
       const gameId = gameIds[i];
       const gameData = allGameData[i];
 
-      // Skip already excluded games
       if (allExcluded.includes(gameId)) {
         continue;
       }
 
-      // Skip basic validation checks first (fast, no Redis)
       if (!gameData.redditPostId || !gameData.word) {
         continue;
       }

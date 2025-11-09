@@ -92,9 +92,7 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult, maxRetr
 
       try {
         const mediaUrl = await fastUpload(originalFormat.url);
-        // ONLY accept Reddit CDN URLs - Tenor URLs don't work in Reddit
         if (isRedditCdn(mediaUrl)) {
-          // Verify URL is accessible with retries (handles CDN propagation delay)
           const isAccessible = await verifyUrl(mediaUrl);
           if (isAccessible) {
             uploadedFormats[format] = { ...originalFormat, url: mediaUrl };

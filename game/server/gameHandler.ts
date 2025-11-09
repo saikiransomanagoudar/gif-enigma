@@ -33,8 +33,6 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // Validate GIF quality if provided (for analytics/debugging)
-    // NOTE: We don't reject games - validation is for user guidance during creation
     if (gifDescriptions && gifDescriptions.length === 4) {
       await validateGifWordMatch(
         {
@@ -45,16 +43,10 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
         context
       );
     }
-
-    // Fetch same-length semantic synonyms for validation (no AI during gameplay!)
     let acceptedSynonyms: string[] = [];
-    try {
-      const semanticResult = await getSemanticSynonyms({ word }, context);
-      if (semanticResult.success && semanticResult.synonyms) {
-        acceptedSynonyms = semanticResult.synonyms;
-      }
-    } catch (error) {
-      // Non-critical - game will work with exact match only
+    const semanticResult = await getSemanticSynonyms({ word }, context);
+    if (semanticResult.success && semanticResult.synonyms) {
+      acceptedSynonyms = semanticResult.synonyms;
     }
 
     const tx = await context.redis.watch('games');
@@ -78,9 +70,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       const subreddit = await context.reddit.getCurrentSubreddit();
       const subredditName = subreddit?.name || 'PlayGIFEnigma';
       const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
-
       const postTitle = `Can you decode the ${inputType} from this GIF?`;
-
       const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
       await context.redis.hSet(`gamePreview:${gameId}`, {
         maskedWord: maskedWord || '',
@@ -134,30 +124,23 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     // Award creation bonus XP to the creator
     const bonusResult = await awardCreationBonus(username, context);
 
-    // Automatically mark the game as completed for the creator
-    // This prevents the creator from playing their own game
     if (username && username !== 'anonymous') {
-      try {
-        await context.redis.zAdd(`user:${username}:completedGames`, {
-          member: gameId,
-          score: Date.now(),
-        });
-        
-        // Also save a game state indicating the creator "completed" it
-        await context.redis.hSet(`gameState:${username}:${gameId}`, {
-          playerState: JSON.stringify({
-            gifHintCount: 0,
-            revealedLetters: [],
-            guess: word,
-            lastPlayed: Date.now(),
-            isCompleted: true,
-            isCreator: true, // Flag to indicate this user created the game
-          }),
-          lastUpdated: Date.now().toString(),
-        });
-      } catch (error) {
-        // Silently handle error - game creation succeeded even if marking failed
-      }
+      await context.redis.zAdd(`user:${username}:completedGames`, {
+        member: gameId,
+        score: Date.now(),
+      });
+
+      await context.redis.hSet(`gameState:${username}:${gameId}`, {
+        playerState: JSON.stringify({
+          gifHintCount: 0,
+          revealedLetters: [],
+          guess: word,
+          lastPlayed: Date.now(),
+          isCompleted: true,
+          isCreator: true,
+        }),
+        lastUpdated: Date.now().toString(),
+      });
     }
 
     return {
@@ -185,12 +168,10 @@ export async function postCompletionComment(
   try {
     const { gameId, username, numGuesses, gifHints, redditPostId } = params;
 
-    // Safety check: If gifHints is 999 or numGuesses is 999, user gave up - don't post comment
     if (gifHints >= 999 || numGuesses >= 999) {
       return { success: false, error: 'Cannot post comment for games where user gave up' };
     }
 
-    // First, check if a comment has already been posted for this user on this game
     const commentKey = `comment:${gameId}:${username}`;
     const existingComment = await context.redis.get(commentKey);
 
@@ -212,7 +193,7 @@ export async function postCompletionComment(
     // Determine performance tier and emoji
     const usedNoHints = gifHints === 0;
     let emoji = '';
-    let commentVariant = Math.floor(Math.random() * 3); // 0, 1, or 2 for variety
+    let commentVariant = Math.floor(Math.random() * 3);
 
     // Calculate performance tier based on attempts and hints
     if (numGuesses === 1 && usedNoHints) {
@@ -239,7 +220,6 @@ export async function postCompletionComment(
       hintsDescription = `using ${gifHints} extra GIF hints`;
     }
 
-    // Build varied comment text based on performance
     let completionText = '';
 
     if (numGuesses === 1 && usedNoHints) {
@@ -346,8 +326,6 @@ export async function getRecentGames(
         // Extract just the game IDs (members)
         gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
 
-        // Sort by score (newest first) if we have scores
-        // This is a manual fallback if the sorted zRange fails
         if (allMembers[0] && typeof allMembers[0] !== 'string' && 'score' in allMembers[0]) {
           allMembers.sort((a, b) => {
             const scoreA = typeof a === 'string' ? 0 : a.score;
@@ -654,12 +632,8 @@ export async function saveGameState(
       return { success: false, error: 'Missing required parameters' };
     }
 
-    // Create a key for this user's state for this specific game
-    // IMPORTANT: Use format gameState:username:gameId (consistent with getRandomGame check)
     const gameStateKey = `gameState:${username}:${gameId}`;
 
-    // Store the player state as a JSON string
-    // Remove undefined fields before saving
     const cleanedState = Object.fromEntries(
       Object.entries(playerState).filter(([_, v]) => v !== undefined)
     );
@@ -668,14 +642,12 @@ export async function saveGameState(
       lastUpdated: Date.now().toString(),
     });
 
-    // Set an expiration on the game state (30 days)
     await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
 
-    // If the game is completed, add it to the user's completed games set
     if (playerState.isCompleted) {
       await context.redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
-        score: Date.now(), // Using timestamp as score for sorting
+        score: Date.now(),
       });
     }
 
@@ -699,7 +671,6 @@ export async function getGameState(
       return { success: false, error: 'Missing required parameters' };
     }
 
-    // IMPORTANT: Use format gameState:username:gameId (consistent with saveGameState)
     const gameStateKey = `gameState:${username}:${gameId}`;
     const gameState = await context.redis.hGetAll(gameStateKey);
 
@@ -782,14 +753,11 @@ export async function getUnplayedGames(
         const gameData = await context.redis.hGetAll(`game:${gameId}`);
 
         if (gameData && Object.keys(gameData).length > 0) {
-          // Parse the gifs JSON string back to an array
           if (gameData.gifs) {
             gameData.gifs = JSON.parse(gameData.gifs);
           }
 
           unplayedGames.push({ id: gameId, ...gameData });
-
-          // Stop if we've reached the limit
           if (unplayedGames.length >= limit) {
             break;
           }
@@ -907,7 +875,6 @@ export async function getGameStatistics(
   }
 }
 
-// Validate if a guess is semantically correct (matches meaning and length)
 export async function validateGuess(
   params: {
     gameId: string;
@@ -936,7 +903,6 @@ export async function validateGuess(
 
     const answer = gameData.word;
     
-    // Normalize both strings (remove spaces and punctuation, convert to uppercase)
     const normalizeString = (str: string) => 
       str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
     
@@ -960,8 +926,6 @@ export async function validateGuess(
       };
     }
 
-    // Length matches - check if it's a valid synonym using pre-computed data
-    // NO AI CALLS during gameplay - synonyms were fetched at game creation
     if (gameData.acceptedSynonyms) {
       const acceptedSynonyms: string[] = JSON.parse(gameData.acceptedSynonyms);
       const normalizedSynonyms = acceptedSynonyms.map((syn: string) => normalizeString(syn));
@@ -978,12 +942,6 @@ export async function validateGuess(
     }
 
     // Not an exact match or valid synonym
-    return {
-      success: true,
-      isCorrect: false,
-    };
-
-    // Not a match
     return {
       success: true,
       isCorrect: false,
