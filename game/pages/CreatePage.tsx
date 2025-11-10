@@ -777,8 +777,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       const questionText =
         inputType === 'word'
-          ? 'Can you guess the word from these GIF clues?'
-          : 'Can you guess the phrase from these GIF clues?';
+          ? 'Can you decode the word from this GIF?'
+          : 'Can you decode the phrase from this GIF?';
 
       const gifUrls = validGifs.map((gif) => getGifUrl(gif));
       if (!gifUrls.every((url) => typeof url === 'string' && url.trim() !== '')) {

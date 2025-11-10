@@ -31,6 +31,17 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     const user = await context.reddit.getCurrentUser();
     const username = user?.username || 'anonymous';
 
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+    ];
+    
+    const isSystemUser = systemUsernames.some(sysUser => 
+      username.toLowerCase() === sysUser.toLowerCase()
+    );
+
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     if (gifDescriptions && gifDescriptions.length === 4) {
@@ -121,10 +132,21 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       }
     }
 
-    // Award creation bonus XP to the creator
-    const bonusResult = await awardCreationBonus(username, context);
+    let bonusResult: { success: boolean; bonusAwarded: boolean; error?: string } = { 
+      success: true, 
+      bonusAwarded: false 
+    };
+    
+    if (!isSystemUser) {
+      const result = await awardCreationBonus(username, context);
+      bonusResult = {
+        success: result.success,
+        bonusAwarded: result.bonusAwarded || false,
+        error: result.error
+      };
+    }
 
-    if (username && username !== 'anonymous') {
+    if (username && username !== 'anonymous' && !isSystemUser) {
       await context.redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: Date.now(),
@@ -134,7 +156,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
         playerState: JSON.stringify({
           gifHintCount: 0,
           revealedLetters: [],
-          guess: word,
+          guess: '',
           lastPlayed: Date.now(),
           isCompleted: true,
           isCreator: true,
@@ -179,7 +201,6 @@ export async function postCompletionComment(
       return { success: true, alreadyPosted: true };
     }
 
-    // Get the Reddit post ID if not provided
     let postId = redditPostId;
     if (!postId) {
       const gameData = await context.redis.hGetAll(`game:${gameId}`);

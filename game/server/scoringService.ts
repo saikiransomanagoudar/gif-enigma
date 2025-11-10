@@ -9,12 +9,12 @@ export function calculateScore(params: {
   word: string;
   gifHintCount: number;
   revealedLetterCount: number;
-  timeTaken: number; // in seconds
+  timeTaken: number;
 }): {
   score: number;
   gifPenalty: number;
   wordPenalty: number;
-  timeTaken: number; // Add this to return type
+  timeTaken: number;
 } {
   const { word, gifHintCount, revealedLetterCount, timeTaken } = params;
 
@@ -83,9 +83,12 @@ export async function saveScore(
       return { success: false, error: 'Username and Game ID are required' };
     }
 
-    // Don't save scores for anonymous users
-    if (username.toLowerCase() === 'anonymous') {
-      return { success: false, error: 'Anonymous users cannot save scores' };
+    // List of system/bot usernames that should not get scores or leaderboard entries
+    const systemUsernames = ['gif-enigma', 'anonymous', 'GIFEnigmaBot', 'system'];
+
+    // Don't save scores for anonymous or system/bot users
+    if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: false, error: 'System users cannot save scores' };
     }
 
     // Store user score for this game in a hash
@@ -110,59 +113,54 @@ export async function saveScore(
       score: score,
       member: `${gameId}:${username}`,
     });
-
     // -------- Begin Cumulative Leaderboard Additions --------
-
-    // Track that this user completed this game
     await context.redis.zAdd(`user:${username}:completedGames`, {
       member: gameId,
       score: timestamp,
     });
 
-    
-
-    // Update user stats
-    try {
-      // Get existing user stats
-      let userStats: { gamesPlayed?: string; gamesWon?: string; totalScore?: string; bestScore?: string; averageScore?: string; lastPlayed?: string } = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
-      if (!userStats || typeof userStats !== 'object') {
-        await context.redis.del(`userStats:${username}`);
-      }
-      if (!userStats || Object.keys(userStats).length === 0) {
-        await context.redis.hSet(`userStats:${username}`, {
-          gamesPlayed: '0',
-          gamesCreated: '0',
-          totalScore: '0',
-          bestScore: '0',
-          averageScore: '0'
-        });
-        userStats = await context.redis.hGetAll(`userStats:${username}`);
-      }
-      
-
-      // Calculate new stats
-      const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
-      const gamesWon = Number(userStats.gamesWon || 0) + 1; // Assuming a score means they won
-      const totalScore = Number(userStats.totalScore || 0) + score;
-      const bestScore = Math.max(Number(userStats.bestScore || 0), score);
-      const averageScore = Math.round(totalScore / gamesPlayed);
-
-      // Save updated stats
-      await context.redis.hSet(`userStats:${username}`, {
-        gamesPlayed: gamesPlayed.toString(),
-        gamesWon: gamesWon.toString(),
-        totalScore: totalScore.toString(),
-        bestScore: bestScore.toString(),
-        averageScore: averageScore.toString(),
-        lastPlayed: timestamp.toString(),
-      });
-
-      // Update cumulative leaderboard
-      await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
-
-    } catch (statsError) {
-      // Continue with the function even if user stats update fails
+    // Get existing user stats
+    let userStats: {
+      gamesPlayed?: string;
+      gamesWon?: string;
+      totalScore?: string;
+      bestScore?: string;
+      averageScore?: string;
+      lastPlayed?: string;
+    } = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
+    if (!userStats || typeof userStats !== 'object') {
+      await context.redis.del(`userStats:${username}`);
     }
+    if (!userStats || Object.keys(userStats).length === 0) {
+      await context.redis.hSet(`userStats:${username}`, {
+        gamesPlayed: '0',
+        gamesCreated: '0',
+        totalScore: '0',
+        bestScore: '0',
+        averageScore: '0',
+      });
+      userStats = await context.redis.hGetAll(`userStats:${username}`);
+    }
+
+    // Calculate new stats
+    const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
+    const gamesWon = Number(userStats.gamesWon || 0) + 1; // Assuming a score means they won
+    const totalScore = Number(userStats.totalScore || 0) + score;
+    const bestScore = Math.max(Number(userStats.bestScore || 0), score);
+    const averageScore = Math.round(totalScore / gamesPlayed);
+
+    // Save updated stats
+    await context.redis.hSet(`userStats:${username}`, {
+      gamesPlayed: gamesPlayed.toString(),
+      gamesWon: gamesWon.toString(),
+      totalScore: totalScore.toString(),
+      bestScore: bestScore.toString(),
+      averageScore: averageScore.toString(),
+      lastPlayed: timestamp.toString(),
+    });
+
+    // Update cumulative leaderboard
+    await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
 
     // -------- End Cumulative Leaderboard Additions --------
 
@@ -197,25 +195,22 @@ export async function getGameLeaderboard(
       const item = leaderboardItems[i];
       const username = typeof item.member === 'string' ? item.member : '';
 
-      try {
-        // Get score details
-        const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+      // Get score details
+      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
 
-        if (!scoreData || Object.keys(scoreData).length === 0) {
-          continue;
-        }
-
-        leaderboard.push({
-          rank: i + 1,
-          username: username,
-          score: Number(scoreData?.score || item.score),
-          gifPenalty: Number(scoreData?.gifPenalty || 0),
-          wordPenalty: Number(scoreData?.wordPenalty || 0),
-          timeTaken: Number(scoreData?.timeTaken || 0),
-          timestamp: Number(scoreData?.timestamp || 0),
-        });
-      } catch (entryError) {
+      if (!scoreData || Object.keys(scoreData).length === 0) {
+        continue;
       }
+
+      leaderboard.push({
+        rank: i + 1,
+        username: username,
+        score: Number(scoreData?.score || item.score),
+        gifPenalty: Number(scoreData?.gifPenalty || 0),
+        wordPenalty: Number(scoreData?.wordPenalty || 0),
+        timeTaken: Number(scoreData?.timeTaken || 0),
+        timestamp: Number(scoreData?.timestamp || 0),
+      });
     }
 
     return { success: true, leaderboard };
@@ -348,7 +343,7 @@ export async function getCumulativeLeaderboard(
       }
 
       // Get user stats
-      const userStats = await context.redis.hGetAll(`userStats:${username}`) || {};
+      const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
 
       if (!userStats || Object.keys(userStats).length === 0) {
         continue;
@@ -382,70 +377,76 @@ export async function awardCreationBonus(
   context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
+    // List of system/bot usernames that should not get bonuses
+    const systemUsernames = ['gif-enigma', 'anonymous', 'GIFEnigmaBot', 'system'];
+
+    if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
+    }
+
     // Check how many games the user has created in the last 24 hours
     const now = Date.now();
-    const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000); // 24 hours in milliseconds
-    
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+
     // Track recent game creations in a sorted set with timestamp as score
     const recentCreationsKey = `user:${username}:recentCreations`;
-    
+
     // Get all game creations in the last 24 hours
     const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
-    
+
     // Filter creations to only include those in the last 24 hours
     const creationsInLast24h = recentCreations.filter((item) => {
       return item.score >= twentyFourHoursAgo;
     });
-    
+
     // Add current creation to the set
     await context.redis.zAdd(recentCreationsKey, {
       member: `game_${now}`,
       score: now,
     });
-    
+
     // Clean up old entries (older than 24 hours)
     await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
     const shouldAwardBonus = creationsInLast24h.length < 4;
-    
+
     // Get or initialize user stats
     let userStats: any = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
-    
+
     if (!userStats || Object.keys(userStats).length === 0) {
       await context.redis.hSet(`userStats:${username}`, {
         gamesPlayed: '0',
         gamesCreated: '0',
         totalScore: '0',
         bestScore: '0',
-        averageScore: '0'
+        averageScore: '0',
       });
       userStats = await context.redis.hGetAll(`userStats:${username}`);
     }
-    
+
     // Update games created count (always increment this)
     const gamesCreated = Number(userStats.gamesCreated || 0) + 1;
-    
+
     // Only award bonus if user hasn't exceeded the 4 games limit in 24 hours
     let bonusXP = 0;
     if (shouldAwardBonus) {
       bonusXP = CREATION_BONUS_XP;
     }
-    
+
     const totalScore = Number(userStats.totalScore || 0) + bonusXP;
-    
+
     await context.redis.hSet(`userStats:${username}`, {
       ...userStats,
       gamesCreated: gamesCreated.toString(),
       totalScore: totalScore.toString(),
       lastPlayed: Date.now().toString(),
     });
-    
-    // Update cumulative leaderboard with bonus (only if bonus was awarded)
+
     if (shouldAwardBonus) {
       await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
     }
-    
+
     return { success: true, bonusAwarded: shouldAwardBonus };
   } catch (error) {
     return { success: false, error: String(error), bonusAwarded: false };
