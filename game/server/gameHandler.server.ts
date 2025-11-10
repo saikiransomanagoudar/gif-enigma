@@ -49,11 +49,11 @@ export {
 };
 
 export async function getRandomGame(
-  params: { excludeIds?: string[]; preferUserCreated?: boolean; username?: string },
+  params: { excludeIds?: string[]; preferUserCreated?: boolean; username?: string; useStickyNavigation?: boolean },
   context: any
 ) {
   try {
-    const { excludeIds = [], preferUserCreated = true, username } = params;
+    const { excludeIds = [], preferUserCreated = true, username, useStickyNavigation = false } = params;
     
     let resolvedUsername: string | null = null;
     const incoming = String(username || '').trim();
@@ -62,6 +62,105 @@ export async function getRandomGame(
     } else {
       const fetched = await context.reddit.getCurrentUsername();
       if (fetched) resolvedUsername = fetched;
+    }
+    
+    // Helper function to check if a game has been completed by the user
+    const isGameCompleted = async (gameId: string): Promise<boolean> => {
+      if (!resolvedUsername) return false;
+      
+      // Check 1: completedGames sorted set
+      const completedGamesResult = await context.redis.zRange(
+        `user:${resolvedUsername}:completedGames`, 
+        0, 
+        -1, 
+        { by: 'score' }
+      );
+      
+      const completedGameIds = completedGamesResult.map((item: any) =>
+        typeof item === 'string' ? item : item.member
+      );
+      
+      if (completedGameIds.includes(gameId)) {
+        return true;
+      }
+      
+      // Check 2: gameState for completion flags
+      const gameState = await context.redis.hGetAll(`gameState:${resolvedUsername}:${gameId}`);
+      
+      if (gameState && gameState.playerState) {
+        try {
+          const parsedState = JSON.parse(gameState.playerState);
+          
+          if (parsedState.isCompleted || parsedState.hasGivenUp || parsedState.isCreator) {
+            return true;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+      
+      // Check 3: Look for a saved score (legacy completions before tracking was added)
+      const scoreData = await context.redis.hGetAll(`score:${gameId}:${resolvedUsername}`);
+      if (scoreData && Object.keys(scoreData).length > 0) {
+        // Add to completedGames list for future checks
+        await context.redis.zAdd(`user:${resolvedUsername}:completedGames`, {
+          member: gameId,
+          score: Date.now(),
+        });
+        return true;
+      }
+      
+      return false;
+    };
+    
+    // STICKY NAVIGATION: Check if user has an assigned game
+    if (useStickyNavigation && resolvedUsername) {
+      const assignedGameKey = `user:${resolvedUsername}:assignedGame`;
+      const assignedGameId = await context.redis.get(assignedGameKey);
+      
+      if (assignedGameId) {
+        // Check if user has already completed this game
+        const isCompleted = await isGameCompleted(assignedGameId);
+        
+        if (isCompleted) {
+          // User completed the assigned game - clear it
+          await context.redis.del(assignedGameKey);
+        } else {
+          // Check if game is still valid
+          const gameData = await context.redis.hGetAll(`game:${assignedGameId}`);
+          
+          if (gameData && gameData.redditPostId && gameData.word && gameData.gifs && gameData.isRemoved !== 'true') {
+            try {
+              const gifs = JSON.parse(gameData.gifs);
+              if (Array.isArray(gifs) && gifs.length > 0) {
+                // Verify Reddit post still exists and isn't removed
+                try {
+                  const post = await context.reddit.getPostById(gameData.redditPostId);
+                  
+                  if (post && !post.removed) {
+                    // Game is still valid! Return it
+                    const gameResult = await getGame({ gameId: assignedGameId }, context);
+                    return gameResult;
+                  } else {
+                    // Post was removed - mark game and clear assignment
+                    await context.redis.hSet(`game:${assignedGameId}`, { isRemoved: 'true' });
+                    await context.redis.del(assignedGameKey);
+                  }
+                } catch (postError) {
+                  // Error fetching post - clear assignment
+                  await context.redis.del(assignedGameKey);
+                }
+              }
+            } catch (e) {
+              // Invalid GIFs - clear assignment
+              await context.redis.del(assignedGameKey);
+            }
+          } else {
+            // Invalid game data - clear assignment
+            await context.redis.del(assignedGameKey);
+          }
+        }
+      }
     }
     
     let completedGames: string[] = [];
@@ -95,6 +194,37 @@ export async function getRandomGame(
       by: 'score',
       reverse: true,
     });
+    
+    // Fallback: If Redis is empty, try to find games from Reddit posts
+    if (!gameMembers || gameMembers.length === 0) {
+      const subreddit = await context.reddit.getCurrentSubreddit();
+      const listing = await context.reddit.getNewPosts({
+        subredditName: subreddit.name,
+        limit: 100,
+        pageSize: 100,
+      });
+      const posts = await listing.all();
+      
+      // Build game list from posts
+      const gameIds = [];
+      for (const post of posts) {
+        const postData = await context.redis.hGetAll(`post:${post.id}`);
+        if (postData && postData.gameId) {
+          gameIds.push(postData.gameId);
+        }
+      }
+      
+      if (gameIds.length === 0) {
+        return {
+          success: false,
+          error: 'No games available yet. Be the first to create one!',
+          requestedUserCreated: preferUserCreated,
+          hasPlayedAll: false,
+        };
+      }
+      
+      gameMembers.push(...gameIds.map(id => ({ member: id, score: 0 })));
+    }
     
     // Limit to 50 games but process efficiently with batch operations
     const maxGamesToCheck = Math.min(gameMembers.length, 50);
@@ -157,7 +287,7 @@ export async function getRandomGame(
       gameStates = await Promise.all(gameStatePromises);
     }
 
-    // Third pass: build final list of valid games
+    // Third pass: build final list of valid games with thorough completion checks
     for (let i = 0; i < validGameCandidates.length; i++) {
       // Stop if we already have enough valid games
       if (gamesWithDates.length >= targetValidGames) {
@@ -165,6 +295,14 @@ export async function getRandomGame(
       }
 
       const { gameId, gameData } = validGameCandidates[i];
+      
+      // Use thorough completion check
+      if (resolvedUsername) {
+        const isCompleted = await isGameCompleted(gameId);
+        if (isCompleted) {
+          continue;
+        }
+      }
       
       // Check game state if available
       if (resolvedUsername && gameStates[i]) {
@@ -221,14 +359,60 @@ export async function getRandomGame(
       }
     }
 
-    // Select a random game from the candidates
-    const randomIndex = Math.floor(Math.random() * candidatePool.length);
-    const selectedGame = candidatePool[randomIndex];
-    const randomGameId = selectedGame.gameId;
+    // Try up to 20 games to find a valid one with existing Reddit post
+    const MAX_ATTEMPTS = Math.min(20, candidatePool.length);
     
-    const gameResult = await getGame({ gameId: randomGameId }, context);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const randomIndex = Math.floor(Math.random() * candidatePool.length);
+      const selectedGame = candidatePool[randomIndex];
+      const randomGameId = selectedGame.gameId;
+      
+      // Fetch the full game data
+      const gameData = await context.redis.hGetAll(`game:${randomGameId}`);
+      
+      if (!gameData || !gameData.redditPostId || gameData.isRemoved === 'true') {
+        // Remove from pool and try again
+        candidatePool.splice(randomIndex, 1);
+        if (candidatePool.length === 0) break;
+        continue;
+      }
+      
+      // Verify the Reddit post still exists and isn't removed
+      try {
+        const post = await context.reddit.getPostById(gameData.redditPostId);
+        
+        if (post && !post.removed) {
+          // Valid game found! Store as assigned game if using sticky navigation
+          if (useStickyNavigation && resolvedUsername) {
+            const assignedGameKey = `user:${resolvedUsername}:assignedGame`;
+            await context.redis.set(assignedGameKey, randomGameId);
+          }
+          
+          const gameResult = await getGame({ gameId: randomGameId }, context);
+          return gameResult;
+        } else {
+          // Post was removed - mark the game
+          await context.redis.hSet(`game:${randomGameId}`, { isRemoved: 'true' });
+          candidatePool.splice(randomIndex, 1);
+          if (candidatePool.length === 0) break;
+          continue;
+        }
+      } catch (error) {
+        // Error fetching post - mark as removed and try another
+        await context.redis.hSet(`game:${randomGameId}`, { isRemoved: 'true' });
+        candidatePool.splice(randomIndex, 1);
+        if (candidatePool.length === 0) break;
+        continue;
+      }
+    }
     
-    return gameResult;
+    // Couldn't find a valid game after attempts
+    return {
+      success: false,
+      error: 'Could not find a valid game. Please try again or create a new one!',
+      requestedUserCreated: preferUserCreated,
+      hasPlayedAll: false,
+    };
   } catch (error) {
     return { success: false, error: String(error) };
   }

@@ -85,119 +85,103 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     isHandlingRequest.current = true;
     setIsLoading(true);
     setShowSuccessMessage(false);
-    let retryCount = 0;
-    const maxRetries = 3;
     let timeoutId: NodeJS.Timeout | null = null;
     let isHandled = false;
 
-    const tryFindGame = () => {
-      const handleGameResponse = (event: MessageEvent) => {
-        let message = event.data;
-        if (message && message.type === 'devvit-message' && message.data?.message) {
-          message = message.data.message;
-        } else if (message && message.type === 'devvit-message' && message.data) {
-          message = message.data;
-        }
+    const handleGameResponse = (event: MessageEvent) => {
+      let message = event.data;
+      if (message && message.type === 'devvit-message' && message.data?.message) {
+        message = message.data.message;
+      } else if (message && message.type === 'devvit-message' && message.data) {
+        message = message.data;
+      }
 
-        if (message.type === 'GET_RANDOM_GAME_RESULT') {
-          // Prevent handling the same response multiple times
-          if (isHandled) return;
-          isHandled = true;
-          
-          window.removeEventListener('message', handleGameResponse);
-          if (timeoutId) clearTimeout(timeoutId);
+      if (message.type === 'GET_RANDOM_GAME_RESULT') {
+        // Prevent handling the same response multiple times
+        if (isHandled) return;
+        isHandled = true;
+        
+        window.removeEventListener('message', handleGameResponse);
+        if (timeoutId) clearTimeout(timeoutId);
 
-          if (message.success && message.result && message.result.game) {
-            const game = message.result.game;
-            const redditPostId = game.redditPostId;
+        if (message.success && message.result && message.result.game) {
+          const game = message.result.game;
+          const redditPostId = game.redditPostId;
 
-            if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
-              // Show brief success message and navigate quickly
-              setShowSuccessMessage(true);
-              
-              // Use shorter delay (150ms) - just enough to see the animation
-              setTimeout(() => {
-                // Reset state before navigation
-                setIsLoading(false);
-                setShowSuccessMessage(false);
-                isHandlingRequest.current = false;
-                
-                // Navigate immediately after state reset
-                window.parent.postMessage(
-                  {
-                    type: 'NAVIGATE_TO_POST',
-                    data: { postId: redditPostId },
-                  },
-                  '*'
-                );
-              }, 150);
-            } else if (retryCount < maxRetries) {
-              isHandled = false; // Reset for retry
-              retryCount++;
-              setTimeout(tryFindGame, 500);
-            } else {
+          if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
+            setShowSuccessMessage(true);           
+            setTimeout(() => {
+              // Reset state before navigation
               setIsLoading(false);
               setShowSuccessMessage(false);
-              isHandlingRequest.current = false; // Reset flag
-              alert('⚠️ Could not find a valid game to play. Please try again.');
-            }
-          } else if (retryCount < maxRetries) {
-            isHandled = false; // Reset for retry
-            retryCount++;
-            setTimeout(tryFindGame, 500);
+              isHandlingRequest.current = false;
+              
+              // Navigate immediately after state reset
+              window.parent.postMessage(
+                {
+                  type: 'NAVIGATE_TO_POST',
+                  data: { postId: redditPostId },
+                },
+                '*'
+              );
+            }, 150);
           } else {
             setIsLoading(false);
             setShowSuccessMessage(false);
-            isHandlingRequest.current = false; // Reset flag
-            
-            // Show contextual error messages
-            const result = message.result || {};
-            let errorMessage = '';
-            
-            if (result.hasPlayedAll) {
-              errorMessage = '🎉 Amazing! You\'ve completed all games! Check back later for new challenges.';
-            } else if (result.error && result.error.includes('No games available yet')) {
-              errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
-            } else if (result.error) {
-              errorMessage = result.error;
-            } else if (message.error) {
-              errorMessage = message.error;
-            } else {
-              errorMessage = '😕 No games available right now. Try creating one!';
-            }
-            
-            alert(errorMessage);
+            isHandlingRequest.current = false;
+            alert('⚠️ Could not find a valid game to play. Please try again.');
           }
-        }
-      };
-
-      window.removeEventListener('message', handleGameResponse);
-      window.addEventListener('message', handleGameResponse);
-
-      window.parent.postMessage(
-        {
-          type: 'GET_RANDOM_GAME',
-          data: {
-            username: redditUsername || 'anonymous',
-            preferUserCreated: true,
-          },
-        },
-        '*'
-      );
-
-      // Safety timeout - if no response after 10 seconds, reset UI
-      timeoutId = setTimeout(() => {
-        if (isMounted.current && !isHandled) {
-          window.removeEventListener('message', handleGameResponse);
+        } else {
           setIsLoading(false);
           setShowSuccessMessage(false);
-          isHandlingRequest.current = false; // Reset flag
-          alert('Request timed out. Please try again.');
+          isHandlingRequest.current = false;
+          
+          // Show contextual error messages
+          const result = message.result || {};
+          let errorMessage = '';
+          
+          if (result.hasPlayedAll) {
+            errorMessage = '🎉 Amazing! You\'ve completed all games! Check back later for new challenges.';
+          } else if (result.error && result.error.includes('No games available yet')) {
+            errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+          } else if (result.error) {
+            errorMessage = result.error;
+          } else if (message.error) {
+            errorMessage = message.error;
+          } else {
+            errorMessage = '😕 No games available right now. Try creating one!';
+          }
+          
+          alert(errorMessage);
         }
-      }, 10000);
+      }
     };
 
-    tryFindGame();
+    window.removeEventListener('message', handleGameResponse);
+    window.addEventListener('message', handleGameResponse);
+
+    // Request a game with sticky random navigation enabled
+    window.parent.postMessage(
+      {
+        type: 'GET_RANDOM_GAME',
+        data: {
+          username: redditUsername || 'anonymous',
+          preferUserCreated: true,
+          useStickyNavigation: true,
+        },
+      },
+      '*'
+    );
+
+    timeoutId = setTimeout(() => {
+      if (isMounted.current && !isHandled) {
+        window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
+        setShowSuccessMessage(false);
+        isHandlingRequest.current = false;
+        alert('Request timed out. Please try again.');
+      }
+    }, 10000);
   };
 
   useEffect(() => {

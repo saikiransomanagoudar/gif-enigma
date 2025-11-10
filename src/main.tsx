@@ -343,6 +343,7 @@ Devvit.addCustomPostType({
                 excludeIds: event.data.excludeIds || [],
                 preferUserCreated: event.data.preferUserCreated !== false,
                 username: event.data.username || username,
+                useStickyNavigation: event.data.useStickyNavigation || false,
               };
 
               const result = await getRandomGame(params, context);
