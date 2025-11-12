@@ -1504,7 +1504,7 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
-  label: '🧹 Clean Leaderboards',
+  label: '🧹 Remove System Users from Leaderboard',
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_, context) => {
@@ -1514,7 +1514,7 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
-  label: '🔥 Test Cache Prewarmer (Manual)',
+  label: '🔥 Trigger Cache Prewarmer',
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_, context) => {

@@ -12,10 +12,9 @@ export interface TenorGifResult {
   id: string;
   title: string;
   media_formats: {
-    gif: TenorGifFormat;
+    gif?: TenorGifFormat;
     tinygif: TenorGifFormat;
-    mediumgif: TenorGifFormat;
-    nanogif: TenorGifFormat;
+    mp4?: TenorGifFormat;
   };
   content_description: string;
   created: number;
@@ -85,8 +84,8 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult, maxRetr
       }
     };
 
-    // Upload both formats simultaneously with fast timeouts
-    const uploadPromises = ['gif', 'tinygif'].map(async (format) => {
+    // Upload only tinygif format for speed (smallest size, fastest upload/verification)
+    const uploadPromises = ['tinygif'].map(async (format) => {
       const originalFormat = tenorGif.media_formats[format as keyof typeof tenorGif.media_formats];
       if (!originalFormat?.url) return { format, success: false };
 
@@ -109,16 +108,13 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult, maxRetr
 
     await Promise.allSettled(uploadPromises);
 
-    // Non-essential formats keep original URLs (mediumgif, nanogif)
-    (['mediumgif', 'nanogif'] as const).forEach((format) => {
-      const originalFormat = tenorGif.media_formats[format];
-      if (originalFormat?.url) {
-        uploadedFormats[format] = originalFormat;
-      }
-    });
+    // Keep gif format with original URL as fallback (not uploaded to avoid slowdown)
+    if (tenorGif.media_formats.gif?.url) {
+      uploadedFormats.gif = tenorGif.media_formats.gif;
+    }
 
-    // 3. Create final cached result (prefer gif, then tinygif) - MUST be Reddit CDN
-    const preferredUrl = uploadedFormats.gif?.url || uploadedFormats.tinygif?.url || '';
+    // 3. Create final cached result (use uploaded tinygif) - MUST be Reddit CDN
+    const preferredUrl = uploadedFormats.tinygif?.url || '';
 
     const cachedResult = {
       ...tenorGif,
@@ -136,7 +132,6 @@ async function cacheTenorGif(context: Context, tenorGif: TenorGifResult, maxRetr
         url: '',
         media_formats: {
           ...cachedResult.media_formats,
-          gif: cachedResult.media_formats.gif ? { ...cachedResult.media_formats.gif, url: '' } : cachedResult.media_formats.gif,
           tinygif: cachedResult.media_formats.tinygif ? { ...cachedResult.media_formats.tinygif, url: '' } : cachedResult.media_formats.tinygif,
         },
       } as TenorGifResult;
@@ -168,11 +163,9 @@ export async function searchTenorGifs(
 
     if (cachedData) {
       const results = JSON.parse(cachedData);
-      // ONLY use cache if it has the full requested amount - avoid partial/incomplete results
       if (results.length >= limit) {
         return results;
       }
-      // Cache has partial results (e.g., only 1 GIF) - fetch fresh to get full set
     }
   } catch (cacheError) {
     // Cache error, continue to API
@@ -259,7 +252,7 @@ export async function searchTenorGifs(
     
     for (let p = 0; p < pagesToFetch; p++) {
       const fetchLimit = 50; // Tenor's maximum
-      const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=gif,tinygif,mediumgif,nanogif&contentfilter=high&limit=${fetchLimit}`;
+      const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=minimal&contentfilter=high&limit=${fetchLimit}`;
       const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
       
       fetchPromises.push(
@@ -277,10 +270,8 @@ export async function searchTenorGifs(
           }
           return response.json();
         })
-      );
-      
-      // Only increment for the first page, subsequent pages need the 'next' token
-      if (p === 0) break; // For now, fetch one page at a time (parallel processing happens per page)
+      );  
+      if (p === 0) break;
     }
     
     const pageResults = await Promise.all(fetchPromises);
@@ -288,8 +279,7 @@ export async function searchTenorGifs(
     for (const data of pageResults) {
       if (!data || !data.results) continue;
 
-      // Process results in larger batches for speed (still safe with verification)
-      const batchSize = 8; // Increased from 6 - faster parallel processing
+      const batchSize = 8;
       const results = data.results;
 
       for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
@@ -298,7 +288,7 @@ export async function searchTenorGifs(
         const batchResults: TenorGifResult[] = await Promise.all(
           batch.map(async (result: any) => {
             const mediaFormats = { ...result.media_formats };
-            const requiredFormats = ['gif', 'tinygif', 'mediumgif', 'nanogif'];
+            const requiredFormats = ['tinygif', 'gif'];
             requiredFormats.forEach((format) => {
               if (!mediaFormats[format]) {
                 mediaFormats[format] = { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
@@ -325,14 +315,11 @@ export async function searchTenorGifs(
           })
         );
 
-        // ONLY add GIFs with valid Reddit CDN URLs
         let addedInBatch = 0;
         for (const r of batchResults) {
-          // MUST be Reddit CDN URL - Tenor URLs don't work in Reddit
           if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
-            // Multi-factor similarity check to catch duplicates with different sizes/crops
             if (isSimilarToCollected(r)) {
-              continue; // Skip visual duplicate (same GIF, different size/crop)
+              continue;
             }
             
             collected.push(r);
@@ -341,21 +328,18 @@ export async function searchTenorGifs(
             if (collected.length >= desiredCount) break;
           }
         }
-        
-        // Early exit: Stop processing batches if we have enough GIFs
+
         if (collected.length >= desiredCount) break;
       }
-      
-      // Early exit: Stop fetching more pages if we have enough GIFs
+
       if (collected.length >= desiredCount) break;
 
       pos = data.next;
       page += 1;
-      if (!pos) break; // no more pages
+      if (!pos) break;
     }
   }
 
-  // Results are already verified during collection, just slice to desired count
   const usableResults = collected.slice(0, desiredCount);
 
   const cacheKey = `${TENOR_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
@@ -391,14 +375,12 @@ export async function searchMultipleTenorGifs(
   }
 
   try {
-    // Add timeout wrapper to prevent hanging
     const searchWithTimeout = async () => {
       const timeoutPromise = new Promise<{ [query: string]: TenorGifResult[] }>((_, reject) => {
         setTimeout(() => reject(new Error('Batch search timeout')), 50000); // Balanced timeout
       });
 
       const searchPromise = (async () => {
-        // OPTIMIZATION: Check cache first for ALL queries to avoid unnecessary fetches
         const resultMap: { [query: string]: TenorGifResult[] } = {};
         const uncachedQueries: string[] = [];
 
@@ -408,11 +390,9 @@ export async function searchMultipleTenorGifs(
             const cachedData = await context.redis.get(cacheKey);
             if (cachedData) {
               const cachedResults = JSON.parse(cachedData);
-              // ONLY use cache if it has the full requested amount
               if (cachedResults.length >= limit) {
                 resultMap[query] = cachedResults;
               } else {
-                // Partial cache - fetch fresh
                 uncachedQueries.push(query);
               }
             } else {

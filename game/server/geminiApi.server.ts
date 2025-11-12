@@ -101,7 +101,7 @@ export async function fetchGeminiSynonyms(
   // 2) Not cached, call the Gemini service
   const result = await getSynonyms({ word }, context);
 
-        // 3) Cache if successful
+  // 3) Cache if successful
   if (result.success && result.synonyms) {
     await context.redis.set(cacheKey, JSON.stringify(result.synonyms));
     await context.redis.expire(cacheKey, CACHE_TTL);
