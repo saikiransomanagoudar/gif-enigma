@@ -396,15 +396,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 500,
-        delay: 150,
+        duration: 300,
+        delay: 100,
         direction: 'up',
       });
     }
 
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
-        duration: 400,
+        duration: 250,
         direction: 'up',
         distance: 'sm',
       });
@@ -412,24 +412,24 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (mainContentRef.current) {
       transitions.animateElement(mainContentRef.current, {
-        duration: 500,
-        delay: 200,
+        duration: 300,
+        delay: 150,
         direction: 'up',
       });
     }
 
     if (gifGridRef.current) {
       transitions.animateElement(gifGridRef.current, {
-        duration: 500,
-        delay: 400,
+        duration: 350,
+        delay: 250,
         direction: 'up',
       });
     }
 
     if (submitButtonRef.current) {
       transitions.animateElement(submitButtonRef.current, {
-        duration: 500,
-        delay: 600,
+        duration: 350,
+        delay: 350,
         direction: 'up',
       });
     }
@@ -707,15 +707,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const handleBackClick = () => {
     if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 300 });
+      transitions.fadeOut(headerRef.current, { duration: 200 });
     }
     if (mainContentRef.current) {
-      transitions.fadeOut(mainContentRef.current, { duration: 300, delay: 100 });
+      transitions.fadeOut(mainContentRef.current, { duration: 200, delay: 50 });
     }
 
     setTimeout(() => {
       onNavigate('category');
-    }, 400);
+    }, 300);
   };
 
   const selectGifForSlot = (gif: TenorGifResult) => {
@@ -977,7 +977,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         isOpen={showSearchInput}
         onClose={() => {
           transitions.fadeOut(document.querySelector('.modal-content'), {
-            duration: 300,
+            duration: 200,
             onComplete: () => {
               if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
@@ -1253,15 +1253,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       setShowSuccessModal(false);
 
                       if (headerRef.current) {
-                        transitions.fadeOut(headerRef.current, { duration: 300 });
+                        transitions.fadeOut(headerRef.current, { duration: 200 });
                       }
                       if (mainContentRef.current) {
-                        transitions.fadeOut(mainContentRef.current, { duration: 300 });
+                        transitions.fadeOut(mainContentRef.current, { duration: 200 });
                       }
 
                       setTimeout(() => {
                         onNavigate('landing');
-                      }, 400);
+                      }, 300);
                     }}
                     className="cursor-pointer rounded-xl px-4 py-2 transition-all duration-200 hover:scale-105"
                     style={{ backgroundColor: colors.primary }}

@@ -12,11 +12,11 @@ GIF Enigma is a word/phrase-guessing game where players interpret GIFs to uncove
 
 ## Creator Mode
 
-Want to design your own GIF Enigma puzzle? Use Creator Mode to craft unique challenges:
+Want to design your own GIF Enigma puzzle? Use Creator Mode to craft unique puzzles:
 
 1. **Select a Category**: Choose from Movies, Games, Books, or General Topic.
 2. **Secret Word/Phrase Selection**: Based on your chosen category, you’ll be presented with 10 secret words/phrases (toggle between word and phrase as needed).
-3. **Choose Your GIF Hints**: For each of the 4 progressive hints, you’ll see a list of 8 GIFs. Select the ones that best represent your intended clues.
+3. **Choose Your GIF Hints**: For each of the 4 progressive hints, you’ll see a list of 12 GIFs. Select the ones that best represent your intended clues.
 4. **Post to Subreddit**: Once you finalize your secret word/phrase and hints, your puzzle will be posted to the subreddit for players to solve.
 
 ## Progressive Hint Design
@@ -39,7 +39,7 @@ Each GIF hint progressively reveals more details about the secret word or phrase
 
 ## Additional Information
 
-- **Starting Score**: You start with a potential 100 points. Each hint reduces your score, but solving the enigma without using any GIF hints or Word/Phrase hints earns you a perfect 100 points.
+- **Starting Score**: Every puzzle begins with a maximum score of 100 points. Using hints will reduce your score—each GIF hint and letter hint costs points. Can you achieve a perfect 100 by solving with just the first GIF?
 - **Enjoy the Challenge**: Both players and creators can enjoy the game. Whether you're solving the enigma or crafting your own, GIF Enigma aims to bring fun to the Reddit community.
 - **Community Driven**: Puzzles created in Creator Mode are shared with the community on the subreddit for everyone to enjoy.
 

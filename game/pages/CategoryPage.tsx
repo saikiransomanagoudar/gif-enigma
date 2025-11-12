@@ -69,7 +69,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
     setIsPageLoaded(true);
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
-        duration: 400,
+        duration: 250,
         direction: 'up',
         distance: 'sm',
       });
@@ -77,24 +77,24 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 500,
-        delay: 200,
+        duration: 300,
+        delay: 100,
         direction: 'up',
       });
     }
 
     if (subtitleRef.current) {
       transitions.animateElement(subtitleRef.current, {
-        duration: 500,
-        delay: 300,
+        duration: 300,
+        delay: 150,
         direction: 'up',
       });
     }
 
     if (backButtonRef.current) {
       transitions.animateElement(backButtonRef.current, {
-        duration: 400,
-        delay: 100,
+        duration: 250,
+        delay: 50,
         direction: 'left',
       });
     }
@@ -103,31 +103,31 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       const categoryCards = document.querySelectorAll('.category-card');
       categoryCards.forEach((card, index) => {
         transitions.animateElement(card as HTMLElement, {
-          duration: 500,
-          delay: 400 + index * 150,
+          duration: 350,
+          delay: 200 + index * 80,
           direction: 'up',
           distance: 'md',
         });
       });
-    }, 300);
+    }, 150);
   }, []);
 
   const handleBackClick = () => {
     if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 300 });
+      transitions.fadeOut(headerRef.current, { duration: 200 });
     }
 
     const categoryCards = document.querySelectorAll('.category-card');
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
-        duration: 300,
-        delay: index * 50,
+        duration: 200,
+        delay: index * 30,
       });
     });
 
     setTimeout(() => {
       onNavigate('landing');
-    }, 450);
+    }, 300);
   };
 
   const handleCategorySelect = (category: CategoryType) => {
@@ -136,15 +136,15 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
-        duration: 300,
-        delay: index * 50,
+        duration: 200,
+        delay: index * 30,
       });
     });
 
     if (header) {
       transitions.fadeOut(header, {
-        duration: 300,
-        delay: 200,
+        duration: 200,
+        delay: 100,
       });
     }
 
@@ -153,7 +153,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
         onCategorySelect(category);
       }
       onNavigate('create');
-    }, 600);
+    }, 400);
   };
 
   return (
@@ -216,7 +216,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
                 overflow: 'hidden',
                 transform:
                   hoverCategory === category.type
-                    ? 'scale(1.03) translateY(-4px)'
+                    ? 'scale(1.01) translateY(-2px)'
                     : 'scale(1) translateY(0)',
                 boxShadow:
                   hoverCategory === category.type ? '0 10px 25px rgba(0, 0, 0, 0.1)' : 'none',

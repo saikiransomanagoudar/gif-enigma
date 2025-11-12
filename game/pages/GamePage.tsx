@@ -374,58 +374,57 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     setTimeout(() => {
       if (headerRef.current) {
         transitions.animateElement(headerRef.current, {
-          duration: 500,
+          duration: 300,
           direction: 'up',
           distance: 'sm',
         });
       }
-    }, 100);
+    }, 50);
 
     setTimeout(() => {
       if (questionRef.current) {
         transitions.animateElement(questionRef.current, {
-          duration: 500,
+          duration: 300,
           direction: 'up',
         });
       }
-    }, 300);
+    }, 150);
 
     setTimeout(() => {
       if (gifAreaRef.current) {
         transitions.animateElement(gifAreaRef.current, {
-          duration: 600,
+          duration: 350,
           direction: 'up',
         });
       }
-    }, 500);
+    }, 250);
 
     setTimeout(() => {
       if (answerBoxesContainerRef.current) {
         transitions.animateElement(answerBoxesContainerRef.current, {
-          duration: 500,
+          duration: 300,
           direction: 'up',
         });
       }
-    }, 700);
+    }, 350);
 
     setTimeout(() => {
       if (hintButtonRef.current) {
         transitions.animateElement(hintButtonRef.current, {
-          duration: 500,
+          duration: 300,
           direction: 'up',
-          delay: 800,
         });
       }
-    }, 800);
+    }, 450);
 
     setTimeout(() => {
       if (bottomBarRef.current) {
         transitions.animateElement(bottomBarRef.current, {
-          duration: 500,
+          duration: 300,
           direction: 'up',
         });
       }
-    }, 900);
+    }, 550);
   };
 
   const loadPlayedGameIds = () => {
@@ -743,28 +742,28 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   const handleBackClick = () => {
     if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 300 });
+      transitions.fadeOut(headerRef.current, { duration: 200 });
     }
 
     if (questionRef.current) {
-      transitions.fadeOut(questionRef.current, { duration: 300, delay: 50 });
+      transitions.fadeOut(questionRef.current, { duration: 200, delay: 30 });
     }
 
     if (gifAreaRef.current) {
-      transitions.fadeOut(gifAreaRef.current, { duration: 300, delay: 100 });
+      transitions.fadeOut(gifAreaRef.current, { duration: 200, delay: 60 });
     }
 
     if (answerBoxesContainerRef.current) {
-      transitions.fadeOut(answerBoxesContainerRef.current, { duration: 300, delay: 150 });
+      transitions.fadeOut(answerBoxesContainerRef.current, { duration: 200, delay: 90 });
     }
 
     if (bottomBarRef.current) {
-      transitions.fadeOut(bottomBarRef.current, { duration: 300, delay: 200 });
+      transitions.fadeOut(bottomBarRef.current, { duration: 200, delay: 120 });
     }
 
     setTimeout(() => {
       onNavigate('landing');
-    }, 600);
+    }, 400);
   };
 
   const handleGuessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1032,49 +1031,69 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     if (!answer) return null;
     const guessChars = guess.replace(/\s+/g, '').toUpperCase().split('');
 
+    const words = answer.split(' ');
+    let charIndex = 0;
+    const isSingleWord = words.length === 1;
+
     return (
       <div
         ref={answerBoxesRef}
         id="answer-boxes-container"
-        className={`mt-5 flex flex-wrap justify-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
+        className={`mt-5 flex flex-wrap justify-center items-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
         style={{ animation: isShaking ? 'shake 0.8s ease-in-out' : 'none' }}
       >
-        {answer.split('').map((ch, idx) => {
-          if (ch === ' ') return <div key={`space-${idx}`} className="w-4" />;
+        {words.map((word, wordIdx) => (
+          <div 
+            key={`word-${wordIdx}`} 
+            className={`flex gap-2 items-center justify-center ${isSingleWord ? 'flex-wrap' : 'flex-nowrap'} ${!isSingleWord ? 'max-w-full overflow-x-auto' : ''}`}
+            style={!isSingleWord && word.length > 10 ? { 
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
+            } : {}}
+          >
+            {word.split('').map((ch, letterIdx) => {
+              const idx = charIndex++;
+              const isRevealed = revealedLetters.has(idx);
+              const nonSpacesBefore = answer.substring(0, idx).replace(/\s+/g, '').length;
+              const guessChar = guessChars[nonSpacesBefore];
 
-          const isRevealed = revealedLetters.has(idx);
-          const nonSpacesBefore = answer.substring(0, idx).replace(/\s+/g, '').length;
-          const guessChar = guessChars[nonSpacesBefore];
+              let displayChar = '';
+              if (isRevealed) {
+                displayChar = ch;
+              } else if (guessChar && isCorrect === null) {
+                displayChar = guessChar;
+              } else if (isCorrect === true) {
+                displayChar = ch;
+              }
 
-          let displayChar = '';
-          if (isRevealed) {
-            displayChar = ch;
-          } else if (guessChar && isCorrect === null) {
-            displayChar = guessChar;
-          } else if (isCorrect === true) {
-            displayChar = ch;
-          }
+              let bgColor = 'bg-gray-200';
+              if (isCorrect === true) {
+                bgColor = 'bg-green-200';
+              } else if (isCorrect === false && guessChar) {
+                bgColor = 'bg-red-200';
+              } else if (displayChar && isCorrect === null) {
+                bgColor = 'bg-blue-100';
+              }
 
-          let bgColor = 'bg-gray-200';
-          if (isCorrect === true) {
-            bgColor = 'bg-green-200';
-          } else if (isCorrect === false && guessChar) {
-            bgColor = 'bg-red-200';
-          } else if (displayChar && isCorrect === null) {
-            bgColor = 'bg-blue-100';
-          }
-
-          return (
-            <div
-              key={idx}
-              className={`answer-box ${answerBoxborders} flex h-10 w-10 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
-            >
-              <ComicText size={0.8} color="#2563EB">
-                {displayChar}
-              </ComicText>
-            </div>
-          );
-        })}
+              return (
+                <div
+                  key={`${wordIdx}-${letterIdx}`}
+                  className={`answer-box ${answerBoxborders} flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
+                >
+                  <ComicText size={0.8} color="#2563EB">
+                    {displayChar}
+                  </ComicText>
+                </div>
+              );
+            })}
+            {/* Add word separator - visible divider between words (only for multi-word phrases) */}
+            {!isSingleWord && wordIdx < words.length - 1 && (
+              <div className="flex items-center px-1 flex-shrink-0">
+                <div className="h-8 w-0.5 bg-gray-400 rounded-full opacity-60"></div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     );
   };

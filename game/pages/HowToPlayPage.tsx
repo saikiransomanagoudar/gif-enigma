@@ -41,13 +41,13 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
         className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.25 }}
       >
         <motion.header
           className="mb-6 flex items-center justify-between border-b-2 border-gray-400 pb-6"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
+          transition={{ duration: 0.25, delay: 0.08 }}
         >
           <motion.div
             onClick={() => onNavigate('landing')}
@@ -70,14 +70,14 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
           className={`${textColor} space-y-10`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.3, delay: 0.2 }}
+          transition={{ duration: 0.25, delay: 0.15 }}
         >
           <section>
             <motion.h3
               className="text-primary mb-4 text-center text-2xl font-bold"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.3 }}
+              transition={{ duration: 0.25, delay: 0.22 }}
             >
               <ComicText size={1.25} className="text-[#E8E5DA]">
                 Decoding
@@ -90,7 +90,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   className="flex items-center"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: 0.4 + index * 0.1 }}
+                  transition={{ duration: 0.25, delay: 0.3 + index * 0.08 }}
                 >
                   <span className="mr-4 text-3xl">
                     {icon}
@@ -99,9 +99,9 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                     {
                       [
                         'Each puzzle has 4 GIFs, only the first one is revealed at the start.',
-                        'Stuck? Reveal more GIFs or letters as hints (each hint costs points!).',
+                        'Stuck? Reveal more GIFs or letters as hints (each hint costs points).',
                         'Type your guess, the fewer hints you use, the higher your score.',
-                        'Guess your answer and climb the leaderboard!',
+                        'Guess your answer and climb the leaderboard.',
                       ][index]
                     }
                   </ComicText>
@@ -114,13 +114,13 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             className="mt-8"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, delay: 0.8 }}
+            transition={{ duration: 0.25, delay: 0.65 }}
           >
             <motion.h3
               className="mb-4 text-center text-2xl font-bold text-[#E8E5DA]"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.9 }}
+              transition={{ duration: 0.25, delay: 0.72 }}
             >
               <ComicText size={1.25} className="">
                 Creating
@@ -133,16 +133,16 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   className="flex items-center"
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: 1.0 + index * 0.1 }}
+                  transition={{ duration: 0.25, delay: 0.8 + index * 0.08 }}
                 >
                   <span className="mr-4 text-3xl">{icon}</span>
                   <ComicText size={0.9} className="text-lg">
                     {
                       [
-                        'Pick a secret word/phrase, shuffle through suggestions until you find the perfect one!',
+                        'Pick a secret word/phrase, and shuffle through suggestions until you find the one you like.',
                         'Your selected word/phrase will come with synonyms that serve as search query for GIFs in each slot.',
-                        'Choose 4 GIFs, one for each synonym level (abstract to direct).',
-                        'Hit "Create GIF Enigma" to post your puzzle and earn XP as a creator!',
+                        'Choose 4 GIFs, one for each synonym level (from abstract to direct match).',
+                        'Hit "Create GIF Enigma" to post your puzzle and earn XP for your creation.',
                       ][index]
                     }
                   </ComicText>
