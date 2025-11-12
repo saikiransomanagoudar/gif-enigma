@@ -28,14 +28,22 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       isChatPost = false,
       inputType = 'word',
     } = params;
-    const user = await context.reddit.getCurrentUser();
-    const username = user?.username || 'anonymous';
+    
+    let username = 'anonymous';
+    try {
+      const user = await context.reddit.getCurrentUser();
+      username = user?.username || 'anonymous';
+    } catch (error) {
+      username = 'system';
+    }
 
     const systemUsernames = [
       'gif-enigma',
       'anonymous',
       'GIFEnigmaBot',
       'system',
+      'AutoModerator',
+      'reddit',
     ];
     
     const isSystemUser = systemUsernames.some(sysUser => 
@@ -189,6 +197,19 @@ export async function postCompletionComment(
 ): Promise<PostCommentResponse> {
   try {
     const { gameId, username, numGuesses, gifHints, redditPostId } = params;
+
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
+
+    if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: false, error: 'System users cannot post comments' };
+    }
 
     if (gifHints >= 999 || numGuesses >= 999) {
       return { success: false, error: 'Cannot post comment for games where user gave up' };
@@ -651,6 +672,19 @@ export async function saveGameState(
 
     if (!username || !gameId || !playerState) {
       return { success: false, error: 'Missing required parameters' };
+    }
+
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
+
+    if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: false, error: 'System users cannot save game state' };
     }
 
     const gameStateKey = `gameState:${username}:${gameId}`;

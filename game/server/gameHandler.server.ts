@@ -503,6 +503,8 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
       'anonymous', 
       'GIFEnigmaBot', 
       'system',
+      'AutoModerator',
+      'reddit',
       'Most-Client-2219',
       'steve-sid',
       'seamless_ghost'

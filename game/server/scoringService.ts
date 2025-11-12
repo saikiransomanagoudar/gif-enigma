@@ -84,7 +84,14 @@ export async function saveScore(
     }
 
     // List of system/bot usernames that should not get scores or leaderboard entries
-    const systemUsernames = ['gif-enigma', 'anonymous', 'GIFEnigmaBot', 'system'];
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
 
     // Don't save scores for anonymous or system/bot users
     if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
@@ -377,8 +384,14 @@ export async function awardCreationBonus(
   context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
-    // List of system/bot usernames that should not get bonuses
-    const systemUsernames = ['gif-enigma', 'anonymous', 'GIFEnigmaBot', 'system'];
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
 
     if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
       return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
