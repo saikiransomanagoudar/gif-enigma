@@ -167,9 +167,10 @@ Devvit.addSchedulerJob({
     const gifDescriptions: string[] = [];
     const gifSearchTerms: string[] = [];
     
-    for (const synonymGroup of synonyms.slice(0, 4)) {
+    for (const synonymGroup of synonyms) {
+      if (gifUrls.length >= 4) break;
+      
       const term = synonymGroup[0];
-      gifSearchTerms.push(term);
       const gifs = await searchTenorGifs(context, term, 1);
       if (gifs[0]) {
         const gifUrl = gifs[0].media_formats?.tinygif?.url;
@@ -178,12 +179,11 @@ Devvit.addSchedulerJob({
         if (gifUrl) {
           gifUrls.push(gifUrl);
           gifDescriptions.push(gifDescription);
+          gifSearchTerms.push(term);
         }
       }
     }
-
     if (gifUrls.length !== 4) {
-      
       return;
     }
 
