@@ -15,7 +15,7 @@
     "start": "devvit dev"
   },
   "dependencies": {
-    "@devvit/public-api": "0.12.0",
+    "@devvit/public-api": "0.12.1",
     "@google/generative-ai": "^0.24.0",
     "axios": "^1.8.3",
     "clsx": "^2.1.1",
@@ -41,7 +41,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",
-    "devvit": "0.12.0",
+    "devvit": "0.12.1",
     "prettier": "^3.5.2",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "4.0.13",
