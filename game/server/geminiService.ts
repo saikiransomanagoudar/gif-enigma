@@ -45,13 +45,13 @@ export async function getRecommendations(
         ? `Generate ${count} DIVERSE single words that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
     ${
       category === 'Movies'
-        ? 'Include a balanced mix of the following: (1) THEMATIC ELEMENTS from movies (like "revenge", "journey", "escape", "destiny"), (2) CONCEPTS that appear in films (like "villain", "monsters", "rescue", "betrayal"), (3) EMOTIONS depicted in cinema (like "terrified", "heartbreak", "triumph", "despair"), (4) COMMON SETTINGS or OBJECTS from films (like "spaceship", "treasure", "castle", "weapon"), and (5) some CHARACTER ARCHETYPES (like "heroes", "zombie", "cowboy", "warrior"). Focus on CINEMATIC and DRAMATIC words that relate to movie storytelling and film narratives. AVOID generic internet slang or modern meme terms (like "awkward", "cringe", "vibes", "salty", "hype") - those belong in Pop Culture. Avoid using specific film titles that would make guessing too obvious when paired with related GIFs.'
+        ? 'Include a balanced mix of the following: (1) EMOTION ADJECTIVES depicting cinematic feelings (like "TERRIFIED", "HEARTBROKEN", "TRIUMPHANT", "SHOCKED", "AMAZED", "DEVASTATED"), (2) ACTION GERUNDS showing movie dynamics (like "ESCAPING", "FIGHTING", "RESCUING", "EXPLODING", "CHASING", "TRANSFORMING"), (3) ABSTRACT EXPERIENCE NOUNS from storytelling (like "REVENGE", "BETRAYAL", "SACRIFICE", "REDEMPTION", "DESTINY"), (4) DYNAMIC STATES characters experience (like "DEFEATED", "VICTORIOUS", "HAUNTED", "DETERMINED"). Focus on EMOTIONS, ACTIONS, and EXPERIENCES that can be shown abstractly through reactions or directly through movie scenes. COMPLETELY AVOID: specific film titles, character names, static objects (spaceship, castle, treasure), and generic internet slang - those belong in Pop Culture. Prioritize words that work well for abstract-to-direct GIF hint progression.'
         : category === 'Gaming'
-          ? 'Include a balanced mix of the following: (1) GAMING CONCEPTS (like "victory", "mission", "quest", "champion"), (2) GAME MECHANICS (like "puzzle", "stealth", "combat", "upgrade"), (3) COMMON GAME ELEMENTS (like "health", "treasure", "weapon", "potion"), (4) GAMING ENVIRONMENTS (like "dungeon", "fortress", "jungle", "arena"), and (5) some CHARACTER TYPES (like "wizard", "sniper", "zombie", "warrior"). Focus on VIDEO GAME and GAMING-SPECIFIC terminology. AVOID generic internet slang or meme culture terms (like "awkward", "cringe", "vibes", "salty") - those belong in Pop Culture. Avoid using specific game titles that would make guessing too obvious when paired with related GIFs.'
+          ? 'Include a balanced mix of the following: (1) ACTION GERUNDS from gaming (like "LEVELING", "FIGHTING", "SNEAKING", "DEFEATING", "EXPLORING", "RESPAWNING"), (2) EMOTION ADJECTIVES gamers feel (like "FRUSTRATED", "EXCITED", "VICTORIOUS", "FOCUSED", "SHOCKED", "TRIUMPHANT"), (3) DYNAMIC GAME STATES (like "POWERED", "STUNNED", "CRITICAL", "DEFEATED", "BOOSTED"), (4) ABSTRACT GAMING EXPERIENCES (like "VICTORY", "MISSION", "CHALLENGE", "CONQUEST", "TRIUMPH"). Focus on ACTIONS, EMOTIONS, and DYNAMIC STATES that can be shown abstractly through reactions or directly through gameplay moments. COMPLETELY AVOID: specific game titles, character names, static elements (health, potion, treasure), environments (dungeon, arena), and internet slang. Prioritize words that work well for abstract-to-direct GIF hint progression.'
           : category === 'Books'
-            ? 'Include a balanced mix of the following: (1) LITERARY THEMES (like "journey", "mystery", "romance", "destiny"), (2) LITERARY SETTINGS (like "castle", "island", "school", "mansion"), (3) CHARACTER TYPES in literature (like "wizard", "detective", "monster", "scholar"), (4) LITERARY DEVICES (like "tragedy", "suspense", "conflict", "metaphor"), and (5) GENRES (like "fantasy", "mystery", "western", "thriller"). Focus on LITERARY and BOOKISH words related to storytelling and reading. AVOID generic internet slang or meme terms (like "awkward", "cringe", "vibes", "salty") - those belong in Pop Culture. Avoid using specific book titles that would make guessing too obvious when paired with related GIFs.'
+            ? 'Include a balanced mix of the following: (1) EMOTION ADJECTIVES from literary moments (like "ENCHANTED", "TERRIFIED", "HEARTBROKEN", "CURIOUS", "BETRAYED", "MESMERIZED"), (2) ACTION GERUNDS in stories (like "DISCOVERING", "SEARCHING", "FLEEING", "CONFRONTING", "REVEALING", "TRANSFORMING"), (3) ABSTRACT LITERARY THEMES (like "MYSTERY", "ROMANCE", "ADVENTURE", "DESTINY", "TRAGEDY", "REDEMPTION"), (4) DYNAMIC CHARACTER STATES (like "CURSED", "HAUNTED", "ENLIGHTENED", "POSSESSED", "TRANSFORMED"). Focus on EMOTIONS, ACTIONS, and EXPERIENCES readers feel through books. COMPLETELY AVOID: specific book titles, author names, character names, static settings (castle, mansion, island), overly abstract literary devices (metaphor), and internet slang. Prioritize words that work well for abstract-to-direct GIF hint progression.'
             : category === 'Pop Culture'
-              ? 'Include a balanced mix of the following: (1) VIRAL TRENDS and MEMES (like "rizz", "sigma", "bussin", "slay", "glazing"), (2) INTERNET SLANG and EXPRESSIONS (like "unhinged", "no cap", "sus", "vibe check", "delulu"), (3) POPULAR REACTIONS (like "side eye", "mic drop", "face palm", "shock", "cringe"), (4) SOCIAL MEDIA MOMENTS (like "main character", "plot twist", "glow up", "tea spill"), and (5) ICONIC INTERNET CULTURE (like "rickroll", "awkward", "salty", "flexing", "iconic"). Focus exclusively on INTERNET CULTURE, MEMES, and SOCIAL MEDIA terminology. AVOID cinematic/dramatic terms (like "revenge", "betrayal", "destiny"), gaming terms (like "quest", "dungeon", "warrior"), or literary terms (like "mystery", "tragedy") - those belong in other categories.'
+              ? 'Include a balanced mix of the following: (1) VIRAL EMOTION STATES (like "SHOOK", "SNATCHED", "PRESSED", "LIVING", "SERVING", "UNHINGED", "DELULU"), (2) INTERNET SLANG ADJECTIVES (like "BUSSIN", "ICONIC", "CRINGE", "AWKWARD", "SALTY", "CURSED", "BASED"), (3) VIRAL TRENDS and REACTIONS (like "RIZZ", "SIGMA", "SLAY", "GLAZING", "FLEXING"), (4) MEME EXPRESSIONS (like "NO CAP", "SUS", "MID", "GOATED", "RATIO"). Focus exclusively on INTERNET CULTURE, MEMES, and SOCIAL MEDIA terminology that describes states, emotions, and reactions. COMPLETELY AVOID: cinematic/dramatic terms (revenge, betrayal, destiny), gaming terms (quest, dungeon, warrior), or literary terms (mystery, tragedy) - those belong in other categories.'
               : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
     } 
     All words must be at least 5 characters long and safe for all audiences (not NSFW).
@@ -70,13 +70,13 @@ export async function getRecommendations(
         : `Generate ${count} DIVERSE phrases (each with a minimum of two words) that would yield EXCELLENT ANIMATED GIFs when searched on Tenor related to ${category}. 
     ${
       category === 'Movies'
-        ? 'Include a balanced mix of the following: (1) MOVIE SCENARIOS (like "car chase", "plot twist", "epic battle", "love story"), (2) CINEMATIC TECHNIQUES (like "slow motion", "jump scare", "dream sequence", "flashback"), (3) COMMON FILM MOMENTS (like "big reveal", "final boss", "sad ending", "hero moment"), (4) FILM REFERENCES that would create interesting GIF challenges (like "mind blown", "plot armor", "bad acting", "cliffhanger"). Focus on MOVIE-SPECIFIC scenarios and cinematic storytelling. AVOID generic internet/meme phrases (like "mic drop", "side eye", "vibe check", "glow up") - those belong in Pop Culture. Avoid using direct movie titles and main character names that would make guessing too obvious when paired with related GIFs.'
+        ? 'Include a balanced mix of the following: (1) ACTION-BASED MOVIE SCENARIOS (like "EPIC BATTLE", "CAR CHASE", "FINAL SHOWDOWN", "SLOW MOTION", "LOVE STORY"), (2) EMOTIONAL FILM MOMENTS (like "BIG REVEAL", "PLOT TWIST", "HERO MOMENT", "LAST STAND", "JUMP SCARE"), (3) CINEMATIC REACTIONS (like "MIND BLOWN", "SHOCK REVEAL", "SWEET REVENGE", "TRAGIC END"), (4) DYNAMIC STORYTELLING PHRASES (like "DREAM SEQUENCE", "TIME TRAVEL", "EVIL TWIN", "FINAL BATTLE"). Focus on ACTION VERB PHRASES and REACTION PHRASES that describe visual movie moments. COMPLETELY AVOID: direct movie titles, character names, and generic internet/meme phrases (mic drop, vibe check) - those belong in Pop Culture. Prioritize phrases with clear abstract-to-direct GIF progression.'
         : category === 'Gaming'
-          ? 'Include a balanced mix of the following: (1) GAMING ACTIONS (like "level up", "game over", "boss fight", "power up"), (2) PLAYER EXPERIENCES (like "rage quit", "epic win", "clutch save", "noob move"), (3) GAMING MECHANICS (like "power move", "combo hit", "skill tree", "spawn point"), (4) GAMING SCENARIOS (like "secret level", "final form", "cut scene", "speed run"). Focus on VIDEO GAME-SPECIFIC actions and gaming experiences. AVOID generic internet/meme phrases (like "mic drop", "side eye", "vibe check", "face palm") - those belong in Pop Culture. Avoid using direct game titles and specific character names that would make guessing too obvious when paired with related GIFs.'
+          ? 'Include a balanced mix of the following: (1) CORE GAMING ACTION PHRASES (like "LEVEL UP", "BOSS FIGHT", "GAME OVER", "POWER UP", "FINAL FORM"), (2) PLAYER EMOTIONAL EXPERIENCES (like "RAGE QUIT", "EPIC WIN", "CLUTCH SAVE", "PERFECT RUN", "TOTAL WIPE"), (3) GAMEPLAY MOMENTS (like "COMBO HIT", "SPEED RUN", "SKILL SHOT", "TEAM KILL", "RESPAWN"), (4) GAMING SCENARIOS (like "BOSS RUSH", "LOOT DROP", "SECRET AREA", "FINAL BOSS", "SAVE POINT"). Focus on ACTION VERB PHRASES that describe dynamic gaming moments. COMPLETELY AVOID: game titles, character names, and generic internet/meme phrases (mic drop, face palm) - those belong in Pop Culture. Prioritize phrases with clear abstract-to-direct GIF progression.'
           : category === 'Books'
-            ? 'Include a balanced mix of the following: (1) READING THEMES (like "plot twist", "main quest", "epic tale", "love story"), (2) LITERARY TECHNIQUES (like "big reveal", "time jump", "dual narrative", "flashback"), (3) STORY MOMENTS (like "dark secret", "true love", "final battle", "hero quest"), (4) BOOKISH CONCEPTS (like "plot armor", "red herring", "tragic hero", "cliffhanger"). Focus on LITERARY and STORYTELLING phrases specific to books and reading. AVOID generic internet/meme phrases (like "mic drop", "side eye", "vibe check", "glow up") - those belong in Pop Culture. Avoid using direct book titles and specific character names that would make guessing too obvious when paired with related GIFs.'
+            ? 'Include a balanced mix of the following: (1) EMOTIONAL STORY MOMENTS (like "TRUE LOVE", "DARK SECRET", "PLOT TWIST", "BIG REVEAL", "TRAGIC END"), (2) ACTION-BASED LITERARY PHRASES (like "EPIC TALE", "HERO QUEST", "FINAL BATTLE", "TIME JUMP", "FLASHBACK"), (3) DRAMATIC STORYTELLING MOMENTS (like "LOST WORLD", "MAGIC SPELL", "FORBIDDEN LOVE", "EVIL CURSE", "CHOSEN ONE"), (4) NARRATIVE DYNAMICS (like "CLIFFHANGER", "ORIGIN STORY", "PROPHECY", "BETRAYAL", "REDEMPTION"). Focus on ACTION and EMOTION-DRIVEN phrases from literary narratives. COMPLETELY AVOID: book titles, author names, character names, and generic internet/meme phrases (mic drop, vibe check) - those belong in Pop Culture. Prioritize phrases with clear abstract-to-direct GIF progression.'
             : category === 'Pop Culture'
-              ? 'Include a balanced mix of the following: (1) VIRAL MEME PHRASES (like "mic drop", "side eye", "main character", "chef kiss", "no cap"), (2) TRENDING EXPRESSIONS (like "vibe check", "glow up", "hot take", "era check", "ate that"), (3) REACTION MOMENTS (like "face palm", "jaw drop", "eye roll", "shade throw", "tea spill"), (4) INTERNET CULTURE REFERENCES (like "flex hard", "epic fail", "go viral", "ratio time", "touch grass"). Focus exclusively on INTERNET SLANG, MEMES, and SOCIAL MEDIA phrases. AVOID cinematic storytelling phrases (like "plot twist", "big reveal"), gaming terms (like "level up", "boss fight"), or literary concepts - those belong in other categories.'
+              ? 'Include a balanced mix of the following: (1) VIRAL ACTION PHRASES (like "MIC DROP", "SIDE EYE", "FACE PALM", "JAW DROP", "EYE ROLL", "CHEF KISS"), (2) TRENDING REACTION MOMENTS (like "VIBE CHECK", "GLOW UP", "SPILL TEA", "THROW SHADE", "ATE THAT", "LEFT HANGING"), (3) INTERNET CULTURE ACTIONS (like "TOUCH GRASS", "GO VIRAL", "EPIC FAIL", "RATIO TIME", "GET REKT"), (4) MEME EXPRESSIONS (like "MAIN CHARACTER", "HOT TAKE", "PLOT TWIST", "NO CAP", "FOR REAL"). Focus exclusively on ACTION-BASED INTERNET SLANG, REACTION PHRASES, and SOCIAL MEDIA expressions. COMPLETELY AVOID: cinematic storytelling phrases (unless they became memes), gaming-specific terms, or literary concepts - those belong in other categories.'
               : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
     } 
     Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).
@@ -278,22 +278,47 @@ export async function getSynonyms(
     const timestamp = Date.now();
     const randomSeed = Math.floor(Math.random() * 1000);
 
-    const prompt = `For the word "${word}", generate four sets of HIGHLY EFFECTIVE Tenor GIF search terms, arranged from abstract to specific:
+    const prompt = `For the word/phrase "${word}", generate four sets of HIGHLY EFFECTIVE Tenor GIF search terms that will produce VISUALLY ENGAGING and RELEVANT animated GIFs, arranged from abstract to specific:
 
-1. First set: Abstract/conceptual terms that would yield interesting GIFs indirectly related to "${word}" (3 terms)
-2. Second set: Popular expressions, reactions, or emotions that relate to "${word}" and work well as GIF searches (3 terms)
-3. Third set: Visual scenarios or popular media references relating to "${word}" that would make great GIFs (3 terms)
-4. Fourth set: Direct and specific search terms for "${word}" that would yield the most relevant GIFs (3 terms)
+1. FIRST SET (Abstract but VISUALLY CONNECTED - shown to player first):
+   - Must yield GIFs that are VISUALLY RELATED to "${word}" through emotions, body language, or energy
+   - Should evoke the FEELING or ACTION of "${word}" without being too obvious
+   - Must produce interesting, animated, engaging GIFs (not boring or random)
+   - Example: For "EXCITED" → ["celebration", "energy", "jumping"]
+   - Example: For "BETRAYED" → ["shocked", "crying", "heartbroken"]
+   - (3 terms)
 
-IMPORTANT GUIDELINES FOR EFFECTIVE GIF SEARCH TERMS:
-- Focus on VISUAL and ACTION-ORIENTED terms that would appear in GIFs
-- Include popular memes, movie scenes, TV moments related to the concept
-- Use terms that capture EMOTIONS and REACTIONS people express in GIFs
-- Include terms that would yield animated content (not just static images)
-- Consider what content creators would tag their GIFs with
-- Use a mix of specific character names, show titles, and descriptive actions
-- Favor concise, popular search terms that Tenor users would likely use
-- Use timestamp ${timestamp} and seed ${randomSeed} to ensure variety
+2. SECOND SET (Clearer emotional/reaction connection):
+   - Popular expressions or reactions that CLEARLY relate to "${word}"
+   - Should yield recognizable reaction GIFs that hint at the concept
+   - Example: For "VICTORY" → ["winning", "champion", "triumph"]
+   - (3 terms)
+
+3. THIRD SET (More direct visual scenarios):
+   - Specific actions, scenarios, or media moments depicting "${word}"
+   - Can include movie/TV references if they strongly represent the concept
+   - Example: For "ESCAPING" → ["running away", "chase scene", "flee"]
+   - (3 terms)
+
+4. FOURTH SET (Most direct and specific):
+   - The word/phrase itself and closest synonyms
+   - Direct search terms that would yield the most relevant GIFs
+   - Example: For "HEARTBROKEN" → ["heartbroken", "heartbreak", "broken heart"]
+   - (3 terms)
+
+CRITICAL RULES FOR GIF QUALITY:
+✅ ENSURE first set produces VISUALLY INTERESTING and RELEVANT GIFs (not random/boring)
+✅ All terms must yield ANIMATED content with movement/emotion
+✅ Focus on VISUAL REPRESENTATIONS: facial expressions, body language, actions
+✅ Use popular search terms that have abundant GIF content on Tenor
+✅ Consider how the emotion/action would LOOK in a GIF
+✅ Prioritize terms that create engaging, watchable GIFs
+
+❌ AVOID first set being too random or disconnected (players will be confused)
+❌ AVOID terms that yield static images or text-based GIFs
+❌ AVOID overly abstract concepts with no clear visual representation
+
+Use timestamp ${timestamp} and seed ${randomSeed} for variety.
 
 Return ONLY a valid JSON array of arrays with no additional text, formatting, or explanations.
 Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","term8","term9"],["term10","term11","term12"]]`;
@@ -470,55 +495,55 @@ function getDefaultRecommendations(category: CategoryType, type: 'word' | 'phras
     switch (category) {
       case 'Movies':
         return [
-          'Avatar',
-          'Titanic',
-          'Matrix',
-          'Inception',
-          'Jaws',
-          'Frozen',
-          'Gladiator',
-          'Avengers',
-          'Psycho',
-          'Shining',
+          'TERRIFIED',
+          'ESCAPING',
+          'HEARTBROKEN',
+          'VICTORIOUS',
+          'EXPLODING',
+          'BETRAYED',
+          'FIGHTING',
+          'SHOCKED',
+          'REDEMPTION',
+          'CHASING',
         ];
       case 'Gaming':
         return [
-          'Portal',
-          'Tetris',
-          'Minecraft',
-          'Fortnite',
-          'Mario',
-          'Zelda',
-          'Skyrim',
-          'Halo',
-          'in gem',
-          'Pokemon',
+          'LEVELING',
+          'DEFEATED',
+          'VICTORIOUS',
+          'SNEAKING',
+          'FRUSTRATED',
+          'CRITICAL',
+          'EXPLORING',
+          'POWERED',
+          'TRIUMPH',
+          'RESPAWNING',
         ];
       case 'Books':
         return [
-          'Dracula',
-          'Frankenstein',
-          'Hamlet',
-          'Odyssey',
-          'Gatsby',
-          'Hobbit',
-          'Matilda',
-          'Dune',
-          'Moby',
-          'Sherlock',
+          'ENCHANTED',
+          'DISCOVERING',
+          'TERRIFIED',
+          'MYSTERY',
+          'FLEEING',
+          'CURSED',
+          'HEARTBROKEN',
+          'ADVENTURE',
+          'HAUNTED',
+          'SEARCHING',
         ];
       case 'Pop Culture':
         return [
-          'Rickroll',
-          'Cringe',
-          'Unhinged',
-          'Awkward',
-          'Hype',
-          'Shocked',
-          'Salty',
-          'Flexing',
-          'Vibes',
-          'Iconic',
+          'SHOOK',
+          'CRINGE',
+          'UNHINGED',
+          'AWKWARD',
+          'SNATCHED',
+          'SALTY',
+          'FLEXING',
+          'ICONIC',
+          'PRESSED',
+          'SERVING',
         ];
       default:
         return [
@@ -538,55 +563,55 @@ function getDefaultRecommendations(category: CategoryType, type: 'word' | 'phras
     switch (category) {
       case 'Movies':
         return [
-          'Star Wars',
-          'Harry Potter',
-          'The Lord of the Rings',
-          'Back to the Future',
-          'Hunger Games',
-          'James Bond',
-          'The Dark Knight',
-          'Pulp Fiction',
-          'Wonder Woman',
-          'Indiana Jones',
+          'PLOT TWIST',
+          'EPIC BATTLE',
+          'CAR CHASE',
+          'BIG REVEAL',
+          'SLOW MOTION',
+          'HERO MOMENT',
+          'JUMP SCARE',
+          'FINAL SHOWDOWN',
+          'LOVE STORY',
+          'LAST STAND',
         ];
       case 'Gaming':
         return [
-          'Final Fantasy',
-          'Grand Theft Auto',
-          'Call of Duty',
-          'World of Warcraft',
-          'Super Mario',
-          'Legend of Zelda',
-          'Mass Effect',
-          'Metal Gear',
-          'Counter Strike',
-          'Street Fighter',
+          'LEVEL UP',
+          'BOSS FIGHT',
+          'GAME OVER',
+          'RAGE QUIT',
+          'EPIC WIN',
+          'POWER UP',
+          'CLUTCH SAVE',
+          'FINAL FORM',
+          'COMBO HIT',
+          'SPEED RUN',
         ];
       case 'Books':
         return [
-          'Pride and Prejudice',
-          'The Great Gatsby',
-          'Crime and Punishment',
-          'Jane Eyre',
-          'Moby Dick',
-          'Oliver Twist',
-          'David Copperfield',
-          'Brave New World',
-          'Paper Towns',
-          'Game of Thrones',
+          'PLOT TWIST',
+          'TRUE LOVE',
+          'DARK SECRET',
+          'EPIC TALE',
+          'BIG REVEAL',
+          'HERO QUEST',
+          'FINAL BATTLE',
+          'MAGIC SPELL',
+          'TIME JUMP',
+          'LOST WORLD',
         ];
       case 'Pop Culture':
         return [
-          'Mic Drop',
-          'Side Eye',
-          'Plot Twist',
-          'Glow Up',
-          'Main Character',
-          'Vibe Check',
-          'Face Palm',
-          'Mind Blown',
-          'Epic Fail',
-          'Hot Take',
+          'MIC DROP',
+          'SIDE EYE',
+          'FACE PALM',
+          'JAW DROP',
+          'GLOW UP',
+          'VIBE CHECK',
+          'SPILL TEA',
+          'EPIC FAIL',
+          'CHEF KISS',
+          'ATE THAT',
         ];
       default:
         return [

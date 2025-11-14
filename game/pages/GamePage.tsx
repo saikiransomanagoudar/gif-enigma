@@ -569,12 +569,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const boxes = document.querySelectorAll('.answer-box');
     boxes.forEach((box, index) => {
       setTimeout(() => {
-        (box as HTMLElement).style.backgroundColor = '#f87171';
         (box as HTMLElement).style.transform = 'scale(1.1)';
         (box as HTMLElement).style.transition = 'all 0.2s cubic-bezier(.36,.07,.19,.97)';
 
         setTimeout(() => {
-          (box as HTMLElement).style.backgroundColor = '#fecaca';
           (box as HTMLElement).style.transform = 'scale(1)';
           (box as HTMLElement).style.transition = 'all 0.3s ease';
         }, 200);
@@ -1032,8 +1030,20 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const guessChars = guess.replace(/\s+/g, '').toUpperCase().split('');
 
     const words = answer.split(' ');
-    let charIndex = 0;
     const isSingleWord = words.length === 1;
+
+    // Create a flat array of non-space characters with their original positions
+    const answerCharsWithPositions: Array<{ char: string; originalIdx: number; nonSpaceIdx: number }> = [];
+    let nonSpaceCounter = 0;
+    for (let i = 0; i < answer.length; i++) {
+      if (answer[i] !== ' ') {
+        answerCharsWithPositions.push({
+          char: answer[i],
+          originalIdx: i,
+          nonSpaceIdx: nonSpaceCounter++
+        });
+      }
+    }
 
     return (
       <div
@@ -1042,58 +1052,63 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         className={`mt-5 flex flex-wrap justify-center items-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
         style={{ animation: isShaking ? 'shake 0.8s ease-in-out' : 'none' }}
       >
-        {words.map((word, wordIdx) => (
-          <div 
-            key={`word-${wordIdx}`} 
-            className={`flex gap-2 items-center justify-center ${isSingleWord ? 'flex-wrap' : 'flex-nowrap'} ${!isSingleWord ? 'max-w-full overflow-x-auto' : ''}`}
-            style={!isSingleWord && word.length > 10 ? { 
-              scrollbarWidth: 'thin',
-              scrollbarColor: 'rgba(156, 163, 175, 0.5) transparent'
-            } : {}}
-          >
-            {word.split('').map((ch, letterIdx) => {
-              const idx = charIndex++;
-              const isRevealed = revealedLetters.has(idx);
-              const nonSpacesBefore = answer.substring(0, idx).replace(/\s+/g, '').length;
-              const guessChar = guessChars[nonSpacesBefore];
+        {words.map((word, wordIdx) => {
+          // Get start position of this word in the original answer
+          const wordStartPos = words.slice(0, wordIdx).reduce((sum, w) => sum + w.length + 1, 0);
+          const wordEndPos = wordStartPos + word.length;
+          
+          // Filter chars that belong to this word
+          const wordChars = answerCharsWithPositions.filter(
+            item => item.originalIdx >= wordStartPos && item.originalIdx < wordEndPos
+          );
 
-              let displayChar = '';
-              if (isRevealed) {
-                displayChar = ch;
-              } else if (guessChar && isCorrect === null) {
-                displayChar = guessChar;
-              } else if (isCorrect === true) {
-                displayChar = ch;
-              }
+          return (
+            <div 
+              key={`word-${wordIdx}`} 
+              className={`flex gap-2 items-center justify-center ${isSingleWord ? 'flex-wrap' : 'flex-wrap'}`}
+            >
+              {wordChars.map((item, letterIdx) => {
+                const isRevealed = revealedLetters.has(item.originalIdx);
+                const guessChar = guessChars[item.nonSpaceIdx];
 
-              let bgColor = 'bg-gray-200';
-              if (isCorrect === true) {
-                bgColor = 'bg-green-200';
-              } else if (isCorrect === false && guessChar) {
-                bgColor = 'bg-red-200';
-              } else if (displayChar && isCorrect === null) {
-                bgColor = 'bg-blue-100';
-              }
+                let displayChar = '';
+                if (isRevealed) {
+                  displayChar = item.char;
+                } else if (guessChar && isCorrect === null) {
+                  displayChar = guessChar;
+                } else if (isCorrect === true) {
+                  displayChar = item.char;
+                }
 
-              return (
-                <div
-                  key={`${wordIdx}-${letterIdx}`}
-                  className={`answer-box ${answerBoxborders} flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
-                >
-                  <ComicText size={0.8} color="#2563EB">
-                    {displayChar}
-                  </ComicText>
+                let bgColor = 'bg-gray-200';
+                if (isCorrect === true) {
+                  bgColor = 'bg-green-200';
+                } else if (isCorrect === false && guessChar) {
+                  bgColor = 'bg-red-200';
+                } else if (displayChar && isCorrect === null) {
+                  bgColor = 'bg-blue-100';
+                }
+
+                return (
+                  <div
+                    key={`${wordIdx}-${letterIdx}`}
+                    className={`answer-box ${answerBoxborders} flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
+                  >
+                    <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", color: "#2563EB",fontWeight: "bold", letterSpacing: "0.5px" }}>
+                      {displayChar}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Add word separator - visible divider between words (only for multi-word phrases) */}
+              {!isSingleWord && wordIdx < words.length - 1 && (
+                <div className="flex items-center px-1 flex-shrink-0">
+                  <div className="h-8 w-0.5 bg-gray-400 rounded-full opacity-60"></div>
                 </div>
-              );
-            })}
-            {/* Add word separator - visible divider between words (only for multi-word phrases) */}
-            {!isSingleWord && wordIdx < words.length - 1 && (
-              <div className="flex items-center px-1 flex-shrink-0">
-                <div className="h-8 w-0.5 bg-gray-400 rounded-full opacity-60"></div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -1110,7 +1125,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         <span className="text-2xl">❌</span>
         <div>
           <ComicText size={0.8} color="white">
-            Incorrect Guess
+            Incorrect
           </ComicText>
           <ComicText size={0.6} color="white">
             Try again!
