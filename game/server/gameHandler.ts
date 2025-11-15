@@ -73,7 +73,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     await tx.hSet(`game:${gameId}`, {
       word,
-      category: category || 'Pop Culture',
+      category: category || 'Viral Vibes',
       maskedWord: maskedWord || '',
       questionText: questionText || '',
       gifs: JSON.stringify(gifs),
@@ -402,7 +402,7 @@ export async function getRecentGames(
           id: gameId,
           word: rawGameData.word,
           maskedWord: rawGameData.maskedWord,
-          category: rawGameData.category || 'Pop Culture',
+          category: rawGameData.category || 'Viral Vibes',
           questionText: rawGameData.questionText,
           gifs: [],
           createdAt: rawGameData.createdAt,

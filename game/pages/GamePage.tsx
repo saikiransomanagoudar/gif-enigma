@@ -11,6 +11,7 @@ import {
   Page,
 } from '../lib/types';
 import { createRoot } from 'react-dom/client';
+import { calculateDifficulty, getDifficultyEmoji, getDifficultyColor } from '../utils/difficultyCalculator';
 
 interface GamePageProps extends NavigationProps {
   onNavigate: (page: Page, params?: { gameId?: string }) => void;
@@ -51,6 +52,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isCommentPosted, setIsCommentPosted] = useState(false);
   const [winningGuess, setWinningGuess] = useState<string | null>(null);
   const lastSubmittedGuessRef = useRef<string>('');
+  const [errorMessage, setErrorMessage] = useState<{ title: string; subtitle: string } | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -548,6 +550,46 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleIncorrectGuess = () => {
+    // Analyze the guess and set appropriate error message
+    if (!gameData || !guess) {
+      setErrorMessage({ title: 'Incorrect', subtitle: 'Try again!' });
+    } else {
+      const cleanedGuess = guess.replace(/\s+/g, '').toUpperCase();
+      const cleanedAnswer = gameData.word.replace(/\s+/g, '').toUpperCase();
+      
+      // Check for length mismatch (spaces are ignored in comparison)
+      if (cleanedGuess.length !== cleanedAnswer.length) {
+        setErrorMessage({
+          title: 'Wrong Length!',
+          subtitle: `Answer has ${cleanedAnswer.length} letter${cleanedAnswer.length !== 1 ? 's' : ''} (spaces don't count)`
+        });
+      }
+      // Check if it's a close match based on multiple heuristics
+      else {
+        // Calculate letter overlap percentage
+        const guessLetters = new Set(cleanedGuess.split(''));
+        const answerLetters = new Set(cleanedAnswer.split(''));
+        const intersection = [...guessLetters].filter(l => answerLetters.has(l));
+        const overlapPercent = (intersection.length / Math.max(guessLetters.size, answerLetters.size)) * 100;
+        
+        // Check if first or last letter matches
+        const firstLetterMatch = cleanedGuess[0] === cleanedAnswer[0];
+        const lastLetterMatch = cleanedGuess[cleanedGuess.length - 1] === cleanedAnswer[cleanedAnswer.length - 1];
+        
+        // "So Close" if: high letter overlap (>60%) OR first/last letter matches
+        if (overlapPercent > 60 || firstLetterMatch || lastLetterMatch) {
+          setErrorMessage({
+            title: 'So Close!',
+            subtitle: ''
+          });
+        }
+        // Default incorrect message
+        else {
+          setErrorMessage({ title: 'Incorrect', subtitle: 'Keep trying!' });
+        }
+      }
+    }
+    
     showToastNotification();
 
     const container = document.getElementById('answer-boxes-container');
@@ -778,25 +820,68 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   };
 
-  const getDeterministicIndices = (word: string, allIndices: number[]): number[] => {
+  const getStrategicRevealOrder = (word: string, allIndices: number[]): number[] => {
+    const vowels = 'AEIOU';
+    const wordUpper = word.toUpperCase();
+    
+    // Categorize indices by strategic value
+    const vowelIndices: number[] = [];
+    const firstLastIndices: number[] = [];
+    const middleIndices: number[] = [];
+    
+    allIndices.forEach(idx => {
+      const char = wordUpper[idx];
+      if (vowels.includes(char)) {
+        vowelIndices.push(idx);
+      } else {
+        // Check if it's at word boundaries (first/last of each word in phrase)
+        const words = word.split(' ');
+        let currentPos = 0;
+        let isWordBoundary = false;
+        
+        for (const w of words) {
+          if (idx === currentPos || idx === currentPos + w.length - 1) {
+            isWordBoundary = true;
+            break;
+          }
+          currentPos += w.length + 1; // +1 for space
+        }
+        
+        if (isWordBoundary) {
+          firstLastIndices.push(idx);
+        } else {
+          middleIndices.push(idx);
+        }
+      }
+    });
+    
+    // Use deterministic shuffle within each category for consistency
+    const shuffleWithSeed = (arr: number[], seed: number) => {
+      const seededRandom = (index: number) => {
+        const x = Math.sin(seed + index) * 10000;
+        return x - Math.floor(x);
+      };
+      
+      const shuffled = [...arr];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(seededRandom(i) * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    };
+    
     let seed = 0;
     for (let i = 0; i < word.length; i++) {
       seed = ((seed << 5) - seed) + word.charCodeAt(i);
       seed = seed & seed;
     }
     
-    const seededRandom = (index: number) => {
-      const x = Math.sin(seed + index) * 10000;
-      return x - Math.floor(x);
-    };
-    
-    const shuffled = [...allIndices];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(seededRandom(i) * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    
-    return shuffled;
+    // Return strategic order: vowels → word boundaries → middle letters
+    return [
+      ...shuffleWithSeed(vowelIndices, seed),
+      ...shuffleWithSeed(firstLastIndices, seed + 1),
+      ...shuffleWithSeed(middleIndices, seed + 2)
+    ];
   };
 
   const handleWordHint = () => {
@@ -834,8 +919,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    const deterministicOrder = getDeterministicIndices(gameData.word, nonSpaceIndices);
-    const unrevealedInOrder = deterministicOrder.filter((i) => !revealedLetters.has(i));
+    // Use strategic reveal order instead of random
+    const strategicOrder = getStrategicRevealOrder(gameData.word, nonSpaceIndices);
+    const unrevealedInOrder = strategicOrder.filter((i) => !revealedLetters.has(i));
     const newRevealed = new Set(revealedLetters);
     const toReveal = Math.min(revealCount, unrevealedInOrder.length);
     
@@ -1045,6 +1131,18 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }
     }
 
+    // Get category icon for watermark
+    const getCategoryIcon = () => {
+      if (!gameData?.category) return '';
+      switch (gameData.category) {
+        case 'Cinematic Feels': return '🎬';
+        case 'Gaming Moments': return '🎮';
+        case 'Story Experiences': return '📚';
+        default: return '🔥';
+      }
+    };
+    const categoryIcon = getCategoryIcon();
+
     return (
       <div
         ref={answerBoxesRef}
@@ -1092,9 +1190,24 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 return (
                   <div
                     key={`${wordIdx}-${letterIdx}`}
-                    className={`answer-box ${answerBoxborders} flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500`}
+                    className={`answer-box ${answerBoxborders} relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden`}
                   >
-                    <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", color: "#2563EB",fontWeight: "bold", letterSpacing: "0.5px" }}>
+                    {/* Category icon watermark inside each box - only show when empty */}
+                    {categoryIcon && !displayChar && (
+                      <div 
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                        style={{ 
+                          opacity: 0.12,
+                          fontSize: '24px',
+                          userSelect: 'none',
+                          zIndex: 0
+                        }}
+                      >
+                        {categoryIcon}
+                      </div>
+                    )}
+                    {/* Letter display on top of watermark */}
+                    <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", color: "#2563EB", fontWeight: "bold", letterSpacing: "0.5px", position: 'relative', zIndex: 1 }}>
                       {displayChar}
                     </div>
                   </div>
@@ -1120,15 +1233,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     document.body.appendChild(notificationContainer);
     const root = createRoot(notificationContainer);
 
+    const message = errorMessage || { title: 'Incorrect', subtitle: 'Try again!' };
+    
     root.render(
       <div className="flex items-center gap-3">
-        <span className="text-2xl">❌</span>
+        <span className="text-2xl">{message.title === 'So Close!' ? '😮' : message.title === 'Wrong Length!' ? '📏' : '❌'}</span>
         <div>
           <ComicText size={0.8} color="white">
-            Incorrect
+            {message.title}
           </ComicText>
           <ComicText size={0.6} color="white">
-            Try again!
+            {message.subtitle}
           </ComicText>
         </div>
       </div>
@@ -1682,19 +1797,32 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       </div>
 
       {gameData && gameData.category && (
-        <div className="mt-1 flex items-center justify-center">
-          <span className="mr-1">
-            {gameData.category === 'Movies'
-              ? '🎬'
-              : gameData.category === 'Gaming'
-                ? '🎮'
-                : gameData.category === 'Books'
-                  ? '📚'
-                  : '🔥'}
-          </span>
-          <ComicText size={0.6} color={colors.textSecondary}>
-            Category: <span style={{ fontWeight: 'bold' }}>{gameData.category}</span>
-          </ComicText>
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <div className="flex items-center">
+            <span className="mr-1">
+              {gameData.category === 'Cinematic Feels'
+                ? '🎬'
+                : gameData.category === 'Gaming Moments'
+                  ? '🎮'
+                  : gameData.category === 'Story Experiences'
+                    ? '📚'
+                    : '🔥'}
+            </span>
+            <ComicText size={0.6} color={colors.textSecondary}>
+              <span style={{ fontWeight: 'bold' }}>{gameData.category}</span>
+            </ComicText>
+          </div>
+          
+          {/* Difficulty Badge */}
+          <div className="flex items-center gap-1 rounded-full px-3 py-1" style={{ 
+            backgroundColor: `${getDifficultyColor(gameData.difficulty || calculateDifficulty(gameData.word))}20`,
+            border: `1.5px solid ${getDifficultyColor(gameData.difficulty || calculateDifficulty(gameData.word))}`,
+          }}>
+            <span>{getDifficultyEmoji(gameData.difficulty || calculateDifficulty(gameData.word))}</span>
+            <ComicText size={0.55} color={getDifficultyColor(gameData.difficulty || calculateDifficulty(gameData.word))}>
+              {gameData.difficulty || calculateDifficulty(gameData.word)}
+            </ComicText>
+          </div>
         </div>
       )}
       <div
@@ -1705,7 +1833,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       </div>
       <div
         ref={bottomBarRef}
-        className="mt-4 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
+        className="mt-2 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
       >
         <div className="flex gap-2">
           <button

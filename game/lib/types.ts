@@ -1,5 +1,6 @@
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
 export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'gameResults';
+export type DifficultyLevel = 'Easy' | 'Medium' | 'Hard' | 'Expert';
 
 export interface GameRedisData {
   id: string;
@@ -29,6 +30,7 @@ export interface GameData {
   word: string;
   maskedWord: string;
   category?: string;
+  difficulty?: DifficultyLevel;
   questionText: string;
   gifs: string[];
   createdAt?: string;

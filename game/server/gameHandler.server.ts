@@ -506,8 +506,11 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
       'AutoModerator',
       'reddit',
       'Most-Client-2219',
+      'Mother_Play_6128',
+      'Away-Airport-7318',
+      'Beginner_Party_6899',
       'steve-sid',
-      'seamless_ghost'
+      'seamless_ghost',
     ];
     
     for (const username of systemUsernames) {

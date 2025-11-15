@@ -318,10 +318,10 @@ export async function searchTenorGifs(
         let addedInBatch = 0;
         for (const r of batchResults) {
           if (typeof r?.url === 'string' && r.url.startsWith('https://i.redd.it/') && !seenIds.has(r.id)) {
+            // Skip if visually similar to already collected GIFs
             if (isSimilarToCollected(r)) {
               continue;
-            }
-            
+            }            
             collected.push(r);
             seenIds.add(r.id);
             addedInBatch++;

@@ -5,7 +5,7 @@ import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server
 import { validateGifWordMatch } from './geminiService.js';
 import type { CategoryType } from '../shared.js';
 
-const categories: CategoryType[] = ['Movies', 'Gaming', 'Books', 'Pop Culture'];
+const categories: CategoryType[] = ['Cinematic Feels', 'Gaming Moments', 'Story Experiences', 'Viral Vibes'];
 const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
 // Weighted random selection: 70% word, 30% phrase
@@ -15,19 +15,19 @@ const pickInputType = (): 'word' | 'phrase' => {
 
 // Fallback data for when API is rate limited
 const fallbackData = {
-  'Movies': {
+  'Cinematic Feels': {
     word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN', 'FROZEN', 'TOYSTORY', 'PIRATES', 'WIZARD', 'GHOSTBUSTERS'],
     phrase: ['MAY THE FORCE BE WITH YOU', 'I AM YOUR FATHER', 'TO INFINITY AND BEYOND', 'HERE IS JOHNNY', 'I WILL BE BACK', 'SHOW ME THE MONEY', 'ELEMENTARY MY DEAR WATSON', 'LIFE IS LIKE A BOX OF CHOCOLATES', 'I AM SPARTACUS', 'HOUSTON WE HAVE A PROBLEM']
   },
-  'Gaming': {
+  'Gaming Moments': {
     word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE', 'MINECRAFT', 'PACMAN', 'TETRIS', 'DONKEYKONG'],
     phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE', 'PLAYER ONE READY', 'CONTINUE GAME', 'SAVE GAME', 'LOAD GAME', 'PAUSE GAME', 'RESUME GAME', 'QUIT GAME']
   },
-  'Books': {
+  'Story Experiences': {
     word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA', 'FRANKENSTEIN', 'ALICE', 'WONDERLAND', 'ROBINHOOD', 'MULAN'],
     phrase: ['ONCE UPON A TIME', 'THE END', 'CHAPTER ONE', 'TO BE CONTINUED', 'THE ADVENTURE BEGINS', 'THE MYSTERY DEEPENS', 'THE FINAL CHAPTER', 'THE LEGEND LIVES ON', 'THE STORY CONTINUES', 'THE TALE IS TOLD']
   },
-  'Pop Culture': {
+  'Viral Vibes': {
     word: ['RICKROLL', 'CRINGE', 'UNHINGED', 'AWKWARD', 'HYPE', 'SHOCKED', 'SALTY', 'FLEXING', 'VIBES', 'ICONIC'],
     phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP', 'MAIN CHARACTER', 'VIBE CHECK', 'FACE PALM', 'MIND BLOWN', 'EPIC FAIL', 'HOT TAKE']
   }
@@ -135,7 +135,7 @@ Devvit.addSchedulerJob({
     } catch (error) {
       
       // Use fallback data
-      const categoryData = fallbackData[category] || fallbackData['Pop Culture'];
+      const categoryData = fallbackData[category] || fallbackData['Viral Vibes'];
       recommendations = (categoryData as any)[inputType] || categoryData['word'];
       
     }
