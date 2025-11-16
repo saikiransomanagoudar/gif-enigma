@@ -139,7 +139,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                   <ComicText size={0.9} className="text-lg">
                     {
                       [
-                        'Pick a secret word/phrase, and shuffle through suggestions until you find the one you like.',
+                        'Pick a secret word/phrase by shuffling through suggestions until you find the one you like.',
                         'Your selected word/phrase will come with synonyms that serve as search query for GIFs in each slot.',
                         'Choose 4 GIFs, one for each synonym level (from abstract to direct match).',
                         'Hit "Create GIF Enigma" to post your puzzle and earn XP for your creation.',
