@@ -131,16 +131,32 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
     
-    // Smoothly progress through stages with continuous slow movement at the end
-    const timer1 = setTimeout(() => setLoadingStage(1), 800);
-    const timer2 = setTimeout(() => setLoadingStage(2), 1800);
-    const timer3 = setTimeout(() => setLoadingStage(2.5), 3500); // Slow progress between 75% and 100%
-    // Stage 3 (100%) will be set when GIFs actually load
+    // Continuous smooth animation using requestAnimationFrame
+    let startTime: number | null = null;
+    let animationFrameId: number;
+    
+    const animate = (currentTime: number) => {
+      if (!startTime) startTime = currentTime;
+      const elapsed = currentTime - startTime;
+      
+      // Asymptotic approach: quickly gets to 80%, then slows down approaching 95%
+      // Uses logarithmic easing for natural deceleration
+      const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / 2000)) + 15 * (elapsed / 10000));
+      
+      setLoadingStage(progress / 100 * 3); // Convert to 0-3 scale (3 = 100%)
+      
+      // Continue animation until GIFs load
+      if (progress < 95) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+    
+    animationFrameId = requestAnimationFrame(animate);
     
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
     };
   }, [isSearching]);
 
@@ -1059,13 +1075,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                    <div
                      className="h-full rounded-full"
                      style={{
-                       width: loadingStage === 0 ? '25%' : 
-                              loadingStage === 1 ? '50%' :
-                              loadingStage === 2 ? '75%' :
-                              loadingStage === 2.5 ? '90%' : '100%',
+                       width: `${Math.min(100, (loadingStage / 3) * 100)}%`,
                        backgroundColor: colors.primary,
                        boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)',
-                       transition: loadingStage === 2.5 ? 'width 1.5s ease-out' : 'width 0.5s ease-out',
+                       transition: 'width 0.1s linear',
                      }}
                    />
                  </div>

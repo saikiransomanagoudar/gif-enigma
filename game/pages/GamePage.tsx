@@ -10,7 +10,6 @@ import {
   NavigationProps,
   Page,
 } from '../lib/types';
-import { createRoot } from 'react-dom/client';
 import { calculateDifficulty, getDifficultyEmoji, getDifficultyColor } from '../utils/difficultyCalculator';
 
 interface GamePageProps extends NavigationProps {
@@ -52,7 +51,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isCommentPosted, setIsCommentPosted] = useState(false);
   const [winningGuess, setWinningGuess] = useState<string | null>(null);
   const lastSubmittedGuessRef = useRef<string>('');
-  const [errorMessage, setErrorMessage] = useState<{ title: string; subtitle: string } | null>(null);
+  const [showIncorrectPopup, setShowIncorrectPopup] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -550,76 +549,63 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleIncorrectGuess = () => {
-    // Analyze the guess and set appropriate error message
-    if (!gameData || !guess) {
-      setErrorMessage({ title: 'Incorrect', subtitle: 'Try again!' });
-    } else {
-      const cleanedGuess = guess.replace(/\s+/g, '').toUpperCase();
-      const cleanedAnswer = gameData.word.replace(/\s+/g, '').toUpperCase();
-      
-      // Check for length mismatch (spaces are ignored in comparison)
-      if (cleanedGuess.length !== cleanedAnswer.length) {
-        setErrorMessage({
-          title: 'Wrong Length!',
-          subtitle: `Answer has ${cleanedAnswer.length} letter${cleanedAnswer.length !== 1 ? 's' : ''} (spaces don't count)`
-        });
-      }
-      // Check if it's a close match based on multiple heuristics
-      else {
-        // Calculate letter overlap percentage
-        const guessLetters = new Set(cleanedGuess.split(''));
-        const answerLetters = new Set(cleanedAnswer.split(''));
-        const intersection = [...guessLetters].filter(l => answerLetters.has(l));
-        const overlapPercent = (intersection.length / Math.max(guessLetters.size, answerLetters.size)) * 100;
-        
-        // Check if first or last letter matches
-        const firstLetterMatch = cleanedGuess[0] === cleanedAnswer[0];
-        const lastLetterMatch = cleanedGuess[cleanedGuess.length - 1] === cleanedAnswer[cleanedAnswer.length - 1];
-        
-        // "So Close" if: high letter overlap (>60%) OR first/last letter matches
-        if (overlapPercent > 60 || firstLetterMatch || lastLetterMatch) {
-          setErrorMessage({
-            title: 'So Close!',
-            subtitle: ''
-          });
-        }
-        // Default incorrect message
-        else {
-          setErrorMessage({ title: 'Incorrect', subtitle: 'Keep trying!' });
-        }
-      }
-    }
+    // Show incorrect popup
+    setShowIncorrectPopup(true);
     
-    showToastNotification();
-
-    const container = document.getElementById('answer-boxes-container');
-    if (container) {
-      container.classList.remove('animate-vibrate');
-
-      void container.offsetWidth;
-      container.style.animation = 'vibrate 0.6s cubic-bezier(.36,.07,.19,.97) both';
-
-      if (navigator.vibrate) {
-        navigator.vibrate([100, 50, 100]);
-      }
-
-      setTimeout(() => {
-        container.style.animation = 'none';
-      }, 600);
+    // Haptic feedback
+    if (navigator.vibrate) {
+      navigator.vibrate([100, 50, 100]);
     }
 
+    // Animate letter boxes with shake and vanish effect
     const boxes = document.querySelectorAll('.answer-box');
     boxes.forEach((box, index) => {
       setTimeout(() => {
-        (box as HTMLElement).style.transform = 'scale(1.1)';
-        (box as HTMLElement).style.transition = 'all 0.2s cubic-bezier(.36,.07,.19,.97)';
-
+        const boxElement = box as HTMLElement;
+        
+        // Phase 1: Shake animation - disable transitions and force animation
+        boxElement.style.transition = 'none'; // Disable CSS transitions
+        boxElement.style.animation = 'none';
+        boxElement.style.transform = 'none';
+        void boxElement.offsetWidth; // Force reflow
+        
+        // Apply shake animation with !important via inline style
+        boxElement.style.animation = 'shake-box 0.6s cubic-bezier(.36,.07,.19,.97) both';
+        boxElement.style.animationFillMode = 'both';
+        
         setTimeout(() => {
-          (box as HTMLElement).style.transform = 'scale(1)';
-          (box as HTMLElement).style.transition = 'all 0.3s ease';
-        }, 200);
-      }, index * 30);
+          // Phase 2: Letters vanish with fade and scale out
+          const letterContent = boxElement.querySelector('div[style*="position: relative"]') as HTMLElement;
+          if (letterContent && letterContent.textContent && letterContent.textContent.trim()) {
+            letterContent.style.animation = 'letter-vanish 0.4s ease-out forwards';
+          }
+          
+          // Phase 3: Box flash red
+          boxElement.style.backgroundColor = '#fca5a5'; // red-300
+          boxElement.style.transition = 'background-color 0.2s ease';
+          
+          setTimeout(() => {
+            // Phase 4: Reset everything
+            boxElement.style.backgroundColor = '';
+            boxElement.style.animation = '';
+            boxElement.style.transform = '';
+            boxElement.style.transition = ''; // Restore transitions
+            boxElement.style.animationFillMode = '';
+            
+            // Clear the letter content animation
+            if (letterContent) {
+              letterContent.style.animation = 'none';
+            }
+          }, 600);
+        }, 600);
+      }, index * 40); // Stagger animation across boxes
     });
+
+    // Hide popup and clear guess after animation completes
+    setTimeout(() => {
+      setShowIncorrectPopup(false);
+      setGuess('');
+    }, 1500);
   };
 
   const createConfetti = () => {
@@ -1190,7 +1176,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 return (
                   <div
                     key={`${wordIdx}-${letterIdx}`}
-                    className={`answer-box ${answerBoxborders} relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden`}
+                    className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden`}
                   >
                     {/* Category icon watermark inside each box - only show when empty */}
                     {categoryIcon && !displayChar && (
@@ -1226,48 +1212,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     );
   };
 
-  const showToastNotification = () => {
-    const notificationContainer = document.createElement('div');
-    notificationContainer.className =
-      'fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-gradient-to-r from-red-600 to-red-500 p-4 rounded-lg shadow-lg z-50 opacity-0 transition-all duration-300';
-    document.body.appendChild(notificationContainer);
-    const root = createRoot(notificationContainer);
-
-    const message = errorMessage || { title: 'Incorrect', subtitle: 'Try again!' };
-    
-    root.render(
-      <div className="flex items-center gap-3">
-        <span className="text-2xl">{message.title === 'So Close!' ? '😮' : message.title === 'Wrong Length!' ? '📏' : '❌'}</span>
-        <div>
-          <ComicText size={0.8} color="white">
-            {message.title}
-          </ComicText>
-          <ComicText size={0.6} color="white">
-            {message.subtitle}
-          </ComicText>
-        </div>
-      </div>
-    );
-
-    setTimeout(() => {
-      notificationContainer.classList.add('opacity-100');
-      notificationContainer.classList.add('animate-vibrate');
-
-      setTimeout(() => {
-        notificationContainer.classList.remove('opacity-100');
-        notificationContainer.classList.add('opacity-0');
-
-        setTimeout(() => {
-          if (document.body.contains(notificationContainer)) {
-            root.unmount();
-
-            document.body.removeChild(notificationContainer);
-          }
-        }, 300);
-      }, 2000);
-    }, 100);
-  };
-  
   const handleNewGame = () => {
     onNavigate('landing');
   };
@@ -1275,25 +1219,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   if (gameFlowState === 'won') {
     return (
       <>
-        <div className="bg-opacity-60 fixed inset-0 z-40 bg-black backdrop-blur-sm transition-all duration-500"></div>
+        <div className="fixed inset-0 z-40 backdrop-blur-sm transition-all duration-500" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}></div>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-5 overflow-y-auto">
-          <div
-            className="animate-float-up absolute h-8 w-8 rounded-full bg-yellow-400 opacity-30"
-            style={{ left: '20%', top: '30%' }}
-          ></div>
-          <div
-            className="animate-float-up absolute h-10 w-10 rounded-full bg-blue-500 opacity-30"
-            style={{ left: '65%', top: '25%', animationDelay: '0.5s' }}
-          ></div>
-          <div
-            className="animate-float-up absolute h-8 w-8 rounded-full bg-red-500 opacity-30"
-            style={{ left: '30%', top: '70%', animationDelay: '1.5s' }}
-          ></div>
-          <div
-            className="animate-float-up absolute h-7 w-7 rounded-full bg-purple-500 opacity-30"
-            style={{ left: '40%', top: '20%', animationDelay: '0.8s' }}
-          ></div>
-
           <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-md overflow-hidden rounded-xl border-2 border-blue-600 bg-gradient-to-b from-gray-900 to-blue-900 shadow-2xl my-auto">
             <div className="relative border-b border-blue-800 p-4 text-center">
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1305,7 +1232,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               </div>
 
               <div className="relative z-10">
-                <div className="bg-opacity-50 inline-block rounded-lg bg-gray-900 px-3 py-1 shadow-lg">
+                <div className="inline-block">
                   <ComicText size={1.3} color="#FFD700">
                     Hurray!
                   </ComicText>
@@ -1320,11 +1247,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             <div className="p-4 text-center">
               <div className="bg-opacity-50 mb-4 rounded-lg border border-blue-700 bg-blue-900 p-3">
                 {(() => {
-                  const secretWord = gameData?.word.toUpperCase().replace(/\s+/g, '');
-                  // console.log('🔍 Modal render - winningGuess:', winningGuess);
-                  // console.log('🔍 Modal render - secretWord:', secretWord);
-                  // console.log('🔍 Modal render - are they different?', winningGuess !== secretWord);
-                  
+                  const secretWord = gameData?.word.toUpperCase().replace(/\s+/g, '');                  
                   if (winningGuess && winningGuess !== secretWord) {
                     return (
                       <>
@@ -1390,12 +1313,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                     <button
                       onClick={handlePostComment}
                       disabled={isCommentPosting || isCommentPosted}
-                      className={`flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed ${
+                      className={`flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-white transition-all duration-300 disabled:cursor-not-allowed ${
                         isCommentPosted
                           ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                           : isCommentPosting
                             ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
                             : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
+                      } ${
+                        !isCommentPosted && !isCommentPosting ? 'animate-blink-button' : ''
                       }`}
                       aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
                       title={isCommentPosted ? 'Commented!' : 'Comment Results'}
@@ -1412,9 +1337,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
                       </span>
                       <span className="whitespace-nowrap">
-                        <ComicText size={0.6} color="white">
+                        <div style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}>
                           {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-                        </ComicText>
+                        </div>
                       </span>
                     </button>
                   )}
@@ -1466,6 +1391,22 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
+      {/* Incorrect Guess Popup */}
+      {showIncorrectPopup && (
+        <>
+          <div className="fixed inset-0 z-[60] backdrop-blur-sm transition-all duration-300" style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)' }}></div>
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-5">
+            <div className="animate-popup-bounce">
+              <img 
+                src="/game-page/incorrect-guess.gif" 
+                alt="Incorrect Guess"
+                className="w-48 h-48 object-contain rounded-xl"
+              />
+            </div>
+          </div>
+        </>
+      )}
+      
       {isInitialLoading && (
         <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black">
           <div className="h-16 w-16 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
@@ -1498,12 +1439,160 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
 
         @keyframes vibrate {
-        0% { transform: translateX(0); }
-        25% { transform: translateX(-10px); }
-        50% { transform: translateX(10px); }
-        75% { transform: translateX(-10px); }
-        100% { transform: translateX(0); }
-      }
+          0% { transform: translateX(0); }
+          25% { transform: translateX(-10px); }
+          50% { transform: translateX(10px); }
+          75% { transform: translateX(-10px); }
+          100% { transform: translateX(0); }
+        }
+
+        @keyframes shake-box {
+          0%, 100% { 
+            transform: translateX(0) rotate(0deg) !important;
+          }
+          10% { 
+            transform: translateX(-12px) rotate(-4deg) !important;
+          }
+          20% { 
+            transform: translateX(12px) rotate(4deg) !important;
+          }
+          30% { 
+            transform: translateX(-12px) rotate(-4deg) !important;
+          }
+          40% { 
+            transform: translateX(12px) rotate(4deg) !important;
+          }
+          50% { 
+            transform: translateX(-10px) rotate(-3deg) !important;
+          }
+          60% { 
+            transform: translateX(10px) rotate(3deg) !important;
+          }
+          70% { 
+            transform: translateX(-8px) rotate(-2deg) !important;
+          }
+          80% { 
+            transform: translateX(8px) rotate(2deg) !important;
+          }
+          90% { 
+            transform: translateX(-4px) rotate(-1deg) !important;
+          }
+        }
+
+        @keyframes popup-bounce {
+          0% { 
+            transform: scale(0) rotate(-180deg);
+            opacity: 0;
+          }
+          50% { 
+            transform: scale(1.1) rotate(10deg);
+            opacity: 1;
+          }
+          70% { 
+            transform: scale(0.95) rotate(-5deg);
+          }
+          100% { 
+            transform: scale(1) rotate(0deg);
+            opacity: 1;
+          }
+        }
+
+        .animate-popup-bounce {
+          animation: popup-bounce 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+        }
+
+        @keyframes blink-button {
+          0% { 
+            transform: scale(1);
+            box-shadow: 0 4px 12px rgba(217,119,6,0.4);
+          }
+          25% { 
+            transform: scale(0.92);
+            box-shadow: 0 2px 8px rgba(217,119,6,0.3);
+          }
+          50% { 
+            transform: scale(1.08);
+            box-shadow: 0 8px 24px rgba(217,119,6,0.8), 0 0 20px rgba(217,119,6,0.6);
+          }
+          75% { 
+            transform: scale(0.96);
+            box-shadow: 0 3px 10px rgba(217,119,6,0.35);
+          }
+          100% { 
+            transform: scale(1);
+            box-shadow: 0 4px 12px rgba(217,119,6,0.4);
+          }
+        }
+
+        .animate-blink-button {
+          animation: blink-button 1.2s ease-in-out infinite;
+        }
+
+        @keyframes letter-vanish {
+          0% { 
+            opacity: 1; 
+            transform: scale(1) translateY(0); 
+          }
+          50% { 
+            opacity: 0.5; 
+            transform: scale(1.3) translateY(-10px); 
+          }
+          100% { 
+            opacity: 0; 
+            transform: scale(0.3) translateY(-30px) rotate(180deg); 
+          }
+        }
+
+        .error-banner {
+          position: fixed;
+          top: -100px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 1000;
+          background: linear-gradient(135deg, #ef4444, #dc2626);
+          padding: 16px 32px;
+          border-radius: 12px;
+          box-shadow: 0 8px 24px rgba(220, 38, 38, 0.4);
+          transition: top 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .error-banner.show {
+          top: 20px;
+        }
+
+        .error-banner-content {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .error-emoji {
+          font-size: 28px;
+          animation: emoji-bounce 0.6s ease-in-out;
+        }
+
+        @keyframes emoji-bounce {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.2); }
+        }
+
+        .error-text {
+          color: white;
+        }
+
+        .error-title {
+          font-family: "Comic Sans MS", cursive, sans-serif;
+          font-size: 18px;
+          font-weight: bold;
+          letter-spacing: 0.5px;
+        }
+
+        .error-subtitle {
+          font-family: "Comic Sans MS", cursive, sans-serif;
+          font-size: 14px;
+          margin-top: 2px;
+          opacity: 0.9;
+        }
 
         @keyframes modal-fade-in {
           0% { opacity: 0; transform: scale(0.9) translateY(-20px); }
@@ -1827,7 +1916,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       )}
       <div
         ref={answerBoxesContainerRef}
-        className="mt-2 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
+        className="mt-1 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
       >
         {renderAnswerBoxes()}
       </div>
@@ -1853,12 +1942,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             style={{ backgroundColor: '#ef4444' }}
           >
             <ComicText size={0.6} color="white">
-              🏳️ Reveal Answer
+              🏳️ Give Up
             </ComicText>
           </button>
         </div>
-        <div className="mx-auto w-72">
-          <div className="mx-auto w-72">
+        <div className="mx-auto w-64">
+          <div className="mx-auto w-64">
             <div className="rounded-full bg-gradient-to-r from-blue-500 to-purple-600 p-1 shadow-lg transition-shadow duration-300 hover:shadow-2xl">
               <input
                 type="text"
@@ -1866,7 +1955,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 value={guess}
                 onChange={handleGuessChange}
                 onKeyDown={handleKeyDown}
-                className="w-full rounded-full bg-white px-6 py-3 text-center tracking-widest uppercase focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                className="w-full rounded-full bg-white px-5 py-2.5 text-center tracking-widest uppercase focus:ring-2 focus:ring-blue-400 focus:outline-none"
                 style={{ fontFamily: '"Comic Sans MS", cursive, sans-serif' }}
               />
             </div>
@@ -1877,10 +1966,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             handleGuess();
           }}
           disabled={!gameData || isLoading || guess.length === 0}
-          className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+          className="cursor-pointer rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
           style={{ backgroundColor: colors.primary }}
         >
-          <ComicText size={0.6} color="white">
+          <ComicText size={0.65} color="white">
             GUESS IT!
           </ComicText>
         </button>

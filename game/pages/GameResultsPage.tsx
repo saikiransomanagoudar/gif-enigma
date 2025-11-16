@@ -448,7 +448,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             <button
               onClick={handlePostComment}
               disabled={isCommentPosting || isCommentPosted || !username}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white font-bold transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
                 isCommentPosted
                   ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                   : isCommentPosting
@@ -466,9 +466,9 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               <span className="text-xl">
                 {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
               </span>
-              <ComicText size={0.7} color="white">
+              <div style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}>
                 {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-              </ComicText>
+              </div>
             </button>
           )}
           <button
