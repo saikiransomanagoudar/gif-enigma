@@ -180,62 +180,80 @@ export async function searchTenorGifs(
   const collected: TenorGifResult[] = [];
   const seenIds = new Set<string>();
   
-  // Helper: Check if a GIF is visually similar to already collected GIFs
-  const isSimilarToCollected = (newGif: TenorGifResult): boolean => {
-    const newFormat = newGif.media_formats?.gif || newGif.media_formats?.tinygif;
-    if (!newFormat || !newFormat.dims) return false;
+  // Pre-computed metadata cache for collected GIFs to avoid reprocessing
+  interface GifMetadata {
+    aspectRatio: number;
+    duration: number;
+    words: Set<string>;
+  }
+  const collectedMetadata = new Map<string, GifMetadata>();
+  const commonWords = new Set(['gif', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'from']);
+  
+  // Helper: Extract metadata from GIF once
+  const extractMetadata = (gif: TenorGifResult): GifMetadata | null => {
+    const format = gif.media_formats?.gif || gif.media_formats?.tinygif;
+    if (!format || !format.dims) return null;
     
-    const newWidth = newFormat.dims[0] || 0;
-    const newHeight = newFormat.dims[1] || 0;
-    const newAspectRatio = newWidth > 0 && newHeight > 0 ? newWidth / newHeight : 0;
-    const newDuration = Math.round((newFormat.duration || 0) * 10) / 10;
-    const newDesc = (newGif.content_description || newGif.title || '').toLowerCase().trim();
-    
-    // Extract key words from description (ignore common words)
-    const commonWords = new Set(['gif', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for']);
-    const newWords = new Set(
-      newDesc.split(/\s+/).filter(w => w.length > 2 && !commonWords.has(w))
+    const width = format.dims[0] || 0;
+    const height = format.dims[1] || 0;
+    const aspectRatio = width > 0 && height > 0 ? width / height : 0;
+    const duration = Math.round((format.duration || 0) * 10) / 10;
+    const desc = (gif.content_description || gif.title || '').toLowerCase().trim();
+    const words = new Set(
+      desc.split(/\s+/).filter(w => w.length > 2 && !commonWords.has(w))
     );
     
-    // Check against all collected GIFs
-    for (const existing of collected) {
-      const existingFormat = existing.media_formats?.gif || existing.media_formats?.tinygif;
-      if (!existingFormat || !existingFormat.dims) continue;
-      
-      const existingWidth = existingFormat.dims[0] || 0;
-      const existingHeight = existingFormat.dims[1] || 0;
-      const existingAspectRatio = existingWidth > 0 && existingHeight > 0 ? existingWidth / existingHeight : 0;
-      const existingDuration = Math.round((existingFormat.duration || 0) * 10) / 10;
-      const existingDesc = (existing.content_description || existing.title || '').toLowerCase().trim();
-      const existingWords = new Set(
-        existingDesc.split(/\s+/).filter(w => w.length > 2 && !commonWords.has(w))
-      );
-      
-      // Calculate similarity score
+    return { aspectRatio, duration, words };
+  };
+  
+  // Helper: Check if a GIF is visually similar to already collected GIFs
+  const isSimilarToCollected = (newGif: TenorGifResult): boolean => {
+    const newMeta = extractMetadata(newGif);
+    if (!newMeta) return false;
+    
+    // Early exit if no collected GIFs yet
+    if (collectedMetadata.size === 0) return false;
+    
+    // Check against all collected GIFs using pre-computed metadata
+    for (const existingMeta of collectedMetadata.values()) {
       let similarityScore = 0;
       
-      // 1. Same aspect ratio (within 5% tolerance) = +40 points
-      if (newAspectRatio > 0 && existingAspectRatio > 0) {
-        const ratioDiff = Math.abs(newAspectRatio - existingAspectRatio) / existingAspectRatio;
-        if (ratioDiff < 0.05) similarityScore += 40;
+      // 1. Aspect ratio check (fast math comparison)
+      if (newMeta.aspectRatio > 0 && existingMeta.aspectRatio > 0) {
+        const ratioDiff = Math.abs(newMeta.aspectRatio - existingMeta.aspectRatio) / existingMeta.aspectRatio;
+        if (ratioDiff < 0.05) {
+          similarityScore += 40;
+        }
       }
       
-      // 2. Same duration (within 0.2s) = +30 points
-      if (Math.abs(newDuration - existingDuration) < 0.2) {
+      // 2. Duration check (fast comparison) - early exit if this + ratio < 70
+      if (Math.abs(newMeta.duration - existingMeta.duration) < 0.2) {
         similarityScore += 30;
       }
       
-      // 3. Description word overlap = +30 points (if >50% words match)
-      if (newWords.size > 0 && existingWords.size > 0) {
-        const intersection = new Set([...newWords].filter(w => existingWords.has(w)));
-        const overlap = intersection.size / Math.min(newWords.size, existingWords.size);
-        if (overlap > 0.5) similarityScore += 30;
+      // Early exit: if score is already >= 70, it's a duplicate
+      if (similarityScore >= 70) return true;
+      
+      // 3. Word overlap (only if needed to reach 70+ score)
+      if (similarityScore >= 40 && newMeta.words.size > 0 && existingMeta.words.size > 0) {
+        // Fast intersection using smaller set
+        const [smaller, larger] = newMeta.words.size < existingMeta.words.size 
+          ? [newMeta.words, existingMeta.words] 
+          : [existingMeta.words, newMeta.words];
+        
+        let intersectionCount = 0;
+        for (const word of smaller) {
+          if (larger.has(word)) intersectionCount++;
+        }
+        
+        const overlap = intersectionCount / smaller.size;
+        if (overlap > 0.5) {
+          similarityScore += 30;
+        }
       }
       
       // If similarity score >= 70, consider it a duplicate
-      if (similarityScore >= 70) {
-        return true;
-      }
+      if (similarityScore >= 70) return true;
     }
     
     return false;
@@ -246,40 +264,32 @@ export async function searchTenorGifs(
   const MAX_PAGES = 10; // Balanced: enough candidates to get 12 verified GIFs
 
   while (collected.length < desiredCount && page < MAX_PAGES) {
-    // OPTIMIZATION: Fetch 2 pages in parallel for speed (still within API limits)
-    const pagesToFetch = Math.min(2, MAX_PAGES - page);
-    const fetchPromises: Promise<any>[] = [];
+    // Fetch first page only (sequential pagination required for 'pos' token)
+    const fetchLimit = 50; // Tenor's maximum
+    const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=minimal&contentfilter=high&limit=${fetchLimit}`;
+    const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
     
-    for (let p = 0; p < pagesToFetch; p++) {
-      const fetchLimit = 50; // Tenor's maximum
-      const baseUrl: string = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&client_key=${clientKey}&media_filter=minimal&contentfilter=high&limit=${fetchLimit}`;
-      const apiUrl: string = pos ? `${baseUrl}&pos=${encodeURIComponent(pos)}` : baseUrl;
-      
-      fetchPromises.push(
-        fetch(apiUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'GIF-Enigma/1.0',
-            'Referer': 'https://www.reddit.com',
-            'Origin': 'https://www.reddit.com',
-          },
-        }).then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Tenor API returned status ${response.status}`);
-          }
-          return response.json();
-        })
-      );  
-      if (p === 0) break;
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'GIF-Enigma/1.0',
+        'Referer': 'https://www.reddit.com',
+        'Origin': 'https://www.reddit.com',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Tenor API returned status ${response.status}`);
     }
     
-    const pageResults = await Promise.all(fetchPromises);
+    const data = await response.json();
+    const pageResults = [data];
     
     for (const data of pageResults) {
       if (!data || !data.results) continue;
 
-      const batchSize = 8;
+      const batchSize = 12; // Increased from 8 for faster parallel processing
       const results = data.results;
 
       for (let i = 0; i < results.length && collected.length < desiredCount; i += batchSize) {
@@ -321,9 +331,16 @@ export async function searchTenorGifs(
             // Skip if visually similar to already collected GIFs
             if (isSimilarToCollected(r)) {
               continue;
-            }            
+            }
+            
+            // Add to collected and cache its metadata
             collected.push(r);
             seenIds.add(r.id);
+            const metadata = extractMetadata(r);
+            if (metadata) {
+              collectedMetadata.set(r.id, metadata);
+            }
+            
             addedInBatch++;
             if (collected.length >= desiredCount) break;
           }

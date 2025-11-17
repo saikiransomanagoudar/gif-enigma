@@ -605,22 +605,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setTimeout(() => {
             setIsSearching(false);
             setGifs(msg.results);
-            if (msg.results.length === 0) {
-              setMessage('No GIFs found for this search term. Try a different synonym.');
-              setMessageType('error');
-            } else {
-              setMessage(`Found ${msg.results.length} GIFs! Click one to select it.`);
-              setMessageType('success');
-            }
-          }, 300);
-          
-          // Batch fetch is now triggered in parallel when synonym is clicked
-          // No need to do it sequentially here anymore
+          }, 200);
+
         } else {
+          setLoadingStage(0);
           setIsSearching(false);
           setGifs([]);
-          setMessage('Failed to load GIFs. Please try again.');
-          setMessageType('error');
         }
       }
 
@@ -635,18 +625,21 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           
           if (pendingDisplaySynonym.current && gifCache.current[pendingDisplaySynonym.current]) {
             const waitingFor = pendingDisplaySynonym.current;
-            setGifs(gifCache.current[waitingFor]);
-            setIsSearching(false);
-            setMessage(`Found ${gifCache.current[waitingFor].length} GIFs! Click one to select it.`);
-            setMessageType('success');
-            pendingDisplaySynonym.current = null;
+            
+            // Complete progress bar smoothly
+            setLoadingStage(3);
+            
+            setTimeout(() => {
+              setGifs(gifCache.current[waitingFor]);
+              setIsSearching(false);
+              pendingDisplaySynonym.current = null;
+            }, 200);
           }
         } else {
           batchFetchingSynonyms.current.clear();  
           if (pendingDisplaySynonym.current) {
+            setLoadingStage(0);
             setIsSearching(false);
-            setMessage('Failed to load GIFs. Please try again.');
-            setMessageType('error');
             pendingDisplaySynonym.current = null;
           }
         }   
@@ -658,9 +651,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         if (msg.success && msg.result && msg.result.success) {
           setBonusAwarded(msg.result.bonusAwarded !== false); // Default to true if not specified
           setShowSuccessModal(true);
-        } else {
-          setMessage(`Failed to create game: ${msg.error || msg.result?.error || 'Unknown error'}`);
-          setMessageType('error');
         }
       }
     };
@@ -682,18 +672,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setGifs([]);
     setSelectedGifInModal(null);
     currentSearchTermRef.current = term;
-    setGifs([]);
 
     if (gifCache.current[term]) {
+      // Cached results - display instantly without loading animation
       setGifs(gifCache.current[term]);
       setIsSearching(false);
+      setLoadingStage(0);
       return;
     }
 
     if (batchFetchingSynonyms.current.has(term)) {
       setIsSearching(true);
-      pendingDisplaySynonym.current = term; // Mark that we're waiting for this synonym
-      return; // Don't trigger a duplicate fetch
+      pendingDisplaySynonym.current = term;
+      return;
     }    
     setIsSearching(true);
 
@@ -711,8 +702,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     );
     timeoutRef.current = setTimeout(() => {
       setIsSearching(false);
-      setMessage('Search timed out. Please try again.');
-      setMessageType('error');
+      setLoadingStage(0);
     }, 25000); // Balanced timeout - not too aggressive
   };
 
@@ -814,8 +804,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
 
     setIsCreating(true);
-    setMessage('Creating your GIF Enigma game...');
-    setMessageType('info');
 
     try {
       const wordArray = secretInput.split('');
@@ -862,10 +850,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       );
     } catch (error) {
       setIsCreating(false);
-      setMessage(
-        `Failed to create game: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-      setMessageType('error');
     }
   };
 
@@ -933,8 +917,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         currentCachedWord.current = secretInput;
                       }
                       
+                      // Reset loading states BEFORE opening modal to prevent flash
+                      setLoadingStage(0);
+                      setIsSearching(false);
+                      setGifs([]);
+                      setSelectedGifInModal(null);
+                      
                       setSelectedGifIndex(index);
-                      setCurrentModalSynonym(defaultSynonym); // Set the synonym for modal display
+                      setCurrentModalSynonym(defaultSynonym);
                       setShowSearchInput(true);
                       setSearchTerm(defaultSynonym);
                       setMessage('');
@@ -1067,7 +1057,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         confirmDisabled={!selectedGifInModal}
       >
         <div className="flex flex-col gap-4">
-           {isSearching && (
+           {isSearching && loadingStage > 0 && (
              <div className="flex flex-col items-center justify-center pt-12 pb-8">
                {/* Progress Bar */}
                <div className="w-full max-w-md px-4">
