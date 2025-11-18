@@ -655,6 +655,8 @@ Devvit.addCustomPostType({
                 type: 'GET_GEMINI_RECOMMENDATIONS_RESULT',
                 success: result.success,
                 result: result.recommendations,
+                category: category,
+                inputType: inputType,
                 error: result.error,
               });
             } catch (error) {
@@ -711,6 +713,37 @@ Devvit.addCustomPostType({
             } catch (error) {
               postMessage({
                 type: 'SEARCH_TENOR_GIFS_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'CHECK_TENOR_CACHE':
+            try {
+              // Check if results are cached in Redis
+              const cachedResults = await context.redis.get(`tenorSearch:${event.data.query.toLowerCase()}`);
+              
+              if (cachedResults) {
+                const results = JSON.parse(cachedResults);
+                postMessage({
+                  type: 'CHECK_TENOR_CACHE_RESULT',
+                  success: true,
+                  cached: true,
+                  query: event.data.query,
+                  results: results,
+                });
+              } else {
+                postMessage({
+                  type: 'CHECK_TENOR_CACHE_RESULT',
+                  success: true,
+                  cached: false,
+                  query: event.data.query,
+                });
+              }
+            } catch (error) {
+              postMessage({
+                type: 'CHECK_TENOR_CACHE_RESULT',
                 success: false,
                 error: String(error),
               });

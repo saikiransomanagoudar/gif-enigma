@@ -56,6 +56,12 @@ export type WebviewToBlockMessage =
         limit?: number;
       };
     }
+  | {
+      type: 'CHECK_TENOR_CACHE';
+      data: {
+        query: string;
+      };
+    }
   | { type: 'GET_TOP_SCORES' }
   | {
       type: 'SAVE_GAME';
@@ -282,6 +288,8 @@ export type BlocksToWebviewMessage =
       type: 'GET_GEMINI_RECOMMENDATIONS_RESULT';
       success: boolean;
       result?: string[];
+      category?: string;
+      inputType?: 'word' | 'phrase';
       error?: string;
     }
   | {
@@ -302,6 +310,14 @@ export type BlocksToWebviewMessage =
       type: 'SEARCH_BATCH_TENOR_GIFS_RESULT';
       success: boolean;
       results?: { [query: string]: any[] };
+      error?: string;
+    }
+  | {
+      type: 'CHECK_TENOR_CACHE_RESULT';
+      success: boolean;
+      cached?: boolean;
+      query?: string;
+      results?: any[];
       error?: string;
     }
   | {

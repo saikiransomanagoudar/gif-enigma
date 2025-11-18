@@ -111,6 +111,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [loadingStage, setLoadingStage] = useState<number>(0); // 0, 1, 2 for progress steps
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isCacheChecking, setIsCacheChecking] = useState<boolean>(false);
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [bonusAwarded, setBonusAwarded] = useState<boolean>(true); // Track if bonus was awarded
@@ -122,7 +123,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const submitButtonRef = useRef<HTMLButtonElement>(null);
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const cacheCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isCacheCheckingRef = React.useRef<boolean>(false);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
+
+  // Safety: Clear loading state if GIFs are ready but modal is stuck loading
+  useEffect(() => {
+    if (isSearching && gifs.length > 0) {
+      // GIFs are loaded but loading state is still active - clear it
+      setIsSearching(false);
+      setLoadingStage(0);
+    }
+  }, [gifs, isSearching]);
 
   // Progress bar that fills smoothly and completes when GIFs load
   useEffect(() => {
@@ -492,26 +504,21 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         if (msg.success && Array.isArray(msg.result)) {
           const filtered = msg.result.filter((r: string) => r.length >= 5);
           
-          // Find which pending request this response is for
-          // Check both current and opposite types
-          const currentCacheKey = `${currentCategory}-${inputType}`;
-          const oppositeType: 'word' | 'phrase' = inputType === 'word' ? 'phrase' : 'word';
-          const oppositeCacheKey = `${currentCategory}-${oppositeType}`;
+          // Use the category and inputType from the response to determine the correct cache key
+          const responseCategory = msg.category || currentCategory;
+          const responseInputType = msg.inputType || inputType;
+          const cacheKey = `${responseCategory}-${responseInputType}`;
           
-          // Determine which cache key this response belongs to
-          let cacheKey = currentCacheKey;
-          if (pendingRequestsRef.current.has(currentCacheKey)) {
-            cacheKey = currentCacheKey;
-            pendingRequestsRef.current.delete(currentCacheKey);
-          } else if (pendingRequestsRef.current.has(oppositeCacheKey)) {
-            cacheKey = oppositeCacheKey;
-            pendingRequestsRef.current.delete(oppositeCacheKey);
-          }
-
+          // Remove from pending requests
+          pendingRequestsRef.current.delete(cacheKey);
+          
+          // Store in cache
           recommendationsCache.current[cacheKey] = filtered;
           
-          // Only update UI if this is for the current active type
-          if (cacheKey === currentCacheKey && filtered.length > 0) {
+          // Only update UI if this response is for the currently active category and type
+          const isCurrentlyActive = responseCategory === currentCategory && responseInputType === inputType;
+          
+          if (isCurrentlyActive && filtered.length > 0) {
             setIsLoadingRecommendations(false);
             
             // Update UI with API data
@@ -541,7 +548,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             });
           }
         } else {
-          // Only show fallback if we don't already have data
+          // Only show fallback if we don't already have data for the current type
           const cacheKey = `${currentCategory}-${inputType}`;
           if (!secretInput && !recommendationsCache.current[cacheKey]) {
             setIsLoadingRecommendations(false);
@@ -604,6 +611,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           // Wait a brief moment to show 100%, then hide loading
           setTimeout(() => {
             setIsSearching(false);
+            setLoadingStage(0); // Reset loading stage
             setGifs(msg.results);
           }, 200);
 
@@ -611,6 +619,37 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setLoadingStage(0);
           setIsSearching(false);
           setGifs([]);
+        }
+      }
+
+      if (msg.type === 'CHECK_TENOR_CACHE_RESULT') {
+        isCacheCheckingRef.current = false;
+        setIsCacheChecking(false);
+        if (cacheCheckTimeoutRef.current) {
+          clearTimeout(cacheCheckTimeoutRef.current);
+          cacheCheckTimeoutRef.current = null;
+        }
+        if (msg.success && msg.cached && Array.isArray(msg.results) && msg.results.length > 0) {
+          const query = msg.query;
+          if (query) {
+            gifCache.current[query] = msg.results;
+            // Only update UI if this is still the current search
+            if (currentSearchTermRef.current === query) {
+              setGifs(msg.results);
+              setIsSearching(false);
+              setLoadingStage(0);
+            }
+          }
+        } else {
+          // Cache check completed but no results found
+          if (currentSearchTermRef.current === msg.query) {
+            setIsSearching(false);
+            setLoadingStage(0);
+            // Only set empty if we truly have no cache
+            if (!gifCache.current[msg.query] || gifCache.current[msg.query].length === 0) {
+              setGifs([]);
+            }
+          }
         }
       }
 
@@ -632,8 +671,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             setTimeout(() => {
               setGifs(gifCache.current[waitingFor]);
               setIsSearching(false);
+              setLoadingStage(0);
               pendingDisplaySynonym.current = null;
             }, 200);
+          } else if (pendingDisplaySynonym.current) {
+            // If pending but no results, clear loading state
+            setLoadingStage(0);
+            setIsSearching(false);
+            pendingDisplaySynonym.current = null;
           }
         } else {
           batchFetchingSynonyms.current.clear();  
@@ -661,6 +706,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      if (cacheCheckTimeoutRef.current) {
+        clearTimeout(cacheCheckTimeoutRef.current);
+      }
       // Clear all synonym timeouts
       Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
       synonymTimeoutRef.current = {};
@@ -675,6 +723,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (gifCache.current[term]) {
       // Cached results - display instantly without loading animation
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
       setGifs(gifCache.current[term]);
       setIsSearching(false);
       setLoadingStage(0);
@@ -700,10 +752,44 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
+    
+    // Timeout that checks cache before giving up
     timeoutRef.current = setTimeout(() => {
-      setIsSearching(false);
-      setLoadingStage(0);
-    }, 25000); // Balanced timeout - not too aggressive
+      // Before showing error, check if results arrived in cache during the wait
+      if (gifCache.current[term]) {
+        setGifs(gifCache.current[term]);
+        setIsSearching(false);
+        setLoadingStage(0);
+        return;
+      }
+      
+      // Request cache check from backend before declaring failure
+      setIsCacheChecking(true);
+      isCacheCheckingRef.current = true;
+      window.parent.postMessage(
+        {
+          type: 'CHECK_TENOR_CACHE',
+          data: { query: term },
+        },
+        '*'
+      );
+      
+      // Safety timeout: if cache check doesn't respond in 5 seconds, finalize
+      cacheCheckTimeoutRef.current = setTimeout(() => {
+        if (isCacheCheckingRef.current && currentSearchTermRef.current === term) {
+          isCacheCheckingRef.current = false;
+          setIsCacheChecking(false);
+          setIsSearching(false);
+          setLoadingStage(0);
+          // Only clear GIFs if we still don't have results in cache
+          if (gifCache.current[term] && gifCache.current[term].length > 0) {
+            setGifs(gifCache.current[term]);
+          } else {
+            setGifs([]);
+          }
+        }
+      }, 5000);
+    }, 25000);
   };
 
   const batchFetchRemainingGifs = (excludeSynonym: string, allSynonyms: string[]) => {
@@ -1034,16 +1120,28 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 clearTimeout(timeoutRef.current);
                 timeoutRef.current = null;
               }
+              if (cacheCheckTimeoutRef.current) {
+                clearTimeout(cacheCheckTimeoutRef.current);
+                cacheCheckTimeoutRef.current = null;
+              }
+              isCacheCheckingRef.current = false;
               setShowSearchInput(false);
               setIsSearching(false);
+              setIsCacheChecking(false);
             },
           });
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
           }
+          if (cacheCheckTimeoutRef.current) {
+            clearTimeout(cacheCheckTimeoutRef.current);
+            cacheCheckTimeoutRef.current = null;
+          }
+          isCacheCheckingRef.current = false;
           setShowSearchInput(false);
           setIsSearching(false);
+          setIsCacheChecking(false);
           setLoadingStage(0); // Reset progress bar
           setGifs([]); // Clear GIFs
           setSelectedGifInModal(null);
@@ -1084,7 +1182,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                </div>
              </div>
            )}
-          {!isSearching && gifs.length === 0 && (
+          {!isSearching && !isCacheChecking && gifs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8">
               <ComicText size={0.6} color="#94A3B8" className="text-center">
                 No GIFs found. Try a different word/phrase.
