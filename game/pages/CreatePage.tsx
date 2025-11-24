@@ -1294,7 +1294,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     ? '🎮'
                     : currentCategory === 'Story Experiences'
                       ? '📚'
-                      : '🔥'}
+                      : currentCategory === 'Viral Vibes'
+                      ? '🔥'
+                      : '🌐'}
               </span>
               <ComicText size={0.6} color={colors.textSecondary}>
                 Category: <span style={{ fontWeight: 'bold' }}>{currentCategory}</span>

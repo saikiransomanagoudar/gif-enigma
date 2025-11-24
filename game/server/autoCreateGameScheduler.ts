@@ -118,7 +118,7 @@ Devvit.addSchedulerJob({
 
     const category = pickRandom(categories);
     // Use the inputType from event data if provided (manual trigger), otherwise use weighted random
-    const inputType = (event?.data as any)?.inputType || pickInputType();
+    let inputType: 'word' | 'phrase' = (event?.data as any)?.inputType || pickInputType();
 
     let recommendations: string[] = [];
     let synonyms: string[][] = [];
@@ -136,7 +136,15 @@ Devvit.addSchedulerJob({
       
       // Use fallback data
       const categoryData = fallbackData[category] || fallbackData['Viral Vibes'];
-      recommendations = (categoryData as any)[inputType] || categoryData['word'];
+      const selectedData = (categoryData as any)[inputType];
+      
+      // If the selected inputType doesn't have data, fall back to 'word' and update inputType accordingly
+      if (selectedData && selectedData.length > 0) {
+        recommendations = selectedData;
+      } else {
+        recommendations = categoryData['word'];
+        inputType = 'word';
+      }
       
     }
 
