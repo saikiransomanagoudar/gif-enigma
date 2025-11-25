@@ -5,11 +5,29 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes"
     />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+    default-src 'self';
+    img-src
+      'self'
+      data:
+      blob:
+      https://media.tenor.com
+      https://*.tenor.com
+      https://webview.devvit.net
+      https://webview-dev.devvit.net
+      https://*.redditmedia.com
+      https://*.redditstatic.com
+      https://*.redd.it;
+  "
+    />
+
     <title>GIF Enigma</title>
-    <script type="module" crossorigin src="/assets/index-CHDmCO8W.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DpfR0eFO.css">
+    <script type="module" crossorigin src="/assets/index-2MqkaAt2.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B1iNJjl_.css">
   </head>
   <body class="h-full bg-slate-900">
     <div id="root" class="h-full"></div>

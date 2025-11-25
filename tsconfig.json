@@ -4,7 +4,7 @@
     "target": "esnext",
     "esModuleInterop": true,
     "noEmit": true,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "@devvit/public-api"]
   },
   "include": ["./src/**/*"],
   "extends": "@devvit/public-api/devvit.tsconfig.json"

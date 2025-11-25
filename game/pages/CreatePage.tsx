@@ -1,427 +1,1465 @@
-import React, { useState } from "react";
-import { colors } from "../lib/styles";
-import { Question } from "../lib/types";
-import { ChewyText } from "../lib/fonts";
-import { GifResult, redditSearchEnhanced } from "../server/redditSearch";
-import { NavigationProps } from "../App";
+import React, { useState, useEffect, useRef } from 'react';
+import { colors } from '../lib/styles';
+import { ComicText } from '../lib/fonts';
+import { Modal } from '../components/Modal';
+import { CategoryType } from './CategoryPage';
+import { NavigationProps, Page } from '../lib/types';
+import * as transitions from '../../src/utils/transitions';
 
-// Define a local type for storing a question so that 'gifs' is a string array.
-// type StoredQuestion = Omit<Question, "gifs"> & { gifs: string[] };
+export interface TenorGifResult {
+  id: string;
+  title: string;
+  media_formats: {
+    gif?: {
+      url: string;
+      dims: number[];
+      duration: number;
+      preview: string;
+      size: number;
+    };
+    tinygif?: {
+      url: string;
+      dims: number[];
+      duration: number;
+      preview: string;
+      size: number;
+    };
+    mediumgif?: {
+      url: string;
+      dims: number[];
+      duration: number;
+      preview: string;
+      size: number;
+    };
+    [key: string]:
+      | {
+          url: string;
+          dims: number[];
+          duration: number;
+          preview: string;
+          size: number;
+        }
+      | undefined;
+  };
+  content_description: string;
+  created: number;
+  hasaudio: boolean;
+  url: string;
+}
 
-export interface CreatePageProps extends NavigationProps {}
+const getGifUrl = (gif: TenorGifResult | null): string => {
+  return gif?.url || '';
+};
 
-export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate }) => {
-  const [word, setWord] = useState<string>("");
-  const [questionText, setQuestionText] = useState<string>("");
-  const [searchTerm, setSearchTerm] = useState<string>("");
-  const [gifs, setGifs] = useState<GifResult[]>([]);
-  const [selectedGifs, setSelectedGifs] = useState<GifResult[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<string>("");
-  const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
-  const [showHint, setShowHint] = useState<boolean>(false);
+export interface CreatePageProps extends NavigationProps {
+  context: any;
+  category?: CategoryType;
+  onNavigate: (page: Page) => void;
+}
 
-  // Instead of using Devvit forms, we use prompt dialogs for simplicity.
-  const handleSetWord = () => {
-    const input = prompt("Enter the secret word:");
-    if (input && input.trim() !== "") {
-      setWord(input.trim());
+export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = 'Viral Vibes' }) => {
+  const [inputType, setInputType] = useState<'word' | 'phrase'>('word');
+  const [currentCategory, setCurrentCategory] = useState<CategoryType>(category);
+
+  const [recommendations, setRecommendations] = useState<string[]>([]);
+  const [currentRecIndex, setCurrentRecIndex] = useState<number>(0);
+  const [secretInput, setSecretInput] = useState<string>('');
+  const [synonyms, setSynonyms] = useState<string[][]>([]);
+  // @ts-ignore - Used internally for state management, display logic uses synonyms.length
+  const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(false);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
+  
+  // Cache for recommendations to avoid repeated API calls
+  const recommendationsCache = useRef<{ [key: string]: string[] }>({});
+  const synonymsCache = useRef<{ [key: string]: string[][] }>({});
+  const currentWordRef = useRef<string>(''); // Track current word immediately, before state updates
+  const hasShownDataRef = useRef<{ [key: string]: boolean }>({}); // Track if user has seen data for this cache key
+  const pendingRequestsRef = useRef<Set<string>>(new Set()); // Track all pending API requests by cache key
+  const synonymTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({}); // Track synonym fetch timeouts
+
+  // GIF states
+  // @ts-ignore
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [gifs, setGifs] = useState<TenorGifResult[]>([]);
+  const [selectedGifs, setSelectedGifs] = useState<(TenorGifResult | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
+  const [selectedGifInModal, setSelectedGifInModal] = useState<TenorGifResult | null>(null);
+  const [currentModalSynonym, setCurrentModalSynonym] = useState<string>(''); // Track which synonym is being searched
+
+  // Frontend memory cache for GIF results per synonym - avoids repeated fetches in current session
+  // Note: This is separate from Redis cache (backend). Redis cache has 24h TTL and benefits all users.
+  // Clear this frontend cache when word changes for proper display, but Redis cache remains intact.
+  const gifCache = useRef<{ [query: string]: TenorGifResult[] }>({});
+  const isBatchFetching = useRef<boolean>(false);
+  const currentCachedWord = useRef<string>(''); // Track which word the cache belongs to
+  const currentSearchTermRef = useRef<string>(''); // Track the current search term for caching results
+  const batchFetchingSynonyms = useRef<Set<string>>(new Set()); // Track which synonyms are being batch-fetched
+  const pendingDisplaySynonym = useRef<string | null>(null); // Track if user is waiting for a specific synonym
+
+  // UI states
+  const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
+
+  // @ts-ignore
+  const [message, setMessage] = useState<string>('');
+  // @ts-ignore
+  const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [loadingStage, setLoadingStage] = useState<number>(0); // 0, 1, 2 for progress steps
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isCacheChecking, setIsCacheChecking] = useState<boolean>(false);
+  const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
+  const [bonusAwarded, setBonusAwarded] = useState<boolean>(true); // Track if bonus was awarded
+
+  const headerRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  const gifGridRef = useRef<HTMLDivElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const cacheCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const isCacheCheckingRef = React.useRef<boolean>(false);
+  const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
+
+  // Safety: Clear loading state if GIFs are ready but modal is stuck loading
+  useEffect(() => {
+    if (isSearching && gifs.length > 0) {
+      // GIFs are loaded but loading state is still active - clear it
+      setIsSearching(false);
+      setLoadingStage(0);
     }
+  }, [gifs, isSearching]);
+
+  // Progress bar that fills smoothly and completes when GIFs load
+  useEffect(() => {
+    if (!isSearching) {
+      setLoadingStage(0);
+      return;
+    }
+    
+    // Continuous smooth animation using requestAnimationFrame
+    let startTime: number | null = null;
+    let animationFrameId: number;
+    
+    const animate = (currentTime: number) => {
+      if (!startTime) startTime = currentTime;
+      const elapsed = currentTime - startTime;
+      
+      // Asymptotic approach: quickly gets to 80%, then slows down approaching 95%
+      // Uses logarithmic easing for natural deceleration
+      const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / 2000)) + 15 * (elapsed / 10000));
+      
+      setLoadingStage(progress / 100 * 3); // Convert to 0-3 scale (3 = 100%)
+      
+      // Continue animation until GIFs load
+      if (progress < 95) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+    
+    animationFrameId = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [isSearching]);
+
+  // Pre-fetch both word and phrase recommendations on mount for instant toggling
+  useEffect(() => {
+    // Pre-fetch the opposite type in the background for instant switching
+    const oppositeType: 'word' | 'phrase' = inputType === 'word' ? 'phrase' : 'word';
+    const oppositeCacheKey = `${currentCategory}-${oppositeType}`;
+    
+    if (!recommendationsCache.current[oppositeCacheKey]) {
+      // Fetch in background without showing loading state
+      setTimeout(() => {
+        // Track this pre-fetch request
+        pendingRequestsRef.current.add(oppositeCacheKey);
+        
+        window.parent.postMessage(
+          {
+            type: 'GET_GEMINI_RECOMMENDATIONS',
+            data: {
+              category: currentCategory,
+              inputType: oppositeType,
+              count: 20,
+            },
+          },
+          '*'
+        );
+      }, 1000);
+    }
+  }, [currentCategory, inputType]);
+
+  useEffect(() => {
+    if (category) {
+      setCurrentCategory(category);
+    }
+
+    // Clear previous state immediately
+    setSynonyms([]);
+    setSecretInput('');
+    setIsLoadingSynonyms(true);
+    setIsLoadingRecommendations(true);
+    
+    // Clear any pending synonym timeouts
+    Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
+    synonymTimeoutRef.current = {};
+    
+    fetchRecommendations();
+  }, [currentCategory, inputType]);
+
+  const getFallbackRecommendations = () => {
+    const fallbacks = {
+      'Viral Vibes': {
+        word: ['RICKROLL', 'CRINGE', 'UNHINGED', 'AWKWARD', 'HYPE', 'SHOCKED', 'SALTY', 'FLEXING', 'VIBES', 'ICONIC'],
+        phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP', 'MAIN CHARACTER', 'VIBE CHECK', 'FACE PALM', 'MIND BLOWN', 'EPIC FAIL', 'HOT TAKE']
+      },
+      'Cinematic Feels': {
+        word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN', 'FROZEN', 'TOYSTORY', 'PIRATES', 'WIZARD', 'GHOSTBUSTERS'],
+        phrase: ['MAY THE FORCE BE WITH YOU', 'I AM YOUR FATHER', 'TO INFINITY AND BEYOND', 'HERE IS JOHNNY', 'I WILL BE BACK', 'SHOW ME THE MONEY', 'ELEMENTARY MY DEAR WATSON', 'LIFE IS LIKE A BOX OF CHOCOLATES', 'I AM SPARTACUS', 'HOUSTON WE HAVE A PROBLEM']
+      },
+      'Gaming Moments': {
+        word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE', 'MINECRAFT', 'POKEMON', 'PACMAN', 'TETRIS', 'DONKEYKONG'],
+        phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE', 'PLAYER ONE READY', 'CONTINUE GAME', 'SAVE GAME', 'LOAD GAME', 'PAUSE GAME', 'RESUME GAME', 'QUIT GAME']
+      },
+      'Story Experiences': {
+        word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA', 'FRANKENSTEIN', 'ALICE', 'WONDERLAND', 'ROBINHOOD', 'MULAN'],
+        phrase: ['ONCE UPON A TIME', 'THE END', 'CHAPTER ONE', 'TO BE CONTINUED', 'THE ADVENTURE BEGINS', 'THE MYSTERY DEEPENS', 'THE FINAL CHAPTER', 'THE LEGEND LIVES ON', 'THE STORY CONTINUES', 'THE TALE IS TOLD']
+      }
+    };
+
+    const categoryData = fallbacks[currentCategory] || fallbacks['Viral Vibes'];
+    return categoryData[inputType] || categoryData['word'];
   };
 
-  const handleSetQuestionText = () => {
-    const input = prompt("Enter the question text:");
-    if (input && input.trim() !== "") {
-      setQuestionText(input.trim());
+  const fetchRecommendations = async () => {
+    const cacheKey = `${currentCategory}-${inputType}`;
+    
+    // Check cache first
+    if (recommendationsCache.current[cacheKey]) {
+      const cachedData = recommendationsCache.current[cacheKey];
+      setRecommendations(cachedData);
+      setCurrentRecIndex(0);
+      currentWordRef.current = cachedData[0]; // Update ref immediately
+      setSecretInput(cachedData[0]);
+      setIsLoadingRecommendations(false);
+      hasShownDataRef.current[cacheKey] = true; // Mark as shown
+      
+      // Check if synonyms are already cached, otherwise show loading state
+      if (synonymsCache.current[cachedData[0]]) {
+        setSynonyms(synonymsCache.current[cachedData[0]]);
+        setIsLoadingSynonyms(false);
+      } else {
+        // Show loading state and fetch synonyms
+        setSynonyms([]);
+        setIsLoadingSynonyms(true);
+        fetchSynonyms(cachedData[0]);
+      }
+      return;
     }
+    
+    // Show loading state immediately - no fallback data shown
+    setIsLoadingRecommendations(true);
+    setSecretInput('');
+    setSynonyms([]);
+    setIsLoadingSynonyms(true);
+    
+    // Track that we're making a request for this specific cache key
+    pendingRequestsRef.current.add(cacheKey);
+    
+    // Send API request immediately
+    window.parent.postMessage(
+      {
+        type: 'GET_GEMINI_RECOMMENDATIONS',
+        data: {
+          category: currentCategory,
+          inputType: inputType,
+          count: 20,
+        },
+      },
+      '*'
+    );
+    
+    // Fallback timeout after 10 seconds in case API fails
+    const fallbackTimeout = setTimeout(() => {
+      // Only show fallback if API hasn't responded yet (check if still pending)
+      if (pendingRequestsRef.current.has(cacheKey)) {
+        const fallbackData = getFallbackRecommendations();
+        recommendationsCache.current[cacheKey] = fallbackData;
+        setRecommendations(fallbackData);
+        setSecretInput(fallbackData[0]);
+        currentWordRef.current = fallbackData[0];
+        setIsLoadingRecommendations(false);
+        hasShownDataRef.current[cacheKey] = true;
+        fetchSynonyms(fallbackData[0]);
+        pendingRequestsRef.current.delete(cacheKey);
+      }
+    }, 10000);
+    
+    // Store timeout for cleanup
+    return () => clearTimeout(fallbackTimeout);
   };
 
-  const handleSetSearchTerm = () => {
-    const input = prompt("Enter search term for GIFs:");
-    if (input && input.trim() !== "") {
-      setSearchTerm(input.trim());
-      searchGifs(input.trim());
-    }
+  const getFallbackSynonyms = (word: string) => {
+    const synonymMap: { [key: string]: string[][] } = {
+      // Words
+      'ELEPHANT': [['animal', 'large', 'trunk', 'gray'], ['mammal', 'big', 'ivory', 'herd'], ['creature', 'huge', 'tusk', 'safari'], ['beast', 'massive', 'memory', 'zoo']],
+      'BUTTERFLY': [['insect', 'wings', 'colorful', 'fly'], ['caterpillar', 'metamorphosis', 'beautiful', 'flutter'], ['pollinate', 'delicate', 'spring', 'garden'], ['transform', 'graceful', 'pattern', 'flower']],
+      'RAINBOW': [['colors', 'rain', 'sky', 'arc'], ['spectrum', 'prism', 'light', 'beautiful'], ['seven', 'vibrant', 'nature', 'hope'], ['weather', 'bright', 'magical', 'end']],
+      'MOUNTAIN': [['peak', 'high', 'climb', 'rock'], ['summit', 'elevation', 'hiking', 'snow'], ['range', 'altitude', 'view', 'nature'], ['hill', 'slope', 'adventure', 'trail']],
+      'OCEAN': [['sea', 'water', 'waves', 'blue'], ['deep', 'vast', 'marine', 'salt'], ['current', 'tide', 'shore', 'fish'], ['aquatic', 'huge', 'surf', 'boat']],
+      'STARWARS': [['space', 'lightsaber', 'force', 'jedi'], ['galaxy', 'darth', 'vader', 'rebel'], ['yoda', 'luke', 'princess', 'leia'], ['death', 'star', 'empire', 'hope']],
+      'POKEMON': [['pikachu', 'catch', 'trainer', 'battle'], ['ash', 'gym', 'evolution', 'pokeball'], ['gotta', 'catch', 'em', 'all'], ['monster', 'creature', 'adventure', 'friend']],
+      'HARRY': [['potter', 'wizard', 'hogwarts', 'magic'], ['spell', 'wand', 'voldemort', 'hermione'], ['ron', 'weasley', 'quidditch', 'dumbledore'], ['gryffindor', 'invisibility', 'cloak', 'phoenix']],
+      'BATMAN': [['dark', 'knight', 'gotham', 'hero'], ['bruce', 'wayne', 'cape', 'bat'], ['joker', 'villain', 'justice', 'fight'], ['superhero', 'batmobile', 'robin', 'cave']],
+      'FROZEN': [['ice', 'cold', 'snow', 'winter'], ['elsa', 'anna', 'princess', 'disney'], ['let it go', 'olaf', 'kingdom', 'magic'], ['sisters', 'love', 'frozen heart', 'snowman']],
+      
+      // Phrases - Movies
+      'MAY THE FORCE BE WITH YOU': [['star wars', 'jedi', 'force', 'power'], ['lightsaber', 'space', 'galaxy', 'sci-fi'], ['luke skywalker', 'rebellion', 'empire', 'hope'], ['iconic', 'movie quote', 'blessing', 'farewell']],
+      'I AM YOUR FATHER': [['star wars', 'darth vader', 'reveal', 'twist'], ['shocking', 'truth', 'dark side', 'villain'], ['luke', 'family', 'secret', 'father'], ['plot twist', 'iconic line', 'dramatic', 'revelation']],
+      'TO INFINITY AND BEYOND': [['toy story', 'buzz', 'catchphrase', 'space'], ['adventure', 'limitless', 'forever', 'pixar'], ['toys', 'flying', 'heroic', 'optimistic'], ['iconic quote', 'animated', 'childhood', 'dreams']],
+      
+      // Phrases - Gaming
+      'GAME OVER': [['defeat', 'lost', 'retry', 'arcade'], ['end', 'failure', 'try again', 'classic'], ['screen', 'gaming', 'finished', 'done'], ['retro', 'pixel', 'game end', 'loser']],
+      'LEVEL UP': [['progress', 'upgrade', 'advance', 'skill'], ['gaming', 'achievement', 'success', 'grow'], ['experience', 'power up', 'improve', 'rank'], ['rpg', 'stats', 'stronger', 'victory']],
+      'NEW HIGH SCORE': [['achievement', 'record', 'winner', 'best'], ['gaming', 'arcade', 'leaderboard', 'top'], ['success', 'victory', 'champion', 'first'], ['beat', 'highest', 'scoreboard', 'celebrate']],
+      
+      // Phrases - General
+      'ONCE UPON A TIME': [['story', 'fairy tale', 'beginning', 'fantasy'], ['narrative', 'opening', 'classic', 'magical'], ['storybook', 'imagination', 'adventure', 'tale'], ['princess', 'kingdom', 'enchanted', 'legend']],
+      'HAPPY BIRTHDAY': [['celebration', 'party', 'cake', 'gift'], ['congratulations', 'special day', 'wishes', 'joy'], ['balloons', 'candles', 'age', 'festive'], ['song', 'celebrate', 'present', 'friend']],
+      'GOOD MORNING': [['greeting', 'hello', 'wake up', 'sunrise'], ['breakfast', 'early', 'start', 'day'], ['cheerful', 'fresh', 'new day', 'positive'], ['coffee', 'sunshine', 'smile', 'energy']],
+    };
+
+    return synonymMap[word.toUpperCase()] || [
+      ['think', 'guess', 'solve', 'answer'],
+      ['brain', 'mind', 'logic', 'reason'], 
+      ['puzzle', 'mystery', 'riddle', 'challenge'],
+      ['find', 'discover', 'reveal', 'uncover']
+    ];
   };
 
-  // Search for GIFs using Reddit API (removed the context parameter)
+  const fetchSynonyms = async (word: string) => {
+    // Check cache first
+    if (synonymsCache.current[word]) {
+      setSynonyms(synonymsCache.current[word]);
+      setIsLoadingSynonyms(false);
+      return;
+    }
+    
+    // Clear any existing timeout for this word
+    if (synonymTimeoutRef.current[word]) {
+      clearTimeout(synonymTimeoutRef.current[word]);
+      delete synonymTimeoutRef.current[word];
+    }
+    
+    // Show loading state immediately
+    setSynonyms([]);
+    setIsLoadingSynonyms(true);
+    
+    window.parent.postMessage(
+      {
+        type: 'GET_GEMINI_SYNONYMS',
+        data: { word },
+      },
+      '*'
+    );
+    
+    // Fallback timeout after 10 seconds in case API fails
+    synonymTimeoutRef.current[word] = setTimeout(() => {
+      // Only show fallback if we still don't have data for this specific word
+      if (currentWordRef.current === word && (!synonymsCache.current[word] || synonymsCache.current[word].length === 0)) {
+        const fallbackSynonyms = getFallbackSynonyms(word);
+        synonymsCache.current[word] = fallbackSynonyms; // Cache the fallback
+        setSynonyms(fallbackSynonyms);
+        setIsLoadingSynonyms(false);
+      }
+      delete synonymTimeoutRef.current[word];
+    }, 10000);
+  };
+
+  const getNextRecommendation = () => {
+    const secretWordElement = document.querySelector('.secret-word-value');
+    const hintElements = document.querySelectorAll('.hint-text');
+
+    if (secretWordElement) {
+      secretWordElement.classList.add('opacity-0', 'translate-y-2');
+    }
+
+    hintElements.forEach((element) => {
+      (element as HTMLElement).classList.add('opacity-0', 'translate-y-2');
+    });
+
+    setTimeout(() => {
+      const nextIndex = (currentRecIndex + 1) % recommendations.length;
+      const nextWord = recommendations[nextIndex];
+      setCurrentRecIndex(nextIndex);
+      
+      // Clear any pending synonym timeout for the previous word
+      Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
+      synonymTimeoutRef.current = {};
+      
+      currentWordRef.current = nextWord;
+      setSecretInput(nextWord);
+
+      gifCache.current = {};
+      isBatchFetching.current = false;
+      batchFetchingSynonyms.current.clear();
+      pendingDisplaySynonym.current = null;
+      currentCachedWord.current = nextWord;
+      
+      // Reset loading state from previous word
+      setIsSearching(false);
+      setLoadingStage(0);
+      setGifs([]);
+      
+      // Check if synonyms are already cached for instant update
+      if (synonymsCache.current[nextWord]) {
+        setSynonyms(synonymsCache.current[nextWord]);
+        setIsLoadingSynonyms(false);
+      } else {
+        // Show loading state and fetch synonyms
+        setSynonyms([]);
+        setIsLoadingSynonyms(true);
+        fetchSynonyms(nextWord);
+      }
+
+      setTimeout(() => {
+        if (secretWordElement) {
+          secretWordElement.classList.remove('opacity-0', 'translate-y-2');
+        }
+
+        hintElements.forEach((element, index) => {
+          setTimeout(() => {
+            (element as HTMLElement).classList.remove('opacity-0', 'translate-y-2');
+          }, index * 50);
+        });
+      }, 50);
+    }, 300);
+  };
+
+  useEffect(() => {
+    setIsPageLoaded(true);
+
+    if (titleRef.current) {
+      transitions.animateElement(titleRef.current, {
+        duration: 300,
+        delay: 100,
+        direction: 'up',
+      });
+    }
+
+    if (headerRef.current) {
+      transitions.fadeIn(headerRef.current, {
+        duration: 250,
+        direction: 'up',
+        distance: 'sm',
+      });
+    }
+
+    if (mainContentRef.current) {
+      transitions.animateElement(mainContentRef.current, {
+        duration: 300,
+        delay: 150,
+        direction: 'up',
+      });
+    }
+
+    if (gifGridRef.current) {
+      transitions.animateElement(gifGridRef.current, {
+        duration: 350,
+        delay: 250,
+        direction: 'up',
+      });
+    }
+
+    if (submitButtonRef.current) {
+      transitions.animateElement(submitButtonRef.current, {
+        duration: 350,
+        delay: 350,
+        direction: 'up',
+      });
+    }
+    const handleMessage = (event: MessageEvent) => {
+      let msg = event.data;
+      if (msg?.type === 'devvit-message' && msg.data?.message) {
+        msg = msg.data.message;
+      }
+      if (!msg || typeof msg !== 'object') return;
+
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      if (msg.type === 'GET_GEMINI_RECOMMENDATIONS_RESULT') {
+        if (msg.success && Array.isArray(msg.result)) {
+          const filtered = msg.result.filter((r: string) => r.length >= 5);
+          
+          // Use the category and inputType from the response to determine the correct cache key
+          const responseCategory = msg.category || currentCategory;
+          const responseInputType = msg.inputType || inputType;
+          const cacheKey = `${responseCategory}-${responseInputType}`;
+          
+          // Remove from pending requests
+          pendingRequestsRef.current.delete(cacheKey);
+          
+          // Store in cache
+          recommendationsCache.current[cacheKey] = filtered;
+          
+          // Only update UI if this response is for the currently active category and type
+          const isCurrentlyActive = responseCategory === currentCategory && responseInputType === inputType;
+          
+          if (isCurrentlyActive && filtered.length > 0) {
+            setIsLoadingRecommendations(false);
+            
+            // Update UI with API data
+            setRecommendations(filtered);
+            setCurrentRecIndex(0);
+            currentWordRef.current = filtered[0]; // Update ref immediately
+            setSecretInput(filtered[0]);
+            hasShownDataRef.current[cacheKey] = true; // Mark as shown
+            
+            // Fetch synonyms for the first word
+            fetchSynonyms(filtered[0]);
+            
+            // Pre-fetch synonyms for ALL recommendations in the background
+            filtered.slice(1).forEach((word: string, index: number) => {
+              // Stagger the requests slightly to avoid overwhelming the API
+              setTimeout(() => {
+                if (!synonymsCache.current[word]) {
+                  window.parent.postMessage(
+                    {
+                      type: 'GET_GEMINI_SYNONYMS',
+                      data: { word },
+                    },
+                    '*'
+                  );
+                }
+              }, (index + 1) * 500);
+            });
+          }
+        } else {
+          // Only show fallback if we don't already have data for the current type
+          const cacheKey = `${currentCategory}-${inputType}`;
+          if (!secretInput && !recommendationsCache.current[cacheKey]) {
+            setIsLoadingRecommendations(false);
+            // Use fallback recommendations instead of leaving empty
+            const fallbackData = getFallbackRecommendations();
+            recommendationsCache.current[cacheKey] = fallbackData;
+            setRecommendations(fallbackData);
+            setCurrentRecIndex(0);
+            currentWordRef.current = fallbackData[0];
+            setSecretInput(fallbackData[0]);
+            fetchSynonyms(fallbackData[0]);
+          }
+          pendingRequestsRef.current.delete(cacheKey);
+        }
+      }
+
+      if (msg.type === 'GET_GEMINI_SYNONYMS_RESULT') {
+        const wordForCache = msg.word || currentWordRef.current;
+        
+        // Clear timeout for this word if it exists
+        if (wordForCache && synonymTimeoutRef.current[wordForCache]) {
+          clearTimeout(synonymTimeoutRef.current[wordForCache]);
+          delete synonymTimeoutRef.current[wordForCache];
+        }
+        
+        if (msg.success && Array.isArray(msg.result) && msg.result.length > 0) {
+          if (wordForCache) {
+            synonymsCache.current[wordForCache] = msg.result;
+          }
+          // Only update UI if this is for the current word
+          if (wordForCache === currentWordRef.current) {
+            setSynonyms(msg.result);
+            setIsLoadingSynonyms(false);
+          }
+        } else {
+          // API failed - use fallback only if this is the current word
+          if (wordForCache === currentWordRef.current && !synonymsCache.current[wordForCache]) {
+            const fallbackSynonyms = getFallbackSynonyms(wordForCache);
+            synonymsCache.current[wordForCache] = fallbackSynonyms; // Cache the fallback
+            setSynonyms(fallbackSynonyms);
+            setIsLoadingSynonyms(false);
+          }
+        }
+      }
+
+      if (msg.type === 'SEARCH_TENOR_GIFS_RESULT') {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        if (msg.success && Array.isArray(msg.results)) {
+          const searchedTerm = currentSearchTermRef.current;
+          if (searchedTerm && msg.results.length > 0) {
+            gifCache.current[searchedTerm] = msg.results;
+          }
+          
+          // Complete the progress bar (100%)
+          setLoadingStage(3);
+          
+          // Wait a brief moment to show 100%, then hide loading
+          setTimeout(() => {
+            setIsSearching(false);
+            setLoadingStage(0); // Reset loading stage
+            setGifs(msg.results);
+          }, 200);
+
+        } else {
+          setLoadingStage(0);
+          setIsSearching(false);
+          setGifs([]);
+        }
+      }
+
+      if (msg.type === 'CHECK_TENOR_CACHE_RESULT') {
+        isCacheCheckingRef.current = false;
+        setIsCacheChecking(false);
+        if (cacheCheckTimeoutRef.current) {
+          clearTimeout(cacheCheckTimeoutRef.current);
+          cacheCheckTimeoutRef.current = null;
+        }
+        if (msg.success && msg.cached && Array.isArray(msg.results) && msg.results.length > 0) {
+          const query = msg.query;
+          if (query) {
+            gifCache.current[query] = msg.results;
+            // Only update UI if this is still the current search
+            if (currentSearchTermRef.current === query) {
+              setGifs(msg.results);
+              setIsSearching(false);
+              setLoadingStage(0);
+            }
+          }
+        } else {
+          // Cache check completed but no results found
+          if (currentSearchTermRef.current === msg.query) {
+            setIsSearching(false);
+            setLoadingStage(0);
+            // Only set empty if we truly have no cache
+            if (!gifCache.current[msg.query] || gifCache.current[msg.query].length === 0) {
+              setGifs([]);
+            }
+          }
+        }
+      }
+
+      if (msg.type === 'SEARCH_BATCH_TENOR_GIFS_RESULT') {
+        if (msg.success && msg.results) {
+          Object.keys(msg.results).forEach((query) => {
+            const gifsForQuery = msg.results![query];
+            gifCache.current[query] = gifsForQuery;
+            
+            batchFetchingSynonyms.current.delete(query);
+          });
+          
+          if (pendingDisplaySynonym.current && gifCache.current[pendingDisplaySynonym.current]) {
+            const waitingFor = pendingDisplaySynonym.current;
+            
+            // Complete progress bar smoothly
+            setLoadingStage(3);
+            
+            setTimeout(() => {
+              setGifs(gifCache.current[waitingFor]);
+              setIsSearching(false);
+              setLoadingStage(0);
+              pendingDisplaySynonym.current = null;
+            }, 200);
+          } else if (pendingDisplaySynonym.current) {
+            // If pending but no results, clear loading state
+            setLoadingStage(0);
+            setIsSearching(false);
+            pendingDisplaySynonym.current = null;
+          }
+        } else {
+          batchFetchingSynonyms.current.clear();  
+          if (pendingDisplaySynonym.current) {
+            setLoadingStage(0);
+            setIsSearching(false);
+            pendingDisplaySynonym.current = null;
+          }
+        }   
+        isBatchFetching.current = false;
+      }
+
+      if (msg.type === 'SAVE_GAME_RESULT') {
+        setIsCreating(false);
+        if (msg.success && msg.result && msg.result.success) {
+          setBonusAwarded(msg.result.bonusAwarded !== false); // Default to true if not specified
+          setShowSuccessModal(true);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      if (cacheCheckTimeoutRef.current) {
+        clearTimeout(cacheCheckTimeoutRef.current);
+      }
+      // Clear all synonym timeouts
+      Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
+      synonymTimeoutRef.current = {};
+    };
+  }, []);
+
   const searchGifs = async (term: string) => {
     if (!term) return;
-    setIsLoading(true);
-    setMessage("");
-    try {
-      const results = await redditSearchEnhanced({ query: searchTerm }, {} as any);
-      setGifs(results);
-      if (results.length === 0) {
-        setMessage("No GIFs found. Try a different search term.");
-        setMessageType("info");
-      } else {
-        setMessage(`Found ${results.length} GIFs from Reddit.`);
-        setMessageType("success");
+    setGifs([]);
+    setSelectedGifInModal(null);
+    currentSearchTermRef.current = term;
+
+    if (gifCache.current[term]) {
+      // Cached results - display instantly without loading animation
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
-    } catch (error) {
-      console.error("Error searching GIFs:", error);
-      setMessage("Failed to search GIFs. Please try again.");
-      setMessageType("error");
-    } finally {
-      setIsLoading(false);
+      setGifs(gifCache.current[term]);
+      setIsSearching(false);
+      setLoadingStage(0);
+      return;
     }
-  };
 
-  // Toggle GIF selection
-  const toggleGifSelection = (gif: GifResult) => {
-    if (selectedGifs.some((g) => g.id === gif.id)) {
-      setSelectedGifs(selectedGifs.filter((g) => g.id !== gif.id));
-    } else {
-      if (selectedGifs.length < 4) {
-        setSelectedGifs([...selectedGifs, gif]);
-      } else {
-        setMessage("You can only select 4 GIFs. Deselect one to add another.");
-        setMessageType("info");
+    if (batchFetchingSynonyms.current.has(term)) {
+      setIsSearching(true);
+      pendingDisplaySynonym.current = term;
+      return;
+    }    
+    setIsSearching(true);
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    window.parent.postMessage(
+      {
+        type: 'SEARCH_TENOR_GIFS',
+        data: { query: term, limit: 12 },
+      },
+      '*'
+    );
+    
+    // Timeout that checks cache before giving up
+    timeoutRef.current = setTimeout(() => {
+      // Before showing error, check if results arrived in cache during the wait
+      if (gifCache.current[term]) {
+        setGifs(gifCache.current[term]);
+        setIsSearching(false);
+        setLoadingStage(0);
+        return;
       }
+      
+      // Request cache check from backend before declaring failure
+      setIsCacheChecking(true);
+      isCacheCheckingRef.current = true;
+      window.parent.postMessage(
+        {
+          type: 'CHECK_TENOR_CACHE',
+          data: { query: term },
+        },
+        '*'
+      );
+      
+      // Safety timeout: if cache check doesn't respond in 5 seconds, finalize
+      cacheCheckTimeoutRef.current = setTimeout(() => {
+        if (isCacheCheckingRef.current && currentSearchTermRef.current === term) {
+          isCacheCheckingRef.current = false;
+          setIsCacheChecking(false);
+          setIsSearching(false);
+          setLoadingStage(0);
+          // Only clear GIFs if we still don't have results in cache
+          if (gifCache.current[term] && gifCache.current[term].length > 0) {
+            setGifs(gifCache.current[term]);
+          } else {
+            setGifs([]);
+          }
+        }
+      }, 5000);
+    }, 25000);
+  };
+
+  const batchFetchRemainingGifs = (excludeSynonym: string, allSynonyms: string[]) => {
+    if (allSynonyms.length < 4) {
+      return;
+    }
+    const remainingSynonyms = allSynonyms.filter(s => s !== excludeSynonym);    
+    const uncachedSynonyms = remainingSynonyms.filter(s => !gifCache.current[s]);
+    
+    if (uncachedSynonyms.length === 0) {
+      return;
+    }
+    
+    uncachedSynonyms.forEach(synonym => {
+      batchFetchingSynonyms.current.add(synonym);
+    });
+
+    window.parent.postMessage(
+      {
+        type: 'SEARCH_BATCH_TENOR_GIFS',
+        data: { 
+          queries: uncachedSynonyms,
+          limit: 12 
+        },
+      },
+      '*'
+    );
+    
+    setTimeout(() => {
+      uncachedSynonyms.forEach(synonym => {
+        // Only clear if still pending (not in cache)
+        if (!gifCache.current[synonym]) {
+          batchFetchingSynonyms.current.delete(synonym);
+        }
+      });
+      
+      if (pendingDisplaySynonym.current && !gifCache.current[pendingDisplaySynonym.current]) {
+        const waitingSynonym = pendingDisplaySynonym.current;
+        pendingDisplaySynonym.current = null;
+        searchGifs(waitingSynonym);
+      }
+    }, 50000); // Balanced timeout for batch fetch
+  };
+
+  const handleBackClick = () => {
+    if (headerRef.current) {
+      transitions.fadeOut(headerRef.current, { duration: 200 });
+    }
+    if (mainContentRef.current) {
+      transitions.fadeOut(mainContentRef.current, { duration: 200, delay: 50 });
+    }
+
+    setTimeout(() => {
+      onNavigate('category');
+    }, 300);
+  };
+
+  const selectGifForSlot = (gif: TenorGifResult) => {
+    if (selectedGifIndex !== null && selectedGifIndex >= 0 && selectedGifIndex < 4) {
+      const gifUrl = getGifUrl(gif);
+      if (!gifUrl) {
+        setMessage('Unable to load this GIF. Please try another one.');
+        setMessageType('error');
+        return;
+      }
+      const cleanGif = JSON.parse(JSON.stringify(gif));
+      const newSelectedGifs = [...selectedGifs];
+      newSelectedGifs[selectedGifIndex] = cleanGif;
+      setSelectedGifs(newSelectedGifs);
+      
+      setShowSearchInput(false);
+      setSelectedGifInModal(null);
+      setMessageType('success');
+      
+      setTimeout(() => {
+        setGifs([]);
+      }, 300);
     }
   };
 
-  // Toggle hint visibility
-  const toggleHint = () => {
-    setShowHint(!showHint);
+  const removeGifFromSlot = (index: number) => {
+    const newSelectedGifs = [...selectedGifs];
+    newSelectedGifs[index] = null;
+    setSelectedGifs(newSelectedGifs);
   };
 
-  // Submit the created game
-  const submitGame = async () => {
-    if (!word) {
-      setMessage("Please enter a word.");
-      setMessageType("error");
+  const submitGame = () => {
+    const validGifs = selectedGifs.filter((gif) => gif !== null);
+    if (!secretInput) {
+      setMessage(`No valid recommended ${inputType} selected yet.`);
+      setMessageType('error');
       return;
     }
-    if (!questionText) {
-      setMessage("Please enter question text.");
-      setMessageType("error");
+    if (validGifs.length !== 4) {
+      setMessage(`Please select exactly 4 GIFs. You've selected ${validGifs.length} so far.`);
+      setMessageType('error');
       return;
     }
-    if (selectedGifs.length !== 4) {
-      setMessage("Please select exactly 4 GIFs.");
-      setMessageType("error");
-      return;
-    }
+
+    setIsCreating(true);
+
     try {
-      // Create a masked version of the word (mask about 2/3 of the letters)
-      const wordArray = word.toUpperCase().split("");
+      const wordArray = secretInput.split('');
       const maskCount = Math.floor((wordArray.length * 2) / 3);
       const indicesToMask = new Set<number>();
       while (indicesToMask.size < maskCount) {
         indicesToMask.add(Math.floor(Math.random() * wordArray.length));
       }
       const maskedWord = wordArray
-        .map((char, index) => (indicesToMask.has(index) ? "_" : char))
-        .join("");
+        .map((char, i) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
+        .join('');
 
-      const gifUrls = selectedGifs.map((gif) => gif.url);
+      const questionText =
+        inputType === 'word'
+          ? 'Can you decode the word from this GIF?'
+          : 'Can you decode the phrase from this GIF?';
 
-      const newQuestion: Question = {
-        word: word.toUpperCase(),
-        maskedWord,
-        questionText,
-        gifs: gifUrls,
-        currentGifIndex: 0,
-        hintsRevealed: false,
-      };
+      const gifUrls = validGifs.map((gif) => getGifUrl(gif));
+      if (!gifUrls.every((url) => typeof url === 'string' && url.trim() !== '')) {
+        throw new Error('One or more selected GIFs have invalid URLs');
+      }
 
-      // Instead of saving to Redis, we simulate a save by logging the new game.
-      console.log("New game created:", {
-        ...newQuestion,
-        createdAt: new Date().toISOString(),
-      });
+      const gifDescriptions = validGifs.map((gif) => 
+        gif.content_description || gif.title || 'No description'
+      );
 
-      setMessage("Game created successfully!");
-      setMessageType("success");
+      const searchTerms = synonyms.map((group) => group[0] || '');
 
-      // Reset form state.
-      setWord("");
-      setQuestionText("");
-      setSelectedGifs([]);
-      setGifs([]);
-      setSearchTerm("");
+      window.parent.postMessage(
+        {
+          type: 'SAVE_GAME',
+          data: {
+            word: secretInput,
+            category: currentCategory,
+            maskedWord,
+            questionText,
+            gifs: gifUrls,
+            gifDescriptions,
+            searchTerms,
+            inputType,
+          },
+        },
+        '*'
+      );
     } catch (error) {
-      console.error("Error creating game:", error);
-      setMessage("Failed to create game. Please try again.");
-      setMessageType("error");
+      setIsCreating(false);
     }
   };
 
-  // Render GIF grid with 2x2 layout.
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  useEffect(() => {
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+  }, []);
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+  const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black';
   const renderGifGrid = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <p style={{ fontWeight: "bold", fontSize: "16px" }}>
-        GIF Preview (click "Show Hint" to reveal)
-      </p>
-      <button onClick={toggleHint} style={{ marginBottom: "10px" }}>
-        {showHint ? "Hide Hint" : "Show Hint"}
-      </button>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-        {selectedGifs.slice(0, 4).map((gif, index) => (
-          <div
-            key={index}
-            style={{
-              width: "calc(50% - 5px)",
-              height: "120px",
-              backgroundColor: colors.cardBackground,
-              borderRadius: "8px",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              position: "relative",
-            }}
-          >
+    <div className="mb-4" ref={gifGridRef}>
+      <div className="mb-2 flex items-center justify-between">
+        <ComicText size={0.8} color={colors.primary}>
+          GIF Hints
+        </ComicText>
+      </div>
+      <div className="grid grid-cols-2 gap-5">
+        {Array.from({ length: 4 }).map((_, index) => {
+          const gif = selectedGifs[index];
+          const defaultSynonym = synonyms[index]?.[0] || '';
+          const boxNumber = index + 1;
+          const showLoading = synonyms.length < 4 || !defaultSynonym;
+
+          return (
             <div
+              key={index}
+              className={`${backgroundColor} gif-slot-${index} relative flex h-40 w-40 items-center justify-center overflow-hidden rounded-xl border-2 border-gray-500 transition-all duration-300 sm:h-32 sm:w-48 md:h-56 md:w-56 lg:h-60 lg:w-60 xl:h-64 xl:w-64 2xl:h-64 2xl:w-64`}
               style={{
-                backgroundColor: showHint ? "transparent" : "rgba(0,0,0,0.8)",
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
+                border: gif ? 'none' : `3px solid ${colors.secondary}`,
               }}
             >
-              <span style={{ fontSize: "12px", color: colors.textSecondary }}>
-                {showHint ? gif.content_description : `GIF ${index + 1}`}
-              </span>
+              <div className="bg-opacity-70 absolute top-2 left-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black text-white">
+                <ComicText size={0.5} color="white">
+                  #{boxNumber}
+                </ComicText>
+              </div>
+
+              {gif ? (
+                <div className="relative h-full w-full">
+                  <button
+                    onClick={() => removeGifFromSlot(index)}
+                    className="absolute top-2 right-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-all duration-200 hover:scale-110"
+                  >
+                    ✕
+                  </button>
+                  <img
+                    src={getGifUrl(gif)}
+                    alt={`GIF ${index + 1}`}
+                    className="h-full w-full object-cover transition-opacity duration-500"
+                  />
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (!showLoading && defaultSynonym) {
+                      if (currentCachedWord.current !== secretInput) {
+                        gifCache.current = {};
+                        isBatchFetching.current = false;
+                        batchFetchingSynonyms.current.clear();
+                        pendingDisplaySynonym.current = null;
+                        currentCachedWord.current = secretInput;
+                      }
+                      
+                      // Reset loading states BEFORE opening modal to prevent flash
+                      setLoadingStage(0);
+                      setIsSearching(false);
+                      setGifs([]);
+                      setSelectedGifInModal(null);
+                      
+                      setSelectedGifIndex(index);
+                      setCurrentModalSynonym(defaultSynonym);
+                      setShowSearchInput(true);
+                      setSearchTerm(defaultSynonym);
+                      setMessage('');
+                      setMessageType('info');
+                      
+                      // Fetch clicked synonym's GIFs
+                      searchGifs(defaultSynonym);
+                      
+                      // Parallel batch for remaining synonyms
+                      const allSynonyms = synonyms.map(s => s[0] || '').filter(Boolean);
+                      if (allSynonyms.length >= 4 && !isBatchFetching.current) {
+                        batchFetchRemainingGifs(defaultSynonym, allSynonyms);
+                      }
+                    }
+                  }}
+                  className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${
+                    showLoading ? 'cursor-not-allowed opacity-60' : 'hover:scale-105'
+                  }`}
+                >
+                  <div className="mb-1 text-2xl transition-transform duration-300 hover:rotate-12">
+                    {showLoading ? '⏳' : '➕'}
+                  </div>
+                  <div className="transition-all duration-300">
+                    <ComicText size={0.6} color={colors.textSecondary}>
+                      {showLoading ? (
+                        <span className="hint-text transition-all duration-300 ease-in-out">
+                          Loading synonyms...
+                        </span>
+                      ) : (
+                        <>
+                          {defaultSynonym ? (
+                            <span className="block mt-1">
+                              <span className="inline-block">Synonym:</span>{' '}
+                              <span className={`hint-text transition-all duration-300 ease-in-out text-yellow-400 ${categoryColor}`}>
+                                {defaultSynonym}
+                              </span>
+                            </span>
+                          ) : (
+                            !secretInput && `Add GIF #${index + 1}`
+                          )}
+                        </>
+                      )}
+                    </ComicText>
+                  </div>
+                </button>
+              )}
             </div>
-          </div>
-        ))}
-        {selectedGifs.length < 4 &&
-          Array.from({ length: 4 - selectedGifs.length }).map((_, i) => (
-            <div
-              key={`placeholder-${i}`}
-              style={{
-                width: "calc(50% - 5px)",
-                height: "120px",
-                backgroundColor: colors.cardBackground + "55",
-                borderRadius: "8px",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <span style={{ fontSize: "12px", color: colors.textSecondary }}>
-                Select a GIF
-              </span>
-            </div>
-          ))}
+          );
+        })}
       </div>
     </div>
   );
 
+  const InputTypeToggle = React.memo(() => (
+    <div className="flex items-center justify-center">
+      <div
+        className="relative flex h-10 items-center overflow-hidden rounded-full"
+        style={{
+          backgroundColor: '#2D3748',
+          border: `2px solid ${colors.primary}`,
+          width: '160px',
+          position: 'relative',
+          minHeight: '40px',
+        }}
+      >
+        <div
+          className="absolute h-full w-1/2 rounded-full transition-all duration-300 ease-in-out"
+          style={{
+            backgroundColor: colors.primary,
+            left: inputType === 'word' ? '0' : '50%',
+            zIndex: 1,
+          }}
+        />
+        <button
+          onClick={() => setInputType('word')}
+          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
+        >
+          <ComicText size={0.6} color={inputType === 'word' ? 'white' : colors.textSecondary}>
+            Word
+          </ComicText>
+        </button>
+        <button
+          onClick={() => setInputType('phrase')}
+          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
+        >
+          <ComicText size={0.6} color={inputType === 'phrase' ? 'white' : colors.textSecondary}>
+            Phrase
+          </ComicText>
+        </button>
+      </div>
+    </div>
+  ));
+
   return (
     <div
-      style={{
-        width: "100%",
-        padding: "20px",
-        backgroundColor: colors.background,
-        borderRadius: "8px",
-      }}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
+      style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", marginBottom: "20px" }}>
-        <button onClick={() => onNavigate('landing')} style={{ marginRight: "10px" }}>
-          ← Back
-        </button>
-        <ChewyText size={1} color={colors.primary}>
-          Create GIF Enigma
-        </ChewyText>
-      </div>
-
-      {/* Creator Form */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-        {/* Secret Word Input */}
-        <div>
-          <p style={{ fontWeight: "bold", fontSize: "16px" }}>Enter the secret word:</p>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span>{word || "[Not set]"}</span>
-            <button onClick={handleSetWord}>
-              {word ? "Change Word" : "Set Word"}
-            </button>
-          </div>
-          <p style={{ fontSize: "12px", color: colors.textSecondary }}>
-            This is the word players will try to guess.
-          </p>
-        </div>
-
-        {/* Question Text Input */}
-        <div>
-          <p style={{ fontWeight: "bold", fontSize: "16px" }}>Enter question text:</p>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span>{questionText || "[Not set]"}</span>
-            <button onClick={handleSetQuestionText}>
-              {questionText ? "Change Text" : "Set Text"}
-            </button>
-          </div>
-          <p style={{ fontSize: "12px", color: colors.textSecondary }}>
-            This text will appear with the GIFs as an additional clue.
-          </p>
-        </div>
-
-        {/* GIF Preview */}
-        {selectedGifs.length > 0 && renderGifGrid()}
-
-        {/* GIF Search */}
-        <div
-          style={{
-            backgroundColor: colors.cardBackground,
-            padding: "16px",
-            borderRadius: "8px",
-          }}
-        >
-          <p style={{ fontWeight: "bold", fontSize: "16px" }}>
-            Search for GIFs on Reddit:
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span>{searchTerm || "[Enter search]"}</span>
-            <button onClick={handleSetSearchTerm} disabled={isLoading}>
-              {isLoading ? "Searching..." : "Search"}
-            </button>
-          </div>
-          <p style={{ fontSize: "12px", color: colors.textSecondary }}>
-            Search for GIFs that hint at your secret word.
-          </p>
-        </div>
-
-        {/* Selected GIFs */}
-        <div
-          style={{
-            backgroundColor: colors.cardBackground,
-            padding: "16px",
-            borderRadius: "8px",
-          }}
-        >
-          <p style={{ fontWeight: "bold", fontSize: "16px" }}>
-            Selected GIFs ({selectedGifs.length}/4):
-          </p>
-          {selectedGifs.length === 0 ? (
-            <p style={{ fontSize: "12px", color: colors.textSecondary }}>
-              No GIFs selected yet.
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {selectedGifs.map((gif, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "8px",
-                    backgroundColor: colors.background,
-                    borderRadius: "8px",
+      <Modal
+        title={currentModalSynonym ? `Select a GIF for ${currentModalSynonym}` : "Select a GIF of your choice"}
+        isOpen={showSearchInput}
+        onClose={() => {
+          transitions.fadeOut(document.querySelector('.modal-content'), {
+            duration: 200,
+            onComplete: () => {
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
+              if (cacheCheckTimeoutRef.current) {
+                clearTimeout(cacheCheckTimeoutRef.current);
+                cacheCheckTimeoutRef.current = null;
+              }
+              isCacheCheckingRef.current = false;
+              setShowSearchInput(false);
+              setIsSearching(false);
+              setIsCacheChecking(false);
+            },
+          });
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+          if (cacheCheckTimeoutRef.current) {
+            clearTimeout(cacheCheckTimeoutRef.current);
+            cacheCheckTimeoutRef.current = null;
+          }
+          isCacheCheckingRef.current = false;
+          setShowSearchInput(false);
+          setIsSearching(false);
+          setIsCacheChecking(false);
+          setLoadingStage(0); // Reset progress bar
+          setGifs([]); // Clear GIFs
+          setSelectedGifInModal(null);
+          setCurrentModalSynonym(''); // Clear the synonym when closing
+        }}
+        onConfirm={() => {
+          if (selectedGifInModal) {
+            selectGifForSlot(selectedGifInModal);
+          }
+        }}
+        confirmDisabled={!selectedGifInModal}
+      >
+        <div className="flex flex-col gap-4">
+           {isSearching && loadingStage > 0 && (
+             <div className="flex flex-col items-center justify-center pt-12 pb-8">
+               {/* Progress Bar */}
+               <div className="w-full max-w-md px-4">
+                 <div className="relative h-3 overflow-hidden rounded-full bg-gray-700">
+                   <div
+                     className="h-full rounded-full"
+                     style={{
+                       width: `${Math.min(100, (loadingStage / 3) * 100)}%`,
+                       backgroundColor: colors.primary,
+                       boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)',
+                       transition: 'width 0.1s linear',
+                     }}
+                   />
+                 </div>
+               </div>
+               
+               {/* Loading Text */}
+               <div className="mt-4">
+                 <ComicText size={0.7} color="#60A5FA" className="text-center">
+                   {loadingStage < 1 && `🔍 Analyzing your ${inputType}...`}
+                   {loadingStage >= 1 && loadingStage < 2 && '🎬 Searching GIF library...'}
+                   {loadingStage >= 2 && '✨ Selecting best matches...'}
+                 </ComicText>
+               </div>
+             </div>
+           )}
+          {!isSearching && !isCacheChecking && gifs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <ComicText size={0.6} color="#94A3B8" className="text-center">
+                No GIFs found. Try a different word/phrase.
+              </ComicText>
+            </div>
+          )}
+          {!isSearching && gifs.length > 0 && (
+            <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
+              <div className="grid grid-cols-2 gap-2">
+                {gifs.map((gif, idx) => {
+                  const url = getGifUrl(gif);
+                  if (!url) return null;
+                  return (
+                    <div
+                      key={`gif-${idx}-${gif.id}`}
+                      onClick={() => setSelectedGifInModal(gif)}
+                      className={`cursor-pointer overflow-hidden rounded-lg border ${
+                        selectedGifInModal?.id === gif.id
+                          ? 'border-blue-500'
+                          : 'border-gray-700 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="relative h-24 w-full bg-black">
+                        <img
+                          src={url}
+                          alt={gif.content_description || `GIF ${idx + 1}`}
+                          className="w-full object-contain"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const container = e.currentTarget.closest('.gif-container');
+                            if (container) container.remove();
+                            const fallback = document.createElement('div');
+                            fallback.className = 'gif-fallback';
+                            fallback.textContent = '🎬 GIF not available';
+                            e.currentTarget.parentNode?.appendChild(fallback);
+                          }}
+                          onLoad={(e) => {
+                            e.currentTarget.style.opacity = '1';
+                          }}
+                          style={{ opacity: 0, transition: 'opacity 0.3s' }}
+                        />
+                      </div>
+                      {/* <div className="bg-gray-800 p-2 text-center">
+                        <div className="truncate text-xs text-gray-300">
+                          {gif.content_description || gif.title || `GIF ${idx + 1}`}
+                        </div>
+                      </div> */}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {selectedGifInModal && (
+            <div className="mt-2 rounded-lg border border-blue-500 bg-gray-800 p-2">
+              <ComicText size={0.6} color="#fff" className="mb-1 text-center">
+                Selected GIF:
+              </ComicText>
+              <div className="flex justify-center rounded bg-black p-1">
+                <img
+                  src={getGifUrl(selectedGifInModal)}
+                  alt="Selected GIF"
+                  className="h-24 object-contain"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://via.placeholder.com/150?text=GIF+Error';
                   }}
-                >
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    GIF #{index + 1}: {gif.content_description}
-                  </span>
-                  <button onClick={() => toggleGifSelection(gif)} style={{ marginLeft: "auto" }}>
-                    Remove
-                  </button>
-                </div>
-              ))}
+                />
+              </div>
             </div>
           )}
         </div>
+      </Modal>
 
-        {/* GIF Search Results */}
-        {gifs.length > 0 && (
+      <header
+        ref={headerRef}
+        className="optacity-0 mb-5 flex w-full max-w-4xl items-center justify-between"
+      >
+        <button
+          onClick={handleBackClick}
+          className="left-4 flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+          style={{ backgroundColor: colors.primary }}
+        >
+          <span className="mr-1 text-sm text-white">👈</span>
+          <ComicText size={0.5} color="white">
+            Back
+          </ComicText>
+        </button>
+        <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:mt-[15px] md:pr-12 lg:pr-20">
           <div
-            style={{
-              backgroundColor: colors.cardBackground,
-              padding: "16px",
-              borderRadius: "8px",
-            }}
+            ref={titleRef}
+            className="translate-y-4 transform opacity-0 transition-all duration-500 max-sm:mt-[15px]"
           >
-            <p style={{ fontWeight: "bold", fontSize: "16px" }}>Reddit GIF Results:</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {gifs.map((gif, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "8px",
-                    backgroundColor: colors.background,
-                    borderRadius: "8px",
-                  }}
-                >
-                  <div style={{ width: "70%" }}>
-                    <span
-                      style={{
-                        fontSize: "12px",
-                        overflow: "hidden",
-                        whiteSpace: "nowrap",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {gif.content_description}
-                    </span>
-                  </div>
-                  <button onClick={() => toggleGifSelection(gif)} style={{ marginLeft: "auto" }}>
-                    {selectedGifs.some((g) => g.id === gif.id) ? "Selected" : "Select"}
-                  </button>
+            <ComicText size={1.2} color={colors.primary}>
+              Create GIF Enigma
+            </ComicText>
+          </div>
+        </div>
+      </header>
+
+      <main ref={mainContentRef} className="optacity-0 flex flex-1 flex-col items-center px-4">
+        <div className="mx-auto flex w-full max-w-xl flex-col items-center">
+          {/* Row 1: Category and Word/Phrase toggle */}
+          <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-1">
+            <div className="flex items-center gap-1">
+              <span className="text-base">
+                {currentCategory === 'Cinematic Feels'
+                  ? '🎬'
+                  : currentCategory === 'Gaming Moments'
+                    ? '🎮'
+                    : currentCategory === 'Story Experiences'
+                      ? '📚'
+                      : '🔥'}
+              </span>
+              <ComicText size={0.6} color={colors.textSecondary}>
+                Category: <span style={{ fontWeight: 'bold' }}>{currentCategory}</span>
+              </ComicText>
+            </div>
+            <div className="group relative">
+              <div className={disableSecretChange ? 'pointer-events-none opacity-60' : ''}>
+                <InputTypeToggle />
+              </div>
+              {disableSecretChange && (
+                <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                  Clear GIFs to change word/phrase
                 </div>
-              ))}
+              )}
             </div>
           </div>
-        )}
 
-        {/* Status Messages */}
-        {message && (
-          <div
-            style={{
-              padding: "16px",
-              backgroundColor:
-                messageType === "success"
-                  ? colors.success + "33"
-                  : messageType === "error"
-                  ? colors.error + "33"
-                  : colors.cardBackground,
-              borderRadius: "8px",
-            }}
-          >
-            <p
+           <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-2">
+             <div className="secret-word-container">
+               {secretInput ? (
+                 <ComicText size={0.7} color={colors.primary}>
+                   <span className="inline-block">
+                     Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
+                   </span>{' '}
+                   <span 
+                     className={`secret-word-value transition-all duration-300 ${categoryColor}`}
+                     style={{ fontWeight: 'bold' }}
+                   >
+                     {secretInput.toUpperCase()}
+                   </span>
+                 </ComicText>
+               ) : (
+                 <ComicText size={0.6} color={colors.textSecondary}>
+                   {isLoadingRecommendations ? 'Loading recommendations...' : 'No recommendations available'}
+                 </ComicText>
+               )}
+             </div>
+           </div>
+          <div className="group items-left relative justify-center">
+            <button
+              onClick={getNextRecommendation}
+              disabled={disableSecretChange}
+              className={`rounded-full px-3 py-1 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
+                disableSecretChange ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              }`}
+              style={{ backgroundColor: colors.secondary }}
+            >
+              <ComicText size={0.6} color="#fff">
+                Try a different one
+              </ComicText>
+            </button>
+            {disableSecretChange && (
+              <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                Clear GIFs to pick another word/phrase
+              </div>
+            )}
+          </div>
+
+          {renderGifGrid()}
+
+          {showSuccessModal && (
+            <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm transition-all duration-300">
+              <div className="animate-bounce-slow rounded-xl bg-gray-800 p-6 shadow-lg">
+                <div className="mb-4 text-4xl">🎉</div>
+                <ComicText size={1} color={colors.primary} className="mb-2 text-center">
+                  Game Created Successfully!
+                </ComicText>
+                <ComicText size={0.7} color="white" className="mb-2 text-center">
+                  Your GIF Enigma is ready to play!
+                </ComicText>
+                
+                {bonusAwarded ? (
+                  <div className="mt-6 mb-4 flex items-center justify-center">
+                    <div className="animate-pulse rounded-lg border-2 border-yellow-400 bg-gradient-to-r from-yellow-500 to-orange-500 px-4 py-2 shadow-lg">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-lg">✨</span>
+                        <div className="text-center">
+                          <ComicText size={0.5} color="white">
+                            Creation Bonus
+                          </ComicText>
+                          <div className="flex items-center justify-center gap-0.5">
+                            <ComicText size={1} color="white">
+                              +20
+                            </ComicText>
+                            <ComicText size={0.6} color="white">
+                              XP
+                            </ComicText>
+                          </div>
+                        </div>
+                        <span className="text-lg">✨</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-6 mb-4 flex items-center justify-center">
+                    <div className="rounded-lg border-2 border-orange-400 bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 shadow-lg">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-lg">⚠️</span>
+                        <div className="text-center">
+                          <ComicText size={0.45} color="white">
+                            Creation Limit Reached
+                          </ComicText>
+                          <ComicText size={0.35} color="white" className="mt-1">
+                            You've created 4 games in 24h
+                          </ComicText>
+                          <ComicText size={0.35} color="white">
+                            No bonus XP this time
+                          </ComicText>
+                        </div>
+                        <span className="text-lg">⚠️</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => {
+                      setShowSuccessModal(false);
+
+                      if (headerRef.current) {
+                        transitions.fadeOut(headerRef.current, { duration: 200 });
+                      }
+                      if (mainContentRef.current) {
+                        transitions.fadeOut(mainContentRef.current, { duration: 200 });
+                      }
+
+                      setTimeout(() => {
+                        onNavigate('landing');
+                      }, 300);
+                    }}
+                    className="cursor-pointer rounded-xl px-4 py-2 transition-all duration-200 hover:scale-105"
+                    style={{ backgroundColor: colors.primary }}
+                  >
+                    <ComicText size={0.7} color="white">
+                      Back to Home
+                    </ComicText>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 flex justify-center">
+            <button
+              ref={submitButtonRef}
+              onClick={submitGame}
+              disabled={selectedGifs.filter((g) => g !== null).length !== 4}
+              className={`cursor-pointer rounded-xl border-none px-4 py-2 transition-all duration-300 ${
+                selectedGifs.filter((g) => g !== null).length !== 4
+                  ? 'bg-gray-500 disabled:cursor-not-allowed disabled:opacity-60'
+                  : 'bg-[#FF4500] hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:scale-95'
+              }`}
               style={{
-                fontSize: "16px",
-                color:
-                  messageType === "success"
-                    ? colors.success
-                    : messageType === "error"
-                    ? colors.error
-                    : colors.textPrimary,
+                backgroundColor:
+                  selectedGifs.filter((g) => g !== null).length === 4 ? colors.primary : '#6B7280',
               }}
             >
-              {message}
-            </p>
+              <ComicText size={0.8} color="white">
+                {isCreating ? '🔄 Creating...' : '🎮 Create GIF Enigma'}
+              </ComicText>
+            </button>
           </div>
-        )}
-
-        {/* Submit Button */}
-        <button
-          onClick={submitGame}
-          disabled={!word || !questionText || selectedGifs.length !== 4}
-          style={{
-            padding: "16px",
-            backgroundColor: "blue",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-          }}
-        >
-          Create GIF Enigma
-        </button>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };

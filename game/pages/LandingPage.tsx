@@ -1,215 +1,353 @@
-import React, { useState, useEffect } from 'react';
-import { NavigationProps } from '../App';
+import React, { useState, useEffect, useRef } from 'react';
 import { colors } from '../lib/styles';
-import { ChewyText } from '../lib/fonts';
+import { ComicText } from '../lib/fonts';
+import { NavigationProps } from '../lib/types';
+import PageTransition from '../../src/utils/PageTransition';
+import { motion } from 'framer-motion';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
-  const [username, setUsername] = useState<string>('');
-  const [hasFetched, setHasFetched] = useState<boolean>(false);
-  const [version] = useState<string>('1.0.0');
+  const [redditUsername, setRedditUsername] = useState<string>('');
   const [ifhover, setHover] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isboardOpen, setboardOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const isMounted = useRef(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const isHandlingRequest = useRef(false); // Prevent duplicate requests
 
   useEffect(() => {
-    if (!hasFetched) {
-      setHasFetched(true);
-      fetch('/api/currentUser')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.username) {
-            setUsername(data.username);
-          }
-        })
-        .catch((error) => {
-          console.error('Error fetching user:', error);
-        });
+    setIsLoading(false);
+    setShowSuccessMessage(false);
+    isHandlingRequest.current = false; // Reset on mount
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setIsLoading(false);
+        setShowSuccessMessage(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      setIsLoading(false);
+      setShowSuccessMessage(false);
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    setIsDarkMode(darkModeQuery.matches);
+    const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+    darkModeQuery.addEventListener('change', handleThemeChange);
+    return () => darkModeQuery.removeEventListener('change', handleThemeChange);
+  }, []);
+
+  useEffect(() => {
+    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'GET_CURRENT_USER_RESULT') {
+        if (event.data.success) {
+          setRedditUsername(event.data.user?.username || '');
+        } else {
+          setRedditUsername('');
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handlePlayClick = () => {
+    // Prevent multiple simultaneous requests
+    if (isHandlingRequest.current) {
+      return;
     }
-  }, [hasFetched]);
+    
+    isHandlingRequest.current = true;
+    setIsLoading(true);
+    setShowSuccessMessage(false);
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isHandled = false;
+
+    const handleGameResponse = (event: MessageEvent) => {
+      let message = event.data;
+      if (message && message.type === 'devvit-message' && message.data?.message) {
+        message = message.data.message;
+      } else if (message && message.type === 'devvit-message' && message.data) {
+        message = message.data;
+      }
+
+      if (message.type === 'GET_RANDOM_GAME_RESULT') {
+        // Prevent handling the same response multiple times
+        if (isHandled) return;
+        isHandled = true;
+        
+        window.removeEventListener('message', handleGameResponse);
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (message.success && message.result && message.result.game) {
+          const game = message.result.game;
+          const redditPostId = game.redditPostId;
+
+          if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
+            setShowSuccessMessage(true);           
+            setTimeout(() => {
+              // Reset state before navigation
+              setIsLoading(false);
+              setShowSuccessMessage(false);
+              isHandlingRequest.current = false;
+              
+              // Navigate immediately after state reset
+              window.parent.postMessage(
+                {
+                  type: 'NAVIGATE_TO_POST',
+                  data: { postId: redditPostId },
+                },
+                '*'
+              );
+            }, 150);
+          } else {
+            setIsLoading(false);
+            setShowSuccessMessage(false);
+            isHandlingRequest.current = false;
+            alert('⚠️ Could not find a valid game to play. Please try again.');
+          }
+        } else {
+          setIsLoading(false);
+          setShowSuccessMessage(false);
+          isHandlingRequest.current = false;
+          
+          // Show contextual error messages
+          const result = message.result || {};
+          let errorMessage = '';
+          
+          if (result.hasPlayedAll) {
+            errorMessage = '🎉 Amazing! You\'ve completed all games! Check back later for new challenges.';
+          } else if (result.error && result.error.includes('No games available yet')) {
+            errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+          } else if (result.error) {
+            errorMessage = result.error;
+          } else if (message.error) {
+            errorMessage = message.error;
+          } else {
+            errorMessage = '😕 No games available right now. Try creating one!';
+          }
+          
+          alert(errorMessage);
+        }
+      }
+    };
+
+    window.removeEventListener('message', handleGameResponse);
+    window.addEventListener('message', handleGameResponse);
+
+    // Request a game with sticky random navigation enabled
+    window.parent.postMessage(
+      {
+        type: 'GET_RANDOM_GAME',
+        data: {
+          username: redditUsername || 'anonymous',
+          preferUserCreated: true,
+          useStickyNavigation: true,
+        },
+      },
+      '*'
+    );
+
+    timeoutId = setTimeout(() => {
+      if (isMounted.current && !isHandled) {
+        window.removeEventListener('message', handleGameResponse);
+        setIsLoading(false);
+        setShowSuccessMessage(false);
+        isHandlingRequest.current = false;
+        alert('Request timed out. Please try again.');
+      }
+    }, 10000);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsInitialLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
   return (
-    <div
-      style={{
-        height: '100%',
-        width: '100%',
-        padding: '20px',
-        backgroundColor: '#E8E5DA',
-        borderRadius: '8px',
-        //margin:'0px',
-        marginTop:'-0px'
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '16px'
-        }}
-      >
-        <button
-          style={{
-            backgroundColor: ifhover === 'btn1' ? colors.primary : '#E8E5DA',
-            borderRadius: '8px',
-            padding: '16px',
-            border: ifhover === 'btn1' ? '1px solid ${#E8E5DA}' :`1px solid ${colors.border}`,
-            fontSize: '16px',
-            cursor: 'pointer',
-            fontFamily: 'Comic Sans MS',
-            width: 'fit-content',
-            marginLeft: 'auto',
-            color: ifhover === 'btn1' ? 'white' : 'black'
-            //marginTop:'0px'
-            //color:'white'
-          }}
-          onClick={() => onNavigate('leaderboard')}
-          onMouseEnter={() => setHover('btn1')}
-          onMouseLeave={() => setHover(null)}
-        >
-          🏆 LEADERBOARD
-        </button>
-        <div style={{ display: 'flex', flexDirection: 'row', gap: '10px', marginTop:'-60px' }}>
-          <span style={{ fontSize: '30px' }}>📺</span>
-          <span style={{ fontSize: '30px' }}>❓</span>
+    <PageTransition>
+      {isInitialLoading && (
+        <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+          <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
         </div>
-        
-        <ChewyText size={2} color={colors.primary}>
-          GIF ENIGMA
-        </ChewyText>
-        <p
-          style={{
-            fontSize: '20px',
-            fontFamily: 'Comic Sans MS',
-            color: 'Black',
-            textAlign: 'center'
-          }}
-        >
-          Can you guess the hidden word from a GIF?
-        </p>
-      </div>
-
-      {/* Welcome Message */}
+      )}
+      {isLoading && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black">
+          {!showSuccessMessage ? (
+            <>
+              <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
+              <div className="mt-4">
+                <ComicText size={0.8} color="white">
+                  Finding a game for you...
+                </ComicText>
+              </div>
+            </>
+          ) : (
+            <div className="animate-bounce text-center">
+              <div className="mb-4 text-6xl">🎊</div>
+              <ComicText size={1.2} color="#4ade80">
+                Found a new game!
+              </ComicText>
+              <div className="mt-2">
+                <ComicText size={0.7} color="white">
+                  Loading game...
+                </ComicText>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div
-        style={{
-          padding: '1px',
-          backgroundColor:  '#E8E5DA',
-          //borderRadius: '8px',
-          //border: `0px solid ${colors.border}`,
-          textAlign: 'center',
-          fontFamily: 'Comic Sans MS',
-        }}
+        className={`${backgroundColor} mt-[-12px] mb-0 min-h-screen w-full p-5 pb-15 select-none`}
       >
-        <p style={{ fontSize: '20px' }}>
-          Hi {username ? `u/${username}` : 'there'}, are you ready to unravel
-          the message from GIFs?
-        </p>
-      </div>
+        <div className="relative flex flex-col items-center p-4 max-sm:mt-[20px]">
+          {/* Leaderboard Button */}
+          <motion.button
+            className={`absolute top-2 right-2 mt-5 cursor-pointer rounded-lg px-4 py-3 text-lg select-none ${
+              ifhover === 'btn1'
+                ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
+                : 'border-border border-1 bg-[#E8E5DA] text-black'
+            }`}
+            onClick={() => {
+              onNavigate('leaderboard');
+              setboardOpen(!isboardOpen);
+            }}
+            onMouseEnter={() => setHover('btn1')}
+            onMouseLeave={() => setHover(null)}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+          >
+            <span className={`mt-1 inline-flex items-center`}>
+              <div className={`${isboardOpen ? 'text-2xl' : ''}`}>🏆</div>
 
-      {/* Main Action Buttons */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          gap: '20px',
-          padding: '16px',
-          justifyContent: 'center',
-          alignItems: 'center'
-        }}
-      >
-        <button
-          style={{
-            backgroundColor: colors.primary,
-            borderRadius: '80px',
-            padding: '16px',
-            width: '18%',
-            color: 'white',
-            fontSize: '18px',
-            cursor: 'pointer'
-          }}
-          // onClick={() => onNavigate('game')}
+              <ComicText
+                size={0.8}
+                className={`hidden sm:block ${isboardOpen ? 'text-lg' : ''}`}
+                color={ifhover === 'btn1' ? 'white' : 'black'}
+              >
+                &nbsp;Leaderboard
+              </ComicText>
+            </span>
+          </motion.button>
+
+          <div className="mt-5 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none">
+            <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
+              <span className="text-3xl">🎬</span>
+              <span className="text-3xl">❓</span>
+            </div>
+
+            <motion.h2
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="mt-[-35px] mb-[15px] cursor-default select-none"
+            >
+              <ComicText size={3} color={colors.primary}>
+                GIF Enigma
+              </ComicText>
+            </motion.h2>
+
+            <motion.h2
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.4 }}
+            >
+            </motion.h2>
+          </div>
+        </div>
+
+        <div className="mb-[15px] flex flex-row items-center justify-center gap-5 max-sm:mt-[20px]">
+          <motion.div
+            className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
+            onClick={handlePlayClick}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
+          >
+            <img
+              src="/landing-page/lets-play.gif"
+              alt="Play GIF"
+              className={`block w-full rounded-2xl ${isLoading ? 'opacity-50' : ''}`}
+            />
+            <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
+              {isLoading ? 'Loading...' : 'Tap to Play →'}
+            </div>
+          </motion.div>
+
+          <motion.div
+            className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
+            onClick={() => onNavigate('category')}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.6 }}
+          >
+            <img
+              src="/landing-page/lets-build.gif"
+              alt="Create GIF"
+              className="block w-full rounded-2xl"
+            />
+            <div className="absolute top-[85%] left-1/2 w-[140px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
+              Tap to Create →
+            </div>
+          </motion.div>
+        </div>
+
+        <motion.div
+          className="mt-3 text-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.7 }}
         >
-           PLAY
-        </button>
-        <button
-          style={{
-            backgroundColor:  colors.primary,
-            borderRadius: '80px',
-            padding: '16px',
-            width: '18%',
-            border: `0px solid ${colors.border}`,
-            color: 'white',
-            fontSize: '18px',
-            cursor: 'pointer'
-          }}
-          onClick={() => onNavigate('create')}
-        >
-          🛠️ CREATE
-        </button>
+          <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
+            <button
+              className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
+              onClick={() => onNavigate('howToPlay')}
+              onMouseEnter={() => setHover('btn2')}
+              onMouseLeave={() => setHover(null)}
+            >
+              <span className="inline-flex items-center justify-center">
+                <ComicText
+                  size={0.8}
+                  className={`text-lg max-sm:text-[1px] ${ifhover === 'btn2' ? '!text-white' : '!text-black'}`}
+                >
+                  🤔 How to play?
+                </ComicText>
+              </span>
+            </button>
+          </div>
+        </motion.div>
       </div>
-      <span
-        style={{
-          display:'flex',
-          flexDirection:'row',
-          alignItems:'center',
-          gap: '20px',
-          justifyContent: 'center',
-        }}>
-        <img src="https://media1.giphy.com/media/9hEtSDh6uT9NGTpNXs/giphy.gif?cid=6c09b952emxh9nn4erngl7gtioeh0g9xn8eoda0rtygihyfh&ep=v1_internal_gif_by_id&rid=giphy.gif&ct=g"
-        style={{
-          width:'17%',
-          padding:'10px'
-        }}
-        >    
-        </img>
-        <img src="https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXM3MWRpN2tyNHhjN2RqMGJlejF5ajl6bWFsaG02cTllZTU0dXVwcCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/qt73FYHjuXqAj241m8/giphy.gif"
-        style={{
-          width:'17%',
-          padding:'10px'
-        }}
-        >    
-        </img>
-      </span>
-
-      {/* Secondary Action Buttons */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '10px',
-          padding: '10px'
-        }}
-      >
-        <button
-          style={{
-            backgroundColor: ifhover  === 'btn2' ? colors.primary : '#E8E5DA',
-            borderRadius: '8px',
-            padding: '16px',
-            border: ifhover  === 'btn2' ? '1px solid ${#E8E5DA}' :`1px solid ${colors.border}`,
-            fontSize: '16px',
-            fontFamily: 'Comic Sans MS',
-            cursor: 'pointer',
-            color: ifhover  === 'btn2' ? 'white' : 'black',
-            margin: 0,
-            width:'41.1%',
-            marginLeft:'auto',
-            marginRight:'auto'
-          }}
-          onClick={() => onNavigate('howToPlay')}
-          onMouseEnter={() => setHover('btn2')}
-          onMouseLeave={() => setHover(null)}
-        >
-          ℹ️ HOW THIS GAME WORKS? 🤔
-        </button>
-
-        
-      </div>
-
-      {/* Footer */}
-      <div style={{ marginTop: '20px', textAlign: 'center' }}>
-        <small style={{ fontSize: '12px', color: colors.textSecondary }}>
-          Version {version}
-        </small>
-      </div>
-    </div>
+    </PageTransition>
   );
 };

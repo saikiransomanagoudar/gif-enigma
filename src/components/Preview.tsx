@@ -1,21 +1,16 @@
 import { Devvit } from '@devvit/public-api';
 
-export const Preview: Devvit.BlockComponent<{ text?: string }> = ({ text = 'Loading...' }) => {
+export const Preview: Devvit.BlockComponent = () => {
   return (
     <zstack width={'100%'} height={'100%'} alignment="center middle">
-      <vstack width={'100%'} height={'100%'} alignment="center middle">
+      <vstack width={'100%'} height={'100%'} alignment="center middle" darkBackgroundColor="#0d1629" lightBackgroundColor="#E8E5DA" cornerRadius="medium">
         <image
-          url="loading.gif"
-          description="Loading..."
+          url="eyebrows.gif"
           height={'140px'}
           width={'140px'}
           imageHeight={'240px'}
           imageWidth={'240px'}
         />
-        <spacer size="small" />
-        <text maxWidth={`80%`} size="large" weight="bold" alignment="center middle" wrap>
-          {text}
-        </text>
       </vstack>
     </zstack>
   );

@@ -1,13 +1,13 @@
 {
   "private": true,
-  "name": "gif-enigma",
+  "name": "giftest01",
   "version": "0.0.0",
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
     "vite": "vite",
     "dev:game": "vite build --watch",
-    "dev:devvit": "devvit playtest r/PlayGIFEnigma",
+    "dev:devvit": "devvit playtest r/giftest01",
     "dev": "concurrently -p \"[{name}]\" -n \"DEVVIT,GAME\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:devvit\" \"npm run dev:game\" --restart-tries 30",
     "build:react": "vite build",
     "build": "npm run build:react",
@@ -15,12 +15,19 @@
     "start": "devvit dev"
   },
   "dependencies": {
-    "@devvit/public-api": "0.11.10",
+    "@devvit/public-api": "0.12.3",
+    "@google/generative-ai": "^0.24.0",
+    "axios": "^1.8.3",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.5.0",
     "gif-enigma": "file:",
+    "gif-test01": "file:",
+    "giftest01": "file:",
+    "ioredis": "^5.6.0",
     "motion": "^12.4.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-router-dom": "^7.4.0",
     "tailwind-merge": "^3.0.2",
     "tsx": "^4.19.3",
     "zod": "^3.24.2"
@@ -34,10 +41,11 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",
+    "devvit": "0.12.3",
     "prettier": "^3.5.2",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "4.0.13",
-    "typescript": "5.3.2",
+    "typescript": "5.8.3",
     "vite": "^6.2.0",
     "vitest": "^3.0.7"
   }
