@@ -998,7 +998,18 @@ Devvit.addCustomPostType({
 
           case 'POST_COMPLETION_COMMENT':
             try {
+              const debugMode = await context.redis.get('debugMode');
+              if (debugMode === 'true') {
+                console.log('[main.tsx] POST_COMPLETION_COMMENT received:', {
+                  gameId: event.data?.gameId,
+                  username: event.data?.username,
+                  numGuesses: event.data?.numGuesses,
+                  gifHints: event.data?.gifHints,
+                });
+              }
+
               if (!event.data || !event.data.gameId || !event.data.username) {
+                if (debugMode === 'true') console.error('[main.tsx] Missing required data for comment');
                 postMessage({
                   type: 'POST_COMPLETION_COMMENT_RESULT',
                   success: false,
@@ -1022,6 +1033,14 @@ Devvit.addCustomPostType({
                 context
               );
 
+              if (debugMode === 'true') {
+                console.log('[main.tsx] Comment post result:', {
+                  success: result.success,
+                  alreadyPosted: result.alreadyPosted,
+                  error: result.error,
+                });
+              }
+
               postMessage({
                 type: 'POST_COMPLETION_COMMENT_RESULT',
                 success: result.success,
@@ -1029,6 +1048,8 @@ Devvit.addCustomPostType({
                 error: result.error || undefined,
               });
             } catch (error) {
+              const debugMode = await context.redis.get('debugMode');
+              if (debugMode === 'true') console.error('[main.tsx] Comment posting error:', error);
               postMessage({
                 type: 'POST_COMPLETION_COMMENT_RESULT',
                 success: false,
@@ -1427,6 +1448,53 @@ Devvit.addCustomPostType({
               });
             }
             break;
+
+          case 'SHOW_TOAST':
+            try {
+              const text = event.data?.text || 'Notification';
+              const appearance = event.data?.appearance || 'neutral';
+              
+              if (appearance === 'success') {
+                context.ui.showToast({ text, appearance: 'success' });
+              } else if (appearance === 'error') {
+                context.ui.showToast({ text, appearance: 'neutral' });
+              } else {
+                context.ui.showToast({ text, appearance: 'neutral' });
+              }
+            } catch (error) {
+              // Silently fail if toast can't be shown
+            }
+            break;
+
+          case 'TOGGLE_DEBUG_MODE':
+            try {
+              const currentState = await context.redis.get('debugMode');
+              const newState = currentState === 'true' ? 'false' : 'true';
+              await context.redis.set('debugMode', newState);
+              
+              postMessage({
+                type: 'DEBUG_MODE_TOGGLED',
+                enabled: newState === 'true',
+              });
+            } catch (error) {
+              // Silently fail if toggle fails
+            }
+            break;
+
+          case 'GET_DEBUG_MODE':
+            try {
+              const currentState = await context.redis.get('debugMode');
+              postMessage({
+                type: 'DEBUG_MODE_TOGGLED',
+                enabled: currentState === 'true',
+              });
+            } catch (error) {
+              postMessage({
+                type: 'DEBUG_MODE_TOGGLED',
+                enabled: false,
+              });
+            }
+            break;
         }
       },
     });
@@ -1556,6 +1624,20 @@ Devvit.addMenuItem({
       runAt: new Date(),
     });
     context.ui.showToast('✅ Triggered cache prewarmer manually!');
+  },
+});
+
+Devvit.addMenuItem({
+  label: '📋 Toggle Debug Mode',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    const currentState = await context.redis.get('debugMode');
+    const newState = currentState === 'true' ? 'false' : 'true';
+    await context.redis.set('debugMode', newState);
+    
+    console.log(`Debug mode ${newState === 'true' ? 'enabled' : 'disabled'}`);
+    context.ui.showToast(`Debug mode ${newState === 'true' ? 'enabled ✅' : 'disabled ❌'}`);
   },
 });
 

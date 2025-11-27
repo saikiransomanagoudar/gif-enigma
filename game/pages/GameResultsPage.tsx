@@ -21,6 +21,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [gameState, setGameState] = useState<any>(null);
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
   const [acceptedSynonyms, setAcceptedSynonyms] = useState<string[]>([]);
+  const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
 
   // Play Again handling (reuse landing page logic)
   const [isFindingGame, setIsFindingGame] = useState(false);
@@ -31,11 +32,6 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     const handlePlayAgainClick = () => {
     if (isHandlingPlayAgainRequest.current) {
       return;
-    }
-
-    if (!username) {
-      // Fallback to anonymous if somehow not set yet
-      // (same behavior as landing page)
     }
 
     isHandlingPlayAgainRequest.current = true;
@@ -91,7 +87,16 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           } else {
             setIsFindingGame(false);
             isHandlingPlayAgainRequest.current = false;
-            alert('⚠️ Could not find a valid game to play. Please try again.');
+            window.parent.postMessage(
+              {
+                type: 'SHOW_TOAST',
+                data: {
+                  text: '⚠️ Could not find a valid game to play. Please try again.',
+                  appearance: 'error',
+                },
+              },
+              '*'
+            );
           }
         } else {
           const result = message.result || {};
@@ -113,7 +118,16 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
           setIsFindingGame(false);
           isHandlingPlayAgainRequest.current = false;
-          alert(errorMessage);
+          window.parent.postMessage(
+            {
+              type: 'SHOW_TOAST',
+              data: {
+                text: errorMessage,
+                appearance: 'info',
+              },
+            },
+            '*'
+          );
         }
       }
     };
@@ -140,7 +154,16 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         window.removeEventListener('message', handleGameResponse);
         setIsFindingGame(false);
         isHandlingPlayAgainRequest.current = false;
-        alert('Request timed out. Please try again.');
+        window.parent.postMessage(
+          {
+            type: 'SHOW_TOAST',
+            data: {
+              text: 'Request timed out. Please try again.',
+              appearance: 'error',
+            },
+          },
+          '*'
+        );
       }
     }, 10000);
   };
@@ -257,26 +280,46 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       }
 
       if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
+        if (debugMode) console.log('[GameResultsPage] Received POST_COMPLETION_COMMENT_RESULT:', actualMessage);
         setIsCommentPosting(false);
         if (actualMessage.success) {
           if (actualMessage.alreadyPosted) {
+            if (debugMode) console.log('[GameResultsPage] User already commented');
             // User already commented before
             setHasAlreadyCommented(true);
             setIsCommentPosted(true);
           } else {
+            if (debugMode) console.log('[GameResultsPage] Comment posted successfully');
             // New comment posted successfully
             setIsCommentPosted(true);
           }
         } else {
-          window.alert(actualMessage.error || 'Failed to post comment');
+          if (debugMode) console.error('[GameResultsPage] Failed to post comment:', actualMessage.error);
+          window.parent.postMessage(
+            {
+              type: 'SHOW_TOAST',
+              data: {
+                text: actualMessage.error || 'Failed to post comment',
+                appearance: 'error',
+              },
+            },
+            '*'
+          );
         }
       }
 
       if (actualMessage.type === 'CHECK_USER_COMMENT_RESULT') {
+        if (debugMode) console.log('[GameResultsPage] Received CHECK_USER_COMMENT_RESULT:', actualMessage);
         if (actualMessage.success && actualMessage.hasCommented) {
+          if (debugMode) console.log('[GameResultsPage] User has already commented on this game');
           setHasAlreadyCommented(true);
           setIsCommentPosted(true);
         }
+      }
+
+      if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
+        setDebugMode(actualMessage.enabled);
+        console.log('[GameResultsPage] Debug mode', actualMessage.enabled ? 'enabled' : 'disabled');
       }
     };
 
@@ -349,16 +392,20 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   };
 
   const handlePostComment = () => {
+    if (debugMode) console.log('[GameResultsPage] handlePostComment called - gameId:', gameId, 'username:', username);
     if (!gameId || !username) {
+      if (debugMode) console.warn('[GameResultsPage] Cannot post comment - missing gameId or username');
       return;
     }
     if (isCommentPosting || isCommentPosted) {
+      if (debugMode) console.log('[GameResultsPage] Comment already posting or posted');
       return;
     }
     const gifHintCount = gameState?.gifHintCount || 1;
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
     const actualGuesses = gameState?.numGuesses || 1;
 
+    if (debugMode) console.log('[GameResultsPage] Sending POST_COMPLETION_COMMENT - guesses:', actualGuesses, 'gifHints:', gifHintsUsed);
     setIsCommentPosting(true);
     window.parent.postMessage(
       {
@@ -648,4 +695,3 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 };
 
 export default GameResultsPage;
-

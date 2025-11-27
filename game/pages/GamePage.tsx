@@ -50,6 +50,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [isCommentPosting, setIsCommentPosting] = useState(false);
   const [isCommentPosted, setIsCommentPosted] = useState(false);
   const [winningGuess, setWinningGuess] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
   const lastSubmittedGuessRef = useRef<string>('');
   const [showIncorrectPopup, setShowIncorrectPopup] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -96,6 +97,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       '*'
     );
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+    window.parent.postMessage({ type: 'GET_DEBUG_MODE' }, '*');
     loadPlayedGameIds();
 
     const handleMessage = (event: MessageEvent) => {
@@ -265,10 +267,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         }
       }
       if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
+        if (debugMode) console.log('[GamePage] Received POST_COMPLETION_COMMENT_RESULT:', actualMessage);
         setIsCommentPosting(false);
         if (actualMessage.success) {
+          if (debugMode) console.log('[GamePage] Comment posted successfully');
           setIsCommentPosted(true);
         } else {
+          if (debugMode) console.error('[GamePage] Failed to post comment:', actualMessage.error);
           try {
             window.alert(actualMessage.error || 'Failed to post comment');
           } catch {}
@@ -297,6 +302,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         } else {
           setIsCorrect(false);
         }
+      }
+      
+      if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
+        setDebugMode(actualMessage.enabled);
+        console.log('[GamePage] Debug mode', actualMessage.enabled ? 'enabled' : 'disabled');
       }
     };
 
@@ -651,17 +661,26 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handlePostComment = () => {
-    if (!gameData) return;
-    if (isCommentPosting || isCommentPosted) return;
+    if (debugMode) console.log('[GamePage] handlePostComment called - gameData:', gameData?.id, 'username:', username);
+    if (!gameData) {
+      if (debugMode) console.warn('[GamePage] Cannot post comment - no game data');
+      return;
+    }
+    if (isCommentPosting || isCommentPosted) {
+      if (debugMode) console.log('[GamePage] Comment already posting or posted');
+      return;
+    }
     
     // Don't allow commenting if user gave up (gifHintCount === 999)
     if (gifHintCount >= 999) {
+      if (debugMode) console.warn('[GamePage] Cannot post comment - user gave up');
       return;
     }
     
     const currentUsername = username || 'anonymous';
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
 
+    if (debugMode) console.log('[GamePage] Sending POST_COMPLETION_COMMENT - guesses:', guessCount, 'gifHints:', gifHintsUsed);
     setIsCommentPosting(true);
     window.parent.postMessage(
       {

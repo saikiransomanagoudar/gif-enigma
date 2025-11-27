@@ -224,7 +224,16 @@ export type WebviewToBlockMessage =
       data: {
         gameId: string;
       };
-    };
+    }
+  | {
+      type: 'SHOW_TOAST';
+      data: {
+        text: string;
+        appearance?: 'success' | 'error' | 'info';
+      };
+    }
+  | { type: 'TOGGLE_DEBUG_MODE' }
+  | { type: 'GET_DEBUG_MODE' };
 
 export type BlocksToWebviewMessage =
   | {
@@ -614,6 +623,10 @@ export type BlocksToWebviewMessage =
     | {
       type: 'NAVIGATE_TO_POST';
       data: { postId: string };
+    }
+    | {
+      type: 'DEBUG_MODE_TOGGLED';
+      enabled: boolean;
     };
 
 export type DevvitMessage = {
