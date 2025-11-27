@@ -12,39 +12,6 @@ interface GamePostPreviewProps {
   refreshTrigger: number;
 }
 
-// Helper function to handle navigation - defined outside component to prevent recreating
-const handleNavigation = async (params: {
-  context: Context;
-  postId: string | undefined;
-  page: string;
-  gameId?: string;
-  onMount: () => void;
-  postMessage: (message: BlocksToWebviewMessage) => void;
-  isWebViewReady: boolean;
-}) => {
-  await params.context.redis.del(`navState:${params.postId}`);
-  if (params.postId) {
-    await params.context.redis.hDel(`navState:${params.postId}`, ['page']);
-    await params.context.redis.hDel(`navState:${params.postId}`, ['gameId']);
-    const navData: any = { page: params.page };
-    if (params.gameId) {
-      navData.gameId = params.gameId;
-    }
-    await params.context.redis.hSet(`navState:${params.postId}`, navData);
-  }
-  params.onMount();
-  if (params.isWebViewReady) {
-    const messageData: any = { page: params.page };
-    if (params.gameId) {
-      messageData.gameId = params.gameId;
-    }
-    params.postMessage({
-      type: 'NAVIGATE',
-      data: messageData,
-    });
-  }
-};
-
 export const GamePostPreview = ({
   context,
   onMount,
@@ -52,6 +19,48 @@ export const GamePostPreview = ({
   isWebViewReady,
   refreshTrigger,
 }: GamePostPreviewProps) => {
+  // State to trigger navigation
+  const [navigationRequest, setNavigationRequest] = useState<{
+    page: string;
+    gameId?: string;
+  } | null>(null);
+
+  // Handle navigation with useAsync to avoid ServerCallRequired error
+  useAsync(async () => {
+    if (!navigationRequest) return null;
+    
+    const { page, gameId } = navigationRequest;
+    
+    // Clear nav state
+    await context.redis.del(`navState:${context.postId}`);
+    if (context.postId) {
+      await context.redis.hDel(`navState:${context.postId}`, ['page']);
+      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
+      
+      const navData: any = { page };
+      if (gameId) {
+        navData.gameId = gameId;
+      }
+      await context.redis.hSet(`navState:${context.postId}`, navData);
+    }
+    
+    onMount();
+    if (isWebViewReady) {
+      const messageData: any = { page };
+      if (gameId) {
+        messageData.gameId = gameId;
+      }
+      postMessage({
+        type: 'NAVIGATE',
+        data: messageData,
+      });
+    }
+    
+    // Reset navigation request
+    setNavigationRequest(null);
+    return null;
+  }, { depends: [navigationRequest] });
+
   // Memoize dimensions to prevent recalculation
   const screenWidth = context.dimensions?.width || 0;
   const isSmallScreen = screenWidth < 420;
@@ -228,25 +237,12 @@ export const GamePostPreview = ({
                 cornerRadius="full"
                 backgroundColor="#FF4500"
                 padding="medium"
-                onPress={async () => {
+                onPress={() => {
                   if (gameData.previewData?.gameId) {
-                    await context.redis.del(`navState:${context.postId}`);
-                    if (context.postId) {
-                      await context.redis.hSet(`navState:${context.postId}`, {
-                        gameId: gameData.previewData.gameId,
-                        page: 'game',
-                      });
-                    }
-                    onMount();
-                    if (isWebViewReady) {
-                      postMessage({
-                        type: 'NAVIGATE',
-                        data: {
-                          page: 'game',
-                          params: { gameId: gameData.previewData.gameId },
-                        },
-                      });
-                    }
+                    setNavigationRequest({
+                      page: 'game',
+                      gameId: gameData.previewData.gameId,
+                    });
                   } else {
                     context.ui.showToast('Game not found');
                   }
@@ -263,24 +259,8 @@ export const GamePostPreview = ({
                 cornerRadius="full"
                 backgroundColor="#4267B2"
                 padding="medium"
-                onPress={async () => {
-                  await context.redis.del(`navState:${context.postId}`);
-                  if (context.postId) {
-                    await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                    await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                    await context.redis.hSet(`navState:${context.postId}`, {
-                      page: 'howToPlay',
-                    });
-                  }
-                  onMount();
-                  if (isWebViewReady) {
-                    postMessage({
-                      type: 'NAVIGATE',
-                      data: {
-                        page: 'howToPlay',
-                      },
-                    });
-                  }
+                onPress={() => {
+                  setNavigationRequest({ page: 'howToPlay' });
                 }}
                 alignment="center middle"
               >
@@ -299,25 +279,12 @@ export const GamePostPreview = ({
                   cornerRadius="full"
                   backgroundColor="#FF4500"
                   padding="medium"
-                  onPress={async () => {
+                  onPress={() => {
                     if (gameData.previewData?.gameId) {
-                      await context.redis.del(`navState:${context.postId}`);
-                      if (context.postId) {
-                        await context.redis.hSet(`navState:${context.postId}`, {
-                          gameId: gameData.previewData.gameId,
-                          page: 'game',
-                        });
-                      }
-                      onMount();
-                      if (isWebViewReady) {
-                        postMessage({
-                          type: 'NAVIGATE',
-                          data: {
-                            page: 'game',
-                            params: { gameId: gameData.previewData.gameId },
-                          },
-                        });
-                      }
+                      setNavigationRequest({
+                        page: 'game',
+                        gameId: gameData.previewData.gameId,
+                      });
                     } else {
                       context.ui.showToast('Game not found');
                     }
@@ -335,24 +302,8 @@ export const GamePostPreview = ({
                 cornerRadius="full"
                 backgroundColor="#4267B2"
                 padding="medium"
-                onPress={async () => {
-                  await context.redis.del(`navState:${context.postId}`);
-                  if (context.postId) {
-                    await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                    await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                    await context.redis.hSet(`navState:${context.postId}`, {
-                      page: 'howToPlay',
-                    });
-                  }
-                  onMount();
-                  if (isWebViewReady) {
-                    postMessage({
-                      type: 'NAVIGATE',
-                      data: {
-                        page: 'howToPlay',
-                      },
-                    });
-                  }
+                onPress={() => {
+                  setNavigationRequest({ page: 'howToPlay' });
                 }}
                 alignment="center middle"
               >
@@ -374,29 +325,12 @@ export const GamePostPreview = ({
                   cornerRadius="full"
                   backgroundColor="#FF4500"
                   padding="medium"
-                  onPress={async () => {
-                    await context.redis.del(`navState:${context.postId}`);
-                    if (context.postId) {
-                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                    }
+                  onPress={() => {
                     if (gameData.previewData?.gameId) {
-                      if (context.postId) {
-                        await context.redis.hSet(`navState:${context.postId}`, {
-                          page: 'gameResults',
-                          gameId: gameData.previewData.gameId,
-                        });
-                      }
-                      onMount();
-                      if (isWebViewReady) {
-                        postMessage({
-                          type: 'NAVIGATE',
-                          data: {
-                            page: 'gameResults',
-                            params: { gameId: gameData.previewData.gameId },
-                          },
-                        });
-                      }
+                      setNavigationRequest({
+                        page: 'gameResults',
+                        gameId: gameData.previewData.gameId,
+                      });
                     } else {
                       context.ui.showToast('Game not found');
                     }
@@ -413,24 +347,8 @@ export const GamePostPreview = ({
                   cornerRadius="full"
                   backgroundColor="#4267B2"
                   padding="medium"
-                  onPress={async () => {
-                    await context.redis.del(`navState:${context.postId}`);
-                    if (context.postId) {
-                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                      await context.redis.hSet(`navState:${context.postId}`, {
-                        page: 'howToPlay',
-                      });
-                    }
-                    onMount();
-                    if (isWebViewReady) {
-                      postMessage({
-                        type: 'NAVIGATE',
-                        data: {
-                          page: 'howToPlay',
-                        },
-                      });
-                    }
+                  onPress={() => {
+                    setNavigationRequest({ page: 'howToPlay' });
                   }}
                   alignment="center middle"
                 >
@@ -448,29 +366,12 @@ export const GamePostPreview = ({
                   cornerRadius="full"
                   backgroundColor="#FF4500"
                   padding="medium"
-                  onPress={async () => {
-                    await context.redis.del(`navState:${context.postId}`);
-                    if (context.postId) {
-                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                    }
+                  onPress={() => {
                     if (gameData.previewData?.gameId) {
-                      if (context.postId) {
-                        await context.redis.hSet(`navState:${context.postId}`, {
-                          page: 'gameResults',
-                          gameId: gameData.previewData.gameId,
-                        });
-                      }
-                      onMount();
-                      if (isWebViewReady) {
-                        postMessage({
-                          type: 'NAVIGATE',
-                          data: {
-                            page: 'gameResults',
-                            params: { gameId: gameData.previewData.gameId },
-                          },
-                        });
-                      }
+                      setNavigationRequest({
+                        page: 'gameResults',
+                        gameId: gameData.previewData.gameId,
+                      });
                     } else {
                       context.ui.showToast('Game not found');
                     }
@@ -487,24 +388,8 @@ export const GamePostPreview = ({
                   cornerRadius="full"
                   backgroundColor="#4267B2"
                   padding="medium"
-                  onPress={async () => {
-                    await context.redis.del(`navState:${context.postId}`);
-                    if (context.postId) {
-                      await context.redis.hDel(`navState:${context.postId}`, ['page']);
-                      await context.redis.hDel(`navState:${context.postId}`, ['gameId']);
-                      await context.redis.hSet(`navState:${context.postId}`, {
-                        page: 'howToPlay',
-                      });
-                    }
-                    onMount();
-                    if (isWebViewReady) {
-                      postMessage({
-                        type: 'NAVIGATE',
-                        data: {
-                          page: 'howToPlay',
-                        },
-                      });
-                    }
+                  onPress={() => {
+                    setNavigationRequest({ page: 'howToPlay' });
                   }}
                   alignment="center middle"
                 >

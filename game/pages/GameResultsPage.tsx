@@ -24,6 +24,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
   // Play Again handling (reuse landing page logic)
   const [isFindingGame, setIsFindingGame] = useState(false);
+  const [gameFound, setGameFound] = useState(false);
   const isHandlingPlayAgainRequest = useRef(false);
 
 
@@ -39,6 +40,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
     isHandlingPlayAgainRequest.current = true;
     setIsFindingGame(true);
+    setGameFound(false);
 
     let timeoutId: number | undefined;
     let isHandled = false;
@@ -60,9 +62,6 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         window.removeEventListener('message', handleGameResponse);
         if (timeoutId) window.clearTimeout(timeoutId);
 
-        setIsFindingGame(false);
-        isHandlingPlayAgainRequest.current = false;
-
         if (message.success && message.result && message.result.game) {
           const game = message.result.game;
           const redditPostId = game.redditPostId;
@@ -74,15 +73,24 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             game.gifs.length > 0 &&
             game.word
           ) {
-            // Same as LandingPage: jump to the post
-            window.parent.postMessage(
-              {
-                type: 'NAVIGATE_TO_POST',
-                data: { postId: redditPostId },
-              },
-              '*'
-            );
+            // Show game found message briefly before navigating
+            setGameFound(true);
+            setIsFindingGame(false);
+            
+            setTimeout(() => {
+              isHandlingPlayAgainRequest.current = false;
+              // Same as LandingPage: jump to the post
+              window.parent.postMessage(
+                {
+                  type: 'NAVIGATE_TO_POST',
+                  data: { postId: redditPostId },
+                },
+                '*'
+              );
+            }, 800);
           } else {
+            setIsFindingGame(false);
+            isHandlingPlayAgainRequest.current = false;
             alert('⚠️ Could not find a valid game to play. Please try again.');
           }
         } else {
@@ -103,6 +111,8 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             errorMessage = '😕 No games available right now. Try creating one!';
           }
 
+          setIsFindingGame(false);
+          isHandlingPlayAgainRequest.current = false;
           alert(errorMessage);
         }
       }
@@ -339,8 +349,12 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   };
 
   const handlePostComment = () => {
-    if (!gameId || !username) return;
-    if (isCommentPosting || isCommentPosted) return;
+    if (!gameId || !username) {
+      return;
+    }
+    if (isCommentPosting || isCommentPosted) {
+      return;
+    }
     const gifHintCount = gameState?.gifHintCount || 1;
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
     const actualGuesses = gameState?.numGuesses || 1;
@@ -546,50 +560,6 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         </div>
 
         {/* Bottom Buttons */}
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-          {(() => {
-            // Only show comment button if:
-            // 1. Game state has loaded (isGameStateLoaded = true)
-            // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
-            // 3. User hasn't already commented (hasAlreadyCommented = false)
-            // 4. User is not the game creator
-            // Note: If gameState is null after loading, user hasn't played yet (show button)
-            const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
-            const isCreator = statistics?.creatorUsername && username === statistics.creatorUsername;
-            const shouldShow = isGameStateLoaded && !hasGivenUp && !hasAlreadyCommented && !isCreator;
-            return shouldShow;
-          })() && (
-            <button
-              onClick={handlePostComment}
-              disabled={isCommentPosting || isCommentPosted || !username}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
-                isCommentPosted
-                  ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
-                  : isCommentPosting
-                    ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
-                    : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
-              }`}
-              style={{
-                boxShadow: isCommentPosted
-                  ? '0 8px 20px rgba(16,185,129,0.4)'
-                  : isCommentPosting
-                    ? '0 8px 20px rgba(99,102,241,0.3)'
-                    : '0 4px 12px rgba(217,119,6,0.4)'
-              }}
-            >
-              <span className="text-xl">
-                {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
-              </span>
-              <div style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}>
-                {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-              </div>
-            </button>
-          )}
-
-
-
-
-                  {/* Bottom Buttons */}
         <div className="mt-6 flex flex-col items-center justify-center gap-4">
           {(() => {
             // Only show comment button if:
@@ -637,7 +607,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
           {/* Leaderboard + Play Again in one row on desktop, stacked on mobile */}
           <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
-            {/* Leaderboard button – logic unchanged */}
+            {/* Leaderboard button */}
             <button
               onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
               className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
@@ -645,31 +615,32 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             >
               <span className="text-lg">🏆</span>
               <ComicText size={0.7} color="white">
-                Leaderboard bro
+                Leaderboard
               </ComicText>
             </button>
 
             {/* Play Again button – uses GET_RANDOM_GAME flow from landing */}
             <button
               onClick={handlePlayAgainClick}
-              disabled={isFindingGame}
-              className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
-              style={{ backgroundColor: colors.secondary, opacity: isFindingGame ? 0.8 : 1 }}
+              disabled={isFindingGame || gameFound}
+              className="play-again-button flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
+              style={{ 
+                backgroundColor: colors.secondary, 
+                opacity: isFindingGame || gameFound ? 0.8 : 1
+              }}
             >
-              <span className="text-xl">{isFindingGame ? '⏳' : '⛹️'}</span>
+              <span className="text-xl">{gameFound ? '🎮' : isFindingGame ? '⏳' : '⛹️'}</span>
               <ComicText size={0.7} color="white">
-                {isFindingGame ? 'Finding game...' : 'Play Again'}
+                {gameFound 
+                  ? 'Game found!' 
+                  : isFindingGame 
+                    ? 'Finding game...' 
+                    : statistics?.creatorUsername && username === statistics.creatorUsername
+                      ? 'Try another'
+                      : 'Play again'}
               </ComicText>
             </button>
           </div>
-        </div>
-
-
-
-
-
-
-
         </div>
       </div>
     </div>
