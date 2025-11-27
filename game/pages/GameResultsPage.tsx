@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import { GameStatistics, NavigationProps, Page } from '../lib/types';
@@ -21,6 +21,120 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [gameState, setGameState] = useState<any>(null);
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
   const [acceptedSynonyms, setAcceptedSynonyms] = useState<string[]>([]);
+
+  // Play Again handling (reuse landing page logic)
+  const [isFindingGame, setIsFindingGame] = useState(false);
+  const isHandlingPlayAgainRequest = useRef(false);
+
+
+    const handlePlayAgainClick = () => {
+    if (isHandlingPlayAgainRequest.current) {
+      return;
+    }
+
+    if (!username) {
+      // Fallback to anonymous if somehow not set yet
+      // (same behavior as landing page)
+    }
+
+    isHandlingPlayAgainRequest.current = true;
+    setIsFindingGame(true);
+
+    let timeoutId: number | undefined;
+    let isHandled = false;
+
+    const handleGameResponse = (event: MessageEvent) => {
+      let message: any = event.data;
+
+      // Unwrap devvit messages like in LandingPage
+      if (message && message.type === 'devvit-message' && message.data?.message) {
+        message = message.data.message;
+      } else if (message && message.type === 'devvit-message' && message.data) {
+        message = message.data;
+      }
+
+      if (message?.type === 'GET_RANDOM_GAME_RESULT') {
+        if (isHandled) return;
+        isHandled = true;
+
+        window.removeEventListener('message', handleGameResponse);
+        if (timeoutId) window.clearTimeout(timeoutId);
+
+        setIsFindingGame(false);
+        isHandlingPlayAgainRequest.current = false;
+
+        if (message.success && message.result && message.result.game) {
+          const game = message.result.game;
+          const redditPostId = game.redditPostId;
+
+          if (
+            redditPostId &&
+            game.gifs &&
+            Array.isArray(game.gifs) &&
+            game.gifs.length > 0 &&
+            game.word
+          ) {
+            // Same as LandingPage: jump to the post
+            window.parent.postMessage(
+              {
+                type: 'NAVIGATE_TO_POST',
+                data: { postId: redditPostId },
+              },
+              '*'
+            );
+          } else {
+            alert('⚠️ Could not find a valid game to play. Please try again.');
+          }
+        } else {
+          const result = message.result || {};
+          let errorMessage = '';
+
+          if (result.hasPlayedAll) {
+            errorMessage =
+              "🎉 Amazing! You've completed all games! Check back later for new challenges.";
+          } else if (result.error && result.error.includes('No games available yet')) {
+            errorMessage =
+              '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+          } else if (result.error) {
+            errorMessage = result.error;
+          } else if (message.error) {
+            errorMessage = message.error;
+          } else {
+            errorMessage = '😕 No games available right now. Try creating one!';
+          }
+
+          alert(errorMessage);
+        }
+      }
+    };
+
+    // Ensure no duplicate listener
+    window.removeEventListener('message', handleGameResponse);
+    window.addEventListener('message', handleGameResponse);
+
+    // Same GET_RANDOM_GAME call as LandingPage
+    window.parent.postMessage(
+      {
+        type: 'GET_RANDOM_GAME',
+        data: {
+          username: username || 'anonymous',
+          preferUserCreated: true,
+          useStickyNavigation: true,
+        },
+      },
+      '*'
+    );
+
+    timeoutId = window.setTimeout(() => {
+      if (!isHandled) {
+        window.removeEventListener('message', handleGameResponse);
+        setIsFindingGame(false);
+        isHandlingPlayAgainRequest.current = false;
+        alert('Request timed out. Please try again.');
+      }
+    }, 10000);
+  };
+
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -471,16 +585,91 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               </div>
             </button>
           )}
-          <button
-            onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
-            className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:min-w-[220px]"
-            style={{ backgroundColor: colors.primary }}
-          >
-            <span className="text-lg">🏆</span>
-            <ComicText size={0.7} color="white">
-              Leaderboard
-            </ComicText>
-          </button>
+
+
+
+
+                  {/* Bottom Buttons */}
+        <div className="mt-6 flex flex-col items-center justify-center gap-4">
+          {(() => {
+            // Only show comment button if:
+            // 1. Game state has loaded (isGameStateLoaded = true)
+            // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
+            // 3. User hasn't already commented (hasAlreadyCommented = false)
+            // 4. User is not the game creator
+            // Note: If gameState is null after loading, user hasn't played yet (show button)
+            const hasGivenUp =
+              gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
+            const isCreator =
+              statistics?.creatorUsername && username === statistics.creatorUsername;
+            const shouldShow =
+              isGameStateLoaded && !hasGivenUp && !hasAlreadyCommented && !isCreator;
+            return shouldShow;
+          })() && (
+            <button
+              onClick={handlePostComment}
+              disabled={isCommentPosting || isCommentPosted || !username}
+              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
+                isCommentPosted
+                  ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
+                  : isCommentPosting
+                    ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
+              }`}
+              style={{
+                boxShadow: isCommentPosted
+                  ? '0 8px 20px rgba(16,185,129,0.4)'
+                  : isCommentPosting
+                    ? '0 8px 20px rgba(99,102,241,0.3)'
+                    : '0 4px 12px rgba(217,119,6,0.4)',
+              }}
+            >
+              <span className="text-xl">
+                {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
+              </span>
+              <div
+                style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}
+              >
+                {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
+              </div>
+            </button>
+          )}
+
+          {/* Leaderboard + Play Again in one row on desktop, stacked on mobile */}
+          <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
+            {/* Leaderboard button – logic unchanged */}
+            <button
+              onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
+              style={{ backgroundColor: colors.primary }}
+            >
+              <span className="text-lg">🏆</span>
+              <ComicText size={0.7} color="white">
+                Leaderboard bro
+              </ComicText>
+            </button>
+
+            {/* Play Again button – uses GET_RANDOM_GAME flow from landing */}
+            <button
+              onClick={handlePlayAgainClick}
+              disabled={isFindingGame}
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
+              style={{ backgroundColor: colors.secondary, opacity: isFindingGame ? 0.8 : 1 }}
+            >
+              <span className="text-xl">{isFindingGame ? '⏳' : '⛹️'}</span>
+              <ComicText size={0.7} color="white">
+                {isFindingGame ? 'Finding game...' : 'Play Again'}
+              </ComicText>
+            </button>
+          </div>
+        </div>
+
+
+
+
+
+
+
         </div>
       </div>
     </div>
