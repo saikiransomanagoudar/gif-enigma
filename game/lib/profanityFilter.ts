@@ -1,27 +1,44 @@
-/**
- * Profanity Filter Utility
- * Filters out inappropriate, vulgar, or abusive words/phrases from user-generated content
- */
-
-// Common profanity patterns (basic list - can be expanded)
-// Only includes explicitly offensive words, not common words with multiple meanings
 const PROFANITY_LIST = [
-  // Explicit profanity
-  'fuck', 'shit', 'bitch', 'damn', 'crap', 'piss',
-  'cock', 'pussy', 'cunt', 'bastard', 'whore', 'slut',
+  // Explicit profanity - whole words or clear phrases
+  'fuck', 'fucker', 'fucking', 'fucked', 'fuckoff', 'motherfucker',
+  'shit', 'bullshit', 'shitty', 'bitch', 'bitching', 
+  'damn', 'goddamn', 'crap', 'piss', 'pissed',
   
   // Variations with common substitutions
-  'f*ck', 'sh*t', 'b*tch', 'd*mn',
-  'fck', 'sht', 'btch', 'cnt',
+  'f*ck', 'sh*t', 'b*tch', 'd*mn', 'fuk', 'fck', 'phuck', 'phuk',
+  'sht', 'shyt', 'btch', 'cnt', 'cok', 'dik', 'azz',
   
-  // Slurs and hate speech (abbreviated list - expand as needed)
-  'nigger', 'nigga', 'fag', 'faggot', 'retard', 'retarded',
+  // Slurs and hate speech - these should ALWAYS be caught
+  'nigger', 'nigga', 'nig', 'niglet', 'fag', 'faggot', 'retard', 'retarded',
   
-  // Sexual content (explicit only, avoiding anatomical terms with medical uses)
-  'porn', 'xxx', 'nude', 'naked', 'boob', 'boobs', 'tit', 'tits',
+  // Sexual phrases (specific combinations to avoid false positives)
+  'porn', 'xxx', 'handjob', 'blowjob', 'cumshot', 'orgasm',
+  'suckmy', 'suckmydick', 'suckmycock', 'fuckyou',
   
-  // Violence/threats (explicit only)
+  // Explicit body parts in sexual context (be careful with medical terms)
+  'pussy', 'cunt', 'whore', 'slut', 'asshole',
+  
+  // Violence/threats
   'murder', 'rape', 'kill',
+];
+
+// Words that are allowed even if they contain profanity substrings
+const WHITELIST = [
+  'peacock', 'cockroach', 'cockatoo', 'woodcock', 'gamecock', 'stopcock',
+  'assassin', 'assault', 'classic', 'glass', 'bass', 'mass', 'class', 'pass',
+  'suck', 'sucky', 'suckle', 'honeysuckle', 'sucker',
+  'thick', 'chick', 'chicken', 'dickens', 'thicket',
+  'title', 'titular', 'titanic', 'appetite',
+  'sextet', 'sextant', 'sussex', 'essex', 'middlesex',
+  'retina', 'discrete', 'secretary',
+  // Gender/sexuality terms that are NOT slurs
+  'sex', 'sexual', 'sexuality', 'sexy', 'sexist', 'bisexual', 'asexual', 'heterosexual', 'homosexual',
+  'gay', 'lesbian', 'lgbt', 'lgbtq', 'lgbtqia', 'queer',
+  // Common words
+  'dick', 'dickens', 'moby dick', 'spotted dick',
+  'cock', 'peacock', 'cockpit', 'cocktail',
+  'ass', 'assassin', 'assist', 'bass', 'brass', 'class', 'glass', 'grass', 'mass', 'pass',
+  'tit', 'title', 'titanic', 'petition', 'competition',
 ];
 
 // Patterns for leetspeak and obfuscation
@@ -44,7 +61,18 @@ function normalizeForProfanityCheck(text: string): string {
     .replace(/\s+/g, '') // Remove spaces
     .replace(/[^a-z0-9]/g, ''); // Remove special chars
   
-  // Create variations to catch leetspeak
+  // Convert common leetspeak substitutions back to letters
+  normalized = normalized
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/4/g, 'a')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't')
+    .replace(/8/g, 'b')
+    .replace(/@/g, 'a')
+    .replace(/\$/g, 's');
+  
   return normalized;
 }
 
@@ -75,26 +103,50 @@ function generateLeetspeakVariations(word: string): string[] {
 }
 
 /**
- * Checks if text contains profanity (whole word match only)
+ * Checks if text contains profanity (with whitelist protection)
  */
 export function containsProfanity(text: string): boolean {
   const normalized = normalizeForProfanityCheck(text);
+  const originalLower = text.toLowerCase().trim();
   
+  // Check whitelist first - if it's a whitelisted word, it's safe
+  for (const safe of WHITELIST) {
+    const normalizedSafe = normalizeForProfanityCheck(safe);
+    if (normalized === normalizedSafe || originalLower === safe.toLowerCase()) {
+      return false;
+    }
+  }
   
+  // Split by spaces to check individual words
   const originalWords = text.toLowerCase().split(/\s+/);
   
   // Check against profanity list
   for (const word of PROFANITY_LIST) {
     const normalizedWord = normalizeForProfanityCheck(word);
     
-    // Check exact match with the entire normalized text
-    if (normalized === normalizedWord) {
+    // Check if profanity appears as substring in the entire normalized text
+    if (normalized.includes(normalizedWord)) {
       return true;
     }
     
     // Check each word separately (for multi-word phrases)
     for (const origWord of originalWords) {
       const normalizedOrigWord = normalizeForProfanityCheck(origWord);
+      
+      // Skip if this word is whitelisted
+      const isWhitelisted = WHITELIST.some(safe => 
+        normalizeForProfanityCheck(safe) === normalizedOrigWord
+      );
+      if (isWhitelisted) {
+        continue;
+      }
+      
+      // Check substring match within individual words
+      if (normalizedOrigWord.includes(normalizedWord)) {
+        return true;
+      }
+      
+      // Check exact match
       if (normalizedOrigWord === normalizedWord) {
         return true;
       }
@@ -102,7 +154,7 @@ export function containsProfanity(text: string): boolean {
       // Check leetspeak variations for this word
       const variations = generateLeetspeakVariations(normalizedWord);
       for (const variation of variations) {
-        if (normalizedOrigWord === variation) {
+        if (normalizedOrigWord.includes(variation)) {
           return true;
         }
       }
