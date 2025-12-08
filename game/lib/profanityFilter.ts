@@ -17,6 +17,7 @@ const PROFANITY_LIST = [
   
   // Explicit body parts in sexual context (be careful with medical terms)
   'pussy', 'cunt', 'whore', 'slut', 'asshole',
+  'tit', 'tits', 'boob', 'boobs',
   
   // Violence/threats
   'murder', 'rape', 'kill',
@@ -28,7 +29,6 @@ const WHITELIST = [
   'assassin', 'assault', 'classic', 'glass', 'bass', 'mass', 'class', 'pass',
   'suck', 'sucky', 'suckle', 'honeysuckle', 'sucker',
   'thick', 'chick', 'chicken', 'dickens', 'thicket',
-  'title', 'titular', 'titanic', 'appetite',
   'sextet', 'sextant', 'sussex', 'essex', 'middlesex',
   'retina', 'discrete', 'secretary',
   // Gender/sexuality terms that are NOT slurs
@@ -38,7 +38,6 @@ const WHITELIST = [
   'dick', 'dickens', 'moby dick', 'spotted dick',
   'cock', 'peacock', 'cockpit', 'cocktail',
   'ass', 'assassin', 'assist', 'bass', 'brass', 'class', 'glass', 'grass', 'mass', 'pass',
-  'tit', 'title', 'titanic', 'petition', 'competition',
 ];
 
 // Patterns for leetspeak and obfuscation
