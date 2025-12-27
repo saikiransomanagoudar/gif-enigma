@@ -523,6 +523,12 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           ) : (
             <div className="space-y-4">
               {filterGuesses(statistics.guesses, 'mask')
+                .filter((guessData) => {
+                  // Filter out guesses that don't match the answer's normalized length
+                  const normalizeLength = (str: string) => 
+                    str.replace(/\s+/g, '').replace(/[^\w]/g, '').length;
+                  return normalizeLength(guessData.guess) === normalizeLength(statistics.answer);
+                })
                 .sort((a, b) => {
                   // Check if each guess is exact match or close match
                   const aIsCorrect = isGuessCorrect(a.guess, statistics.answer);
