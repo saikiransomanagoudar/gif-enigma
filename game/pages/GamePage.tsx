@@ -23,10 +23,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [gifHintCount, setGifHintCount] = useState(1);
   const [revealedLetters, setRevealedLetters] = useState<Set<number>>(new Set());
   const [guess, setGuess] = useState('');
+  // Jumbled letter system states
+  const [jumbledLetters, setJumbledLetters] = useState<string[]>([]);
+  const [selectedLetters, setSelectedLetters] = useState<string[]>([]);
+  const [availableIndices, setAvailableIndices] = useState<number[]>([]);
+  const [revealedJumbledIndices, setRevealedJumbledIndices] = useState<Set<number>>(new Set());
+  const [revealedLetterCounts, setRevealedLetterCounts] = useState<Map<string, number>>(new Map());
+  const [selectionHistory, setSelectionHistory] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [isShaking, setIsShaking] = useState(false);
   const answerBoxesRef = useRef<HTMLDivElement>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
   const gameIdRef = useRef(propGameId);
@@ -73,6 +79,132 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
+  // Scramble array function
+  const scrambleArray = (arr: string[]) => {
+    const shuffled = [...arr];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  // Handle clicking on jumbled letter
+  const handleJumbledLetterClick = (index: number) => {
+    if (gameFlowState === 'won' || gameFlowState === 'completed') return;
+    if (!gameData) return;
+    
+    const letter = jumbledLetters[index];
+    
+    // Find the next empty position (not revealed by hint)
+    const totalPositions = gameData.word.replace(/\s+/g, '').length;
+    let targetPosition = -1;
+    
+    for (let i = 0; i < totalPositions; i++) {
+      // Check if this position is not revealed by hint
+      const originalIdx = gameData.word.split('').reduce((acc, char, idx) => {
+        if (char !== ' ') acc.push(idx);
+        return acc;
+      }, [] as number[])[i];
+      
+      if (!revealedLetters.has(originalIdx) && !selectedLetters[i]) {
+        targetPosition = i;
+        break;
+      }
+    }
+    
+    if (targetPosition === -1) return; // No empty positions available
+    
+    // Insert letter at the target position
+    const newSelectedLetters = [...selectedLetters];
+    newSelectedLetters[targetPosition] = letter;
+    setSelectedLetters(newSelectedLetters);
+    
+    // Remove this letter from available pool
+    const newAvailableIndices = availableIndices.filter(i => i !== index);
+    setAvailableIndices(newAvailableIndices);
+    
+    // Track selection history for undo
+    setSelectionHistory([...selectionHistory, index]);
+    
+    // Update guess string (only non-revealed letters)
+    const guessStr = newSelectedLetters.filter(l => l).join('');
+    setGuess(guessStr);
+  };
+
+  // Handle undo - remove last selected letter
+  const handleUndo = () => {
+    if (gameFlowState === 'won' || gameFlowState === 'completed') return;
+    if (selectionHistory.length === 0) return;
+    
+    // Get the last selected index
+    const lastIndex = selectionHistory[selectionHistory.length - 1];
+    
+    // Find and remove the last selected letter (rightmost non-empty, non-revealed)
+    const newSelectedLetters = [...selectedLetters];
+    for (let i = newSelectedLetters.length - 1; i >= 0; i--) {
+      if (newSelectedLetters[i]) {
+        newSelectedLetters[i] = '';
+        break;
+      }
+    }
+    
+    setSelectedLetters(newSelectedLetters);
+    
+    // Return the index to available pool
+    setAvailableIndices([...availableIndices, lastIndex].sort((a, b) => a - b));
+    
+    // Remove from history
+    setSelectionHistory(selectionHistory.slice(0, -1));
+    
+    // Update guess string
+    const guessStr = newSelectedLetters.filter(l => l).join('');
+    setGuess(guessStr);
+  };
+
+  // Handle clicking on answer box to remove letter
+  const handleAnswerBoxClick = (position: number) => {
+    if (gameFlowState === 'won' || gameFlowState === 'completed') return;
+    if (!selectedLetters[position]) return; // No letter at this position
+    
+    const newSelectedLetters = [...selectedLetters];
+    newSelectedLetters[position] = '';
+    setSelectedLetters(newSelectedLetters);
+    
+    // Find the original index of this letter in jumbledLetters and add it back
+    // We need to find the index from selection history
+    const historyIndex = selectionHistory[selectionHistory.length - 1];
+    
+    if (historyIndex !== undefined) {
+      setAvailableIndices([...availableIndices, historyIndex].sort((a, b) => a - b));
+      setSelectionHistory(selectionHistory.slice(0, -1));
+    }
+    
+    // Update guess string
+    const guessStr = newSelectedLetters.filter(l => l).join('');
+    setGuess(guessStr);
+  };
+
+  // Shuffle the jumbled letters
+  const handleShuffle = () => {
+    if (gameFlowState === 'won' || gameFlowState === 'completed') return;
+    const currentLetters = jumbledLetters.filter((_, idx) => availableIndices.includes(idx));
+    const scrambled = scrambleArray(currentLetters);
+    
+    // Rebuild jumbled letters array maintaining selected letters' positions
+    const newJumbled = [...jumbledLetters];
+    let scrambledIdx = 0;
+    availableIndices.forEach(idx => {
+      newJumbled[idx] = scrambled[scrambledIdx++];
+    });
+    
+    setJumbledLetters(newJumbled);
+    
+    // Re-apply grey state based on letter content
+    const newRevealedJumbled = applyGreyStateToJumbled(newJumbled, revealedLetterCounts);
+    setRevealedJumbledIndices(newRevealedJumbled);
+  };
+
   useEffect(() => {
     if (!propGameId) {
       return;
@@ -113,6 +245,29 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setGameData(loadedGameData);
           setGameFlowState('playing');
           setIsCorrect(null);
+
+          // Initialize jumbled letters
+          const letters = loadedGameData.word.replace(/\s+/g, '').toUpperCase().split('');
+          const scrambled = scrambleArray([...letters]);
+          setJumbledLetters(scrambled);
+          setAvailableIndices(letters.map((_: any, idx: number) => idx));
+
+          // Load revealed jumbled indices from localStorage
+          const savedRevealed = localStorage.getItem(`revealedLetterCounts:${loadedGameData.id}`);
+          if (savedRevealed) {
+            try {
+              const countsObj = JSON.parse(savedRevealed);
+              const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
+              setRevealedLetterCounts(countsMap);
+              
+              // Apply grey state to scrambled jumbled letters
+              const greyIndices = applyGreyStateToJumbled(scrambled, countsMap);
+              setRevealedJumbledIndices(greyIndices);
+            } catch (e) {
+              setRevealedLetterCounts(new Map());
+              setRevealedJumbledIndices(new Set());
+            }
+          }
 
           addToPlayedGames(loadedGameData.id);
         } else {
@@ -168,6 +323,29 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setGifHintCount(1);
           setIsCorrect(null);
 
+          // Initialize jumbled letters
+          const letters = randomGameData.word.replace(/\s+/g, '').toUpperCase().split('');
+          const scrambled = scrambleArray([...letters]);
+          setJumbledLetters(scrambled);
+          setAvailableIndices(letters.map((_: any, idx: number) => idx));
+
+          // Load revealed jumbled indices from localStorage
+          const savedRevealed = localStorage.getItem(`revealedLetterCounts:${randomGameData.id}`);
+          if (savedRevealed) {
+            try {
+              const countsObj = JSON.parse(savedRevealed);
+              const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
+              setRevealedLetterCounts(countsMap);
+              
+              // Apply grey state to scrambled jumbled letters
+              const greyIndices = applyGreyStateToJumbled(scrambled, countsMap);
+              setRevealedJumbledIndices(greyIndices);
+            } catch (e) {
+              setRevealedLetterCounts(new Map());
+              setRevealedJumbledIndices(new Set());
+            }
+          }
+
           addToPlayedGames(randomGameData.id);
         } else {
           setIsLoading(false);
@@ -188,6 +366,24 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
           if (Array.isArray(playerState.revealedLetters) && playerState.revealedLetters.length > 0) {
             setRevealedLetters(new Set(playerState.revealedLetters));
+            
+            // Restore grey state for jumbled letters
+            if (gameData?.word && jumbledLetters.length > 0) {
+              const savedRevealed = localStorage.getItem(`revealedLetterCounts:${gameData.id}`);
+              if (savedRevealed) {
+                try {
+                  const countsObj = JSON.parse(savedRevealed);
+                  const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
+                  setRevealedLetterCounts(countsMap);
+                  
+                  // Apply grey state to current scrambled jumbled letters
+                  const greyIndices = applyGreyStateToJumbled(jumbledLetters, countsMap);
+                  setRevealedJumbledIndices(greyIndices);
+                } catch (e) {
+                  console.error('Failed to restore grey state:', e);
+                }
+              }
+            }
           } else {
             setRevealedLetters(new Set());
           }
@@ -611,10 +807,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       }, index * 40); // Stagger animation across boxes
     });
 
-    // Hide popup and clear guess after animation completes
+    // Hide popup and reset selected letters after animation completes
     setTimeout(() => {
       setShowIncorrectPopup(false);
+      // Clear selected letters and reset available indices
+      setSelectedLetters([]);
+      setSelectionHistory([]);
+      if (gameData) {
+        const letters = gameData.word.replace(/\s+/g, '').toUpperCase().split('');
+        setAvailableIndices(letters.map((_, idx) => idx));
+      }
       setGuess('');
+      // Reset isCorrect so subsequent incorrect guesses will trigger the animation
+      setIsCorrect(null);
     }, 1500);
   };
 
@@ -785,110 +990,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   const answer = gameData ? gameData.word.toUpperCase() : '';
 
-  const handleBackClick = () => {
-    if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 200 });
-    }
-
-    if (questionRef.current) {
-      transitions.fadeOut(questionRef.current, { duration: 200, delay: 30 });
-    }
-
-    if (gifAreaRef.current) {
-      transitions.fadeOut(gifAreaRef.current, { duration: 200, delay: 60 });
-    }
-
-    if (answerBoxesContainerRef.current) {
-      transitions.fadeOut(answerBoxesContainerRef.current, { duration: 200, delay: 90 });
-    }
-
-    if (bottomBarRef.current) {
-      transitions.fadeOut(bottomBarRef.current, { duration: 200, delay: 120 });
-    }
-
-    setTimeout(() => {
-      onNavigate('landing');
-    }, 400);
-  };
-
-  const handleGuessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newGuess = e.target.value.toUpperCase();
-    setGuess(newGuess);
-
-    setIsCorrect(null);
-    setIsShaking(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && gameData && !isLoading && guess.length > 0) {
-      handleGuess();
-    }
-  };
-
-  const getStrategicRevealOrder = (word: string, allIndices: number[]): number[] => {
-    const vowels = 'AEIOU';
-    const wordUpper = word.toUpperCase();
-    
-    // Categorize indices by strategic value
-    const vowelIndices: number[] = [];
-    const firstLastIndices: number[] = [];
-    const middleIndices: number[] = [];
-    
-    allIndices.forEach(idx => {
-      const char = wordUpper[idx];
-      if (vowels.includes(char)) {
-        vowelIndices.push(idx);
-      } else {
-        // Check if it's at word boundaries (first/last of each word in phrase)
-        const words = word.split(' ');
-        let currentPos = 0;
-        let isWordBoundary = false;
-        
-        for (const w of words) {
-          if (idx === currentPos || idx === currentPos + w.length - 1) {
-            isWordBoundary = true;
-            break;
-          }
-          currentPos += w.length + 1; // +1 for space
-        }
-        
-        if (isWordBoundary) {
-          firstLastIndices.push(idx);
-        } else {
-          middleIndices.push(idx);
-        }
-      }
-    });
-    
-    // Use deterministic shuffle within each category for consistency
-    const shuffleWithSeed = (arr: number[], seed: number) => {
-      const seededRandom = (index: number) => {
-        const x = Math.sin(seed + index) * 10000;
-        return x - Math.floor(x);
-      };
-      
-      const shuffled = [...arr];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(seededRandom(i) * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      return shuffled;
-    };
-    
-    let seed = 0;
-    for (let i = 0; i < word.length; i++) {
-      seed = ((seed << 5) - seed) + word.charCodeAt(i);
-      seed = seed & seed;
-    }
-    
-    // Return strategic order: vowels → word boundaries → middle letters
-    return [
-      ...shuffleWithSeed(vowelIndices, seed),
-      ...shuffleWithSeed(firstLastIndices, seed + 1),
-      ...shuffleWithSeed(middleIndices, seed + 2)
-    ];
-  };
-
   const handleWordHint = () => {
     if (!answer || !gameData) return;
 
@@ -924,17 +1025,78 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    // Use strategic reveal order instead of random
-    const strategicOrder = getStrategicRevealOrder(gameData.word, nonSpaceIndices);
-    const unrevealedInOrder = strategicOrder.filter((i) => !revealedLetters.has(i));
+    // Reveal letters strategically
+    const toReveal = Math.min(revealCount, unrevealed.length);
     const newRevealed = new Set(revealedLetters);
-    const toReveal = Math.min(revealCount, unrevealedInOrder.length);
+    const revealedLettersInHint: string[] = [];
     
     for (let i = 0; i < toReveal; i++) {
-      newRevealed.add(unrevealedInOrder[i]);
+      const randomIdx = Math.floor(Math.random() * unrevealed.length);
+      const posToReveal = unrevealed.splice(randomIdx, 1)[0];
+      newRevealed.add(posToReveal);
+      revealedLettersInHint.push(answer[posToReveal]);
     }
 
     setRevealedLetters(newRevealed);
+
+    // Update revealed letter counts
+    const newRevealedCounts = new Map(revealedLetterCounts);
+    revealedLettersInHint.forEach(letter => {
+      newRevealedCounts.set(letter, (newRevealedCounts.get(letter) || 0) + 1);
+    });
+    setRevealedLetterCounts(newRevealedCounts);
+    
+    // Apply grey state to jumbled letters based on letter content
+    const newRevealedJumbled = applyGreyStateToJumbled(jumbledLetters, newRevealedCounts);
+    setRevealedJumbledIndices(newRevealedJumbled);
+    
+    // Persist to localStorage
+    if (gameData?.id) {
+      const countsObj = Object.fromEntries(newRevealedCounts);
+      localStorage.setItem(`revealedLetterCounts:${gameData.id}`, JSON.stringify(countsObj));
+    }
+  };
+
+  // Helper function to apply grey state based on letter content
+  const applyGreyStateToJumbled = (letters: string[], counts: Map<string, number>): Set<number> => {
+    const greyIndices = new Set<number>();
+    const remainingCounts = new Map(counts);
+    
+    letters.forEach((letter, idx) => {
+      const count = remainingCounts.get(letter) || 0;
+      if (count > 0) {
+        greyIndices.add(idx);
+        remainingCounts.set(letter, count - 1);
+      }
+    });
+    
+    return greyIndices;
+  };
+
+  const handleBackClick = () => {
+    if (headerRef.current) {
+      transitions.fadeOut(headerRef.current, { duration: 200 });
+    }
+
+    if (questionRef.current) {
+      transitions.fadeOut(questionRef.current, { duration: 200, delay: 30 });
+    }
+
+    if (gifAreaRef.current) {
+      transitions.fadeOut(gifAreaRef.current, { duration: 200, delay: 60 });
+    }
+
+    if (answerBoxesContainerRef.current) {
+      transitions.fadeOut(answerBoxesContainerRef.current, { duration: 200, delay: 90 });
+    }
+
+    if (bottomBarRef.current) {
+      transitions.fadeOut(bottomBarRef.current, { duration: 200, delay: 120 });
+    }
+
+    setTimeout(() => {
+      onNavigate('landing');
+    }, 400);
   };
 
   const handleGuess = () => {
@@ -944,10 +1106,39 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    const cleanedGuess = guess.replace(/\s+/g, '').toUpperCase();
+    // Build the guess from answer boxes (selectedLetters + revealedLetters)
+    const answer = gameData.word.toUpperCase();
+    let guessFromBoxes = '';
+    let nonSpaceIndex = 0;
+    
+    for (let i = 0; i < answer.length; i++) {
+      if (answer[i] === ' ') {
+        guessFromBoxes += ' ';
+      } else {
+        // Check if this position is revealed (from hint)
+        if (revealedLetters.has(i)) {
+          guessFromBoxes += answer[i];
+        } else if (selectedLetters[nonSpaceIndex]) {
+          // Otherwise use selected letter
+          guessFromBoxes += selectedLetters[nonSpaceIndex];
+        } else {
+          // Empty position
+          guessFromBoxes += '_';
+        }
+        nonSpaceIndex++;
+      }
+    }
+
+    const cleanedGuess = guessFromBoxes.replace(/\s+/g, '').toUpperCase();
     lastSubmittedGuessRef.current = cleanedGuess;
 
-    // Track the guess attempt
+    // If guess contains underscores (incomplete), immediately mark as incorrect
+    if (cleanedGuess.includes('_')) {
+      setIsCorrect(false);
+      return;
+    }
+
+    // Track the guess attempt - only track complete guesses
     if (gameData.id && username) {
       window.parent.postMessage(
         {
@@ -1118,7 +1309,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   const renderAnswerBoxes = () => {
     if (!answer) return null;
-    const guessChars = guess.replace(/\s+/g, '').toUpperCase().split('');
 
     const words = answer.split(' ');
     const isSingleWord = words.length === 1;
@@ -1152,8 +1342,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       <div
         ref={answerBoxesRef}
         id="answer-boxes-container"
-        className={`mt-5 flex flex-wrap justify-center items-center gap-2 transition-all duration-500 ${isShaking ? 'animate-shake' : ''}`}
-        style={{ animation: isShaking ? 'shake 0.8s ease-in-out' : 'none' }}
+        className={`mt-5 flex flex-wrap justify-center items-center gap-2 transition-all duration-500`}
       >
         {words.map((word, wordIdx) => {
           // Get start position of this word in the original answer
@@ -1171,34 +1360,29 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               className={`flex gap-2 items-center justify-center ${isSingleWord ? 'flex-wrap' : 'flex-wrap'}`}
             >
               {wordChars.map((item, letterIdx) => {
+                const isWon = gameFlowState === 'won' || gameFlowState === 'completed';
                 const isRevealed = revealedLetters.has(item.originalIdx);
-                const guessChar = guessChars[item.nonSpaceIdx];
-
-                let displayChar = '';
-                if (isRevealed) {
-                  displayChar = item.char;
-                } else if (guessChar && isCorrect === null) {
-                  displayChar = guessChar;
-                } else if (isCorrect === true) {
-                  displayChar = item.char;
-                }
+                
+                // For jumbled system: show selected letters in order OR revealed letters
+                const selectedLetter = selectedLetters[item.nonSpaceIdx];
+                const displayChar = isWon ? item.char : (isRevealed ? item.char : (selectedLetter || ''));
+                const isEmpty = !isWon && !selectedLetter && !isRevealed;
 
                 let bgColor = 'bg-gray-200';
-                if (isCorrect === true) {
+                if (isWon) {
                   bgColor = 'bg-green-200';
-                } else if (isCorrect === false && guessChar) {
-                  bgColor = 'bg-red-200';
-                } else if (displayChar && isCorrect === null) {
-                  bgColor = 'bg-blue-100';
+                } else if (isRevealed || selectedLetter) {
+                  bgColor = 'bg-blue-100'; // Same color for both revealed and selected letters
                 }
 
                 return (
                   <div
                     key={`${wordIdx}-${letterIdx}`}
-                    className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden`}
+                    onClick={() => !isEmpty && !isRevealed && handleAnswerBoxClick(item.nonSpaceIdx)}
+                    className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden ${!isEmpty && !isWon && !isRevealed ? 'cursor-pointer hover:bg-red-100' : ''}`}
                   >
                     {/* Category icon watermark inside each box - only show when empty */}
-                    {categoryIcon && !displayChar && (
+                    {categoryIcon && isEmpty && (
                       <div 
                         className="absolute inset-0 flex items-center justify-center pointer-events-none"
                         style={{ 
@@ -1433,6 +1617,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       )}
       <style>
         {`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
         @keyframes confetti-fall {
           0% { 
             transform: translateY(-10px) rotate(0deg); 
@@ -1616,6 +1811,22 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         @keyframes modal-fade-in {
           0% { opacity: 0; transform: scale(0.9) translateY(-20px); }
           100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        @keyframes pulse-click {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
+
+        @keyframes button-glow {
+          0%, 100% { 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2), 0 0 8px 2px rgba(239, 68, 68, 0.3);
+            filter: brightness(1);
+          }
+          50% { 
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3), 0 0 20px 4px rgba(239, 68, 68, 0.6);
+            filter: brightness(1.15);
+          }
         }
 
         .animate-modal-fade-in {
@@ -1935,63 +2146,132 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       )}
       <div
         ref={answerBoxesContainerRef}
-        className="mt-1 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
+        className="mt-0.5 w-full max-w-4xl translate-y-4 transform opacity-0 transition-all duration-500"
       >
         {renderAnswerBoxes()}
       </div>
+
+      {/* Jumbled Letters Pool */}
+      {gameData && (gameFlowState === 'playing') && (
+        <div className="mt-2 w-full max-w-4xl">
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="flex flex-wrap justify-center gap-1.5 p-1.5 rounded-xl min-h-[60px]">
+              {jumbledLetters.map((letter, idx) => {
+                const isRevealed = revealedJumbledIndices.has(idx);
+                const isAvailable = availableIndices.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => !isRevealed && handleJumbledLetterClick(idx)}
+                    disabled={!isAvailable || isRevealed}
+                    className={`h-9 w-9 rounded-lg text-xl font-bold uppercase shadow-md transition-all duration-200 ${
+                      isRevealed
+                        ? 'cursor-not-allowed opacity-40 bg-gray-400'
+                        : isAvailable
+                          ? 'cursor-pointer hover:scale-110 hover:shadow-lg active:scale-95 animate-[pulse-click_2s_ease-in-out_infinite,button-glow_2s_ease-in-out_infinite]'
+                          : 'cursor-not-allowed opacity-30'
+                    }`}
+                    style={{
+                      backgroundColor: isRevealed ? '#9ca3af' : isAvailable ? colors.primary : '#9ca3af',
+                      color: 'white',
+                      fontFamily: '"Comic Sans MS", cursive, sans-serif',
+                      animationDelay: isAvailable ? `${(idx % 8) * 0.15}s` : '0s',
+                    }}
+                  >
+                    {letter}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Utility buttons row */}
+            <div className="flex gap-1.5 items-center">
+              <button
+                onClick={handleUndo}
+                disabled={selectionHistory.length === 0}
+                className="cursor-pointer rounded-full px-2.5 py-1 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ backgroundColor: '#4267B2' }}
+              >
+                <ComicText size={0.5} color="white">
+                  ↶ Undo
+                </ComicText>
+              </button>
+              <button
+                onClick={handleShuffle}
+                disabled={availableIndices.length === 0}
+                className="cursor-pointer rounded-full px-2.5 py-1 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ backgroundColor: '#f97316' }}
+              >
+                <ComicText size={0.5} color="white">
+                  🔄 Shuffle
+                </ComicText>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         ref={bottomBarRef}
-        className="mt-2 flex w-full max-w-4xl translate-y-4 transform items-center justify-center gap-4 rounded-full p-4 opacity-0 shadow-lg transition-all duration-500 max-sm:flex-col"
+        className="mt-2 flex w-full max-w-4xl translate-y-4 transform flex-col items-center justify-center gap-1.5 p-1.5 opacity-0 transition-all duration-500"
       >
-        <div className="flex gap-2">
+        {/* Main action buttons - prominent */}
+        <button
+          onClick={() => {
+            handleGuess();
+          }}
+          disabled={
+            !gameData || 
+            isLoading || 
+            gameFlowState !== 'playing' ||
+            (() => {
+              // Check if all non-revealed positions are filled
+              if (!gameData) return true;
+              const totalPositions = gameData.word.replace(/\s+/g, '').length;
+              for (let i = 0; i < totalPositions; i++) {
+                const originalIdx = gameData.word.split('').reduce((acc, char, idx) => {
+                  if (char !== ' ') acc.push(idx);
+                  return acc;
+                }, [] as number[])[i];
+                
+                // If position is not revealed and not selected, answer is incomplete
+                if (!revealedLetters.has(originalIdx) && !selectedLetters[i]) {
+                  return true;
+                }
+              }
+              return false;
+            })()
+          }
+          className="cursor-pointer rounded-full px-7 py-2.5 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ backgroundColor: colors.primary }}
+        >
+          <ComicText size={0.7} color="white">
+            GUESS IT!
+          </ComicText>
+        </button>
+        
+        {/* Secondary action buttons - smaller */}
+        <div className="flex gap-1.5 flex-wrap justify-center">
           <button
             onClick={handleWordHint}
-            disabled={!gameData || isLoading}
-            className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!gameData || isLoading || gameFlowState !== 'playing'}
+            className="cursor-pointer rounded-full px-3.5 py-1.5 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
             style={{ backgroundColor: colors.primary }}
           >
-            <ComicText size={0.6} color="white">
-              {gameData?.word.includes(' ') ? 'Phrase' : 'Word'} Hint
+            <ComicText size={0.55} color="white">
+              💡 {gameData?.word.includes(' ') ? 'Phrase' : 'Word'} Hint
             </ComicText>
           </button>
           <button
             onClick={handleGiveUp}
             disabled={!gameData || isLoading || gameFlowState !== 'playing'}
-            className="cursor-pointer rounded-full px-4 py-2 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer rounded-full px-3.5 py-1.5 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
             style={{ backgroundColor: '#ef4444' }}
           >
-            <ComicText size={0.6} color="white">
+            <ComicText size={0.55} color="white">
               🏳️ Give Up
             </ComicText>
           </button>
         </div>
-        <div className="mx-auto w-64">
-          <div className="mx-auto w-64">
-            <div className="rounded-full bg-gradient-to-r from-blue-500 to-purple-600 p-1 shadow-lg transition-shadow duration-300 hover:shadow-2xl">
-              <input
-                type="text"
-                placeholder="TYPE YOUR GUESS"
-                value={guess}
-                onChange={handleGuessChange}
-                onKeyDown={handleKeyDown}
-                className="w-full rounded-full bg-white px-5 py-2.5 text-center tracking-widest uppercase focus:ring-2 focus:ring-blue-400 focus:outline-none"
-                style={{ fontFamily: '"Comic Sans MS", cursive, sans-serif' }}
-              />
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            handleGuess();
-          }}
-          disabled={!gameData || isLoading || guess.length === 0}
-          className="cursor-pointer rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ backgroundColor: colors.primary }}
-        >
-          <ComicText size={0.65} color="white">
-            GUESS IT!
-          </ComicText>
-        </button>
       </div>
       {showSuccessPopup && (
         <div className="success-popup show">

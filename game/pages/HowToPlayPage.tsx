@@ -84,7 +84,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['🖼️', '👁️', '💡', '⌨️'].map((icon, index) => (
+              {['🖼️', '�', '💡', '🎯'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
@@ -99,9 +99,9 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
                     {
                       [
                         'Each puzzle has 4 GIFs, only the first one is revealed at the start.',
-                        'Stuck? Reveal more GIFs or letters as hints (each hint costs points).',
-                        'Type your guess, the fewer hints you use, the higher your score.',
-                        'Guess your answer and climb the leaderboard.',
+                        'Click the scrambled letter buttons to fill the answer boxes and form your guess.',
+                        'Stuck? Reveal more GIFs or use word/phrase hints (each hint costs points).',
+                        'Guess your answer when complete and climb the leaderboard!',
                       ][index]
                     }
                   </ComicText>

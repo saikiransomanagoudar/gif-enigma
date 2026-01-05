@@ -7,8 +7,10 @@ GIF Enigma is a word/phrase-guessing game where players interpret GIFs to uncove
 ## How to Play
 
 1. **View the GIF**: A GIF is displayed. Your task is to guess the word or phrase that the GIF represents or that it inspires.
-2. **Use Hints**: You can reveal up to 4 GIF hints. There’s also a word/phrase hint option that adjusts based on the answer’s length.
-3. **Scoring**: You start with 100 points. Points are deducted as hints are used.
+2. **Click Scrambled Letters**: The secret word/phrase is shown as scrambled letter buttons. Click them to fill the answer boxes in order.
+3. **Use Hints**: You can reveal up to 4 GIF hints. There's also a word/phrase hint option that reveals letters and greys out the corresponding scrambled buttons.
+4. **Undo & Shuffle**: Made a mistake? Use the undo button to remove letters, or shuffle to rearrange the scrambled letters.
+5. **Scoring**: You start with 100 points. Points are deducted as hints are used.
 
 ## Creator Mode
 
