@@ -268,6 +268,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               setRevealedJumbledIndices(new Set());
             }
           }
+          
+          // Also restore revealed letter positions
+          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${loadedGameData.id}`);
+          if (savedRevealedLetters) {
+            try {
+              const positions = JSON.parse(savedRevealedLetters);
+              setRevealedLetters(new Set(positions));
+            } catch (e) {
+              setRevealedLetters(new Set());
+            }
+          }
 
           addToPlayedGames(loadedGameData.id);
         } else {
@@ -345,6 +356,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               setRevealedJumbledIndices(new Set());
             }
           }
+          
+          // Also restore revealed letter positions
+          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${randomGameData.id}`);
+          if (savedRevealedLetters) {
+            try {
+              const positions = JSON.parse(savedRevealedLetters);
+              setRevealedLetters(new Set(positions));
+            } catch (e) {
+              setRevealedLetters(new Set());
+            }
+          }
 
           addToPlayedGames(randomGameData.id);
         } else {
@@ -369,20 +391,26 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             
             // Restore grey state for jumbled letters
             if (gameData?.word && jumbledLetters.length > 0) {
-              const savedRevealed = localStorage.getItem(`revealedLetterCounts:${gameData.id}`);
-              if (savedRevealed) {
-                try {
-                  const countsObj = JSON.parse(savedRevealed);
-                  const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
-                  setRevealedLetterCounts(countsMap);
-                  
-                  // Apply grey state to current scrambled jumbled letters
-                  const greyIndices = applyGreyStateToJumbled(jumbledLetters, countsMap);
-                  setRevealedJumbledIndices(greyIndices);
-                } catch (e) {
-                  console.error('Failed to restore grey state:', e);
+              // Compute revealed letter counts from revealed positions
+              const answer = gameData.word.toUpperCase();
+              const countsMap = new Map<string, number>();
+              
+              playerState.revealedLetters.forEach((pos: number) => {
+                if (pos < answer.length && answer[pos] !== ' ') {
+                  const letter = answer[pos];
+                  countsMap.set(letter, (countsMap.get(letter) || 0) + 1);
                 }
-              }
+              });
+              
+              setRevealedLetterCounts(countsMap);
+              
+              // Apply grey state to current scrambled jumbled letters
+              const greyIndices = applyGreyStateToJumbled(jumbledLetters, countsMap);
+              setRevealedJumbledIndices(greyIndices);
+              
+              // Save to localStorage for consistency
+              const countsObj = Object.fromEntries(countsMap);
+              localStorage.setItem(`revealedLetterCounts:${gameData.id}`, JSON.stringify(countsObj));
             }
           } else {
             setRevealedLetters(new Set());
@@ -1025,16 +1053,25 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    // Reveal letters strategically
+    // Reveal letters strategically - deterministic selection
     const toReveal = Math.min(revealCount, unrevealed.length);
     const newRevealed = new Set(revealedLetters);
     const revealedLettersInHint: string[] = [];
     
+    // Sort unrevealed positions to ensure consistent order for all players
+    unrevealed.sort((a, b) => a - b);
+    
+    // Select positions deterministically based on current hint number
+    const hintNumber = hintsUsedSoFar; // 0-based hint number
     for (let i = 0; i < toReveal; i++) {
-      const randomIdx = Math.floor(Math.random() * unrevealed.length);
-      const posToReveal = unrevealed.splice(randomIdx, 1)[0];
+      // Calculate which position to reveal based on hint number and letter index
+      // This ensures all players get the same letters revealed in the same order
+      const positionIndex = (hintNumber * revealCount + i) % unrevealed.length;
+      const posToReveal = unrevealed[positionIndex];
       newRevealed.add(posToReveal);
       revealedLettersInHint.push(answer[posToReveal]);
+      // Remove from unrevealed to avoid duplicate selection
+      unrevealed.splice(positionIndex, 1);
     }
 
     setRevealedLetters(newRevealed);
@@ -1054,6 +1091,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     if (gameData?.id) {
       const countsObj = Object.fromEntries(newRevealedCounts);
       localStorage.setItem(`revealedLetterCounts:${gameData.id}`, JSON.stringify(countsObj));
+      
+      // Also save revealedLetters positions
+      localStorage.setItem(`revealedLetters:${gameData.id}`, JSON.stringify(Array.from(newRevealed)));
     }
   };
 
