@@ -57,6 +57,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
   const lastSubmittedGuessRef = useRef<string>('');
   const [showIncorrectPopup, setShowIncorrectPopup] = useState(false);
+  const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const gifAreaRef = useRef<HTMLDivElement>(null);
@@ -127,12 +128,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     
     const letter = jumbledLetters[index];
     
-    // Find the next empty position (fill any empty slot, even if revealed)
+    // Find the next empty position (fill any empty slot, including revealed hint positions)
     const totalPositions = gameData.word.replace(/\s+/g, '').length;
     let targetPosition = -1;
     
     for (let i = 0; i < totalPositions; i++) {
-      // Just check if position is empty, don't skip revealed positions
+      // Find first empty position (user needs to fill ALL positions, even if hints are shown)
       if (!selectedLetters[i]) {
         targetPosition = i;
         break;
@@ -565,9 +566,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   useEffect(() => {
     if (isCorrect === true) {
       handleCorrectGuess();
+      setIsSubmittingGuess(false);
     }
     if (isCorrect === false) {
       handleIncorrectGuess();
+      setIsSubmittingGuess(false);
     }
   }, [isCorrect]);
 
@@ -1075,13 +1078,21 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   };
 
   const handleGuess = () => {
+    // Prevent multiple simultaneous submissions
+    if (isSubmittingGuess) {
+      return;
+    }
+    
+    setIsSubmittingGuess(true);
     setGuessCount((prevCount) => prevCount + 1);
 
     if (!gameData || !gameData.word) {
+      setIsSubmittingGuess(false);
       return;
     }
 
-    // Build the guess from answer boxes (selectedLetters + revealedLetters)
+    // Build the guess from answer boxes - ONLY use selectedLetters (what user clicked)
+    // revealedLetters are just visual hints, user must still click all letters
     const answer = gameData.word.toUpperCase();
     let guessFromBoxes = '';
     let nonSpaceIndex = 0;
@@ -1090,11 +1101,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       if (answer[i] === ' ') {
         guessFromBoxes += ' ';
       } else {
-        // Check if this position is revealed (from hint)
-        if (revealedLetters.has(i)) {
-          guessFromBoxes += answer[i];
-        } else if (selectedLetters[nonSpaceIndex]) {
-          // Otherwise use selected letter
+        // Use the selected letter (what user clicked) - revealed letters are just hints
+        if (selectedLetters[nonSpaceIndex]) {
           guessFromBoxes += selectedLetters[nonSpaceIndex];
         } else {
           // Empty position
@@ -1110,6 +1118,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     // If guess contains underscores (incomplete), immediately mark as incorrect
     if (cleanedGuess.includes('_')) {
       setIsCorrect(false);
+      setIsSubmittingGuess(false);
       return;
     }
 
@@ -2237,6 +2246,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             !gameData || 
             isLoading || 
             gameFlowState !== 'playing' ||
+            isSubmittingGuess ||
             (() => {
               // Check if all positions are filled with selected letters
               if (!gameData) return true;
