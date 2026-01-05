@@ -96,18 +96,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     
     const letter = jumbledLetters[index];
     
-    // Find the next empty position (not revealed by hint)
+    // Find the next empty position (fill any empty slot, even if revealed)
     const totalPositions = gameData.word.replace(/\s+/g, '').length;
     let targetPosition = -1;
     
     for (let i = 0; i < totalPositions; i++) {
-      // Check if this position is not revealed by hint
-      const originalIdx = gameData.word.split('').reduce((acc, char, idx) => {
-        if (char !== ' ') acc.push(idx);
-        return acc;
-      }, [] as number[])[i];
-      
-      if (!revealedLetters.has(originalIdx) && !selectedLetters[i]) {
+      // Just check if position is empty, don't skip revealed positions
+      if (!selectedLetters[i]) {
         targetPosition = i;
         break;
       }
@@ -252,6 +247,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setJumbledLetters(scrambled);
           setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
+          // Load revealed letter positions first from localStorage
+          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${loadedGameData.id}`);
+          if (savedRevealedLetters) {
+            try {
+              const positions = JSON.parse(savedRevealedLetters);
+              setRevealedLetters(new Set(positions));
+            } catch (e) {
+              setRevealedLetters(new Set());
+            }
+          }
+
           // Load revealed jumbled indices from localStorage
           const savedRevealed = localStorage.getItem(`revealedLetterCounts:${loadedGameData.id}`);
           if (savedRevealed) {
@@ -266,17 +272,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             } catch (e) {
               setRevealedLetterCounts(new Map());
               setRevealedJumbledIndices(new Set());
-            }
-          }
-          
-          // Also restore revealed letter positions
-          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${loadedGameData.id}`);
-          if (savedRevealedLetters) {
-            try {
-              const positions = JSON.parse(savedRevealedLetters);
-              setRevealedLetters(new Set(positions));
-            } catch (e) {
-              setRevealedLetters(new Set());
             }
           }
 
@@ -340,6 +335,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setJumbledLetters(scrambled);
           setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
+          // Load revealed letter positions first from localStorage
+          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${randomGameData.id}`);
+          if (savedRevealedLetters) {
+            try {
+              const positions = JSON.parse(savedRevealedLetters);
+              setRevealedLetters(new Set(positions));
+            } catch (e) {
+              setRevealedLetters(new Set());
+            }
+          } else {
+            setRevealedLetters(new Set());
+          }
+
           // Load revealed jumbled indices from localStorage
           const savedRevealed = localStorage.getItem(`revealedLetterCounts:${randomGameData.id}`);
           if (savedRevealed) {
@@ -354,17 +362,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             } catch (e) {
               setRevealedLetterCounts(new Map());
               setRevealedJumbledIndices(new Set());
-            }
-          }
-          
-          // Also restore revealed letter positions
-          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${randomGameData.id}`);
-          if (savedRevealedLetters) {
-            try {
-              const positions = JSON.parse(savedRevealedLetters);
-              setRevealedLetters(new Set(positions));
-            } catch (e) {
-              setRevealedLetters(new Set());
             }
           }
 
@@ -1403,9 +1400,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 const isWon = gameFlowState === 'won' || gameFlowState === 'completed';
                 const isRevealed = revealedLetters.has(item.originalIdx);
                 
-                // For jumbled system: show selected letters in order OR revealed letters
+                // For jumbled system: show selected letters OR revealed letters
                 const selectedLetter = selectedLetters[item.nonSpaceIdx];
-                const displayChar = isWon ? item.char : (isRevealed ? item.char : (selectedLetter || ''));
+                const revealedChar = isRevealed ? item.char : '';
                 const isEmpty = !isWon && !selectedLetter && !isRevealed;
 
                 let bgColor = 'bg-gray-200';
@@ -1418,8 +1415,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                 return (
                   <div
                     key={`${wordIdx}-${letterIdx}`}
-                    onClick={() => !isEmpty && !isRevealed && handleAnswerBoxClick(item.nonSpaceIdx)}
-                    className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden ${!isEmpty && !isWon && !isRevealed ? 'cursor-pointer hover:bg-red-100' : ''}`}
+                    onClick={() => !isEmpty && !isWon && !isRevealed && handleAnswerBoxClick(item.nonSpaceIdx)}
+                    className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} transition-all duration-500 overflow-hidden ${!isEmpty && !isWon && !isRevealed && selectedLetter ? 'cursor-pointer hover:bg-red-100' : ''}`}
                   >
                     {/* Category icon watermark inside each box - only show when empty */}
                     {categoryIcon && isEmpty && (
@@ -1435,10 +1432,52 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         {categoryIcon}
                       </div>
                     )}
-                    {/* Letter display on top of watermark */}
-                    <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", color: "#2563EB", fontWeight: "bold", letterSpacing: "0.5px", position: 'relative', zIndex: 1 }}>
-                      {displayChar}
-                    </div>
+                    {/* Revealed letter (transparent background layer) */}
+                    {revealedChar && (
+                      <div 
+                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                        style={{ 
+                          fontFamily: "Comic Sans MS, Comic Sans, cursive", 
+                          color: "#2563EB", 
+                          fontWeight: "bold", 
+                          letterSpacing: "0.5px",
+                          opacity: selectedLetter ? 0.25 : 1,
+                          zIndex: 1
+                        }}
+                      >
+                        {revealedChar}
+                      </div>
+                    )}
+                    {/* Selected letter (foreground layer) - shows on top */}
+                    {selectedLetter && (
+                      <div 
+                        style={{ 
+                          fontFamily: "Comic Sans MS, Comic Sans, cursive", 
+                          color: "#2563EB", 
+                          fontWeight: "bold", 
+                          letterSpacing: "0.5px", 
+                          position: 'relative', 
+                          zIndex: 2 
+                        }}
+                      >
+                        {selectedLetter}
+                      </div>
+                    )}
+                    {/* Won state - show correct answer */}
+                    {isWon && (
+                      <div 
+                        style={{ 
+                          fontFamily: "Comic Sans MS, Comic Sans, cursive", 
+                          color: "#2563EB", 
+                          fontWeight: "bold", 
+                          letterSpacing: "0.5px", 
+                          position: 'relative', 
+                          zIndex: 3 
+                        }}
+                      >
+                        {item.char}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2264,17 +2303,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             isLoading || 
             gameFlowState !== 'playing' ||
             (() => {
-              // Check if all non-revealed positions are filled
+              // Check if all positions are filled with selected letters
               if (!gameData) return true;
               const totalPositions = gameData.word.replace(/\s+/g, '').length;
               for (let i = 0; i < totalPositions; i++) {
-                const originalIdx = gameData.word.split('').reduce((acc, char, idx) => {
-                  if (char !== ' ') acc.push(idx);
-                  return acc;
-                }, [] as number[])[i];
-                
-                // If position is not revealed and not selected, answer is incomplete
-                if (!revealedLetters.has(originalIdx) && !selectedLetters[i]) {
+                if (!selectedLetters[i]) {
                   return true;
                 }
               }
