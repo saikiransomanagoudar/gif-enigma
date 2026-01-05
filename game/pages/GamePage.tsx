@@ -27,8 +27,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const [jumbledLetters, setJumbledLetters] = useState<string[]>([]);
   const [selectedLetters, setSelectedLetters] = useState<string[]>([]);
   const [availableIndices, setAvailableIndices] = useState<number[]>([]);
-  const [revealedJumbledIndices, setRevealedJumbledIndices] = useState<Set<number>>(new Set());
-  const [revealedLetterCounts, setRevealedLetterCounts] = useState<Map<string, number>>(new Map());
   const [selectionHistory, setSelectionHistory] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,14 +77,47 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
-  // Scramble array function
+  // Scramble array function with displacement guarantee
   const scrambleArray = (arr: string[]) => {
-    const shuffled = [...arr];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    if (arr.length <= 1) return [...arr];
+    
+    let bestShuffle = [...arr];
+    let minInPlace = arr.length;
+    const maxAttempts = 50;
+    
+    // Calculate how many letters can stay in place (max 20% for arrays with 5+ items)
+    const maxInPlace = arr.length >= 5 ? Math.floor(arr.length * 0.2) : 
+                       arr.length >= 3 ? 1 : 0;
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const shuffled = [...arr];
+      
+      // Fisher-Yates shuffle
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      
+      // Count letters in original position
+      let inPlace = 0;
+      for (let i = 0; i < arr.length; i++) {
+        if (shuffled[i] === arr[i]) inPlace++;
+      }
+      
+      // If this shuffle is good enough, use it
+      if (inPlace <= maxInPlace) {
+        return shuffled;
+      }
+      
+      // Track best shuffle so far
+      if (inPlace < minInPlace) {
+        minInPlace = inPlace;
+        bestShuffle = [...shuffled];
+      }
     }
-    return shuffled;
+    
+    // Return best shuffle found (even if not perfect)
+    return bestShuffle;
   };
 
   // Handle clicking on jumbled letter
@@ -194,10 +225,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     });
     
     setJumbledLetters(newJumbled);
-    
-    // Re-apply grey state based on letter content
-    const newRevealedJumbled = applyGreyStateToJumbled(newJumbled, revealedLetterCounts);
-    setRevealedJumbledIndices(newRevealedJumbled);
   };
 
   useEffect(() => {
@@ -247,7 +274,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setJumbledLetters(scrambled);
           setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
-          // Load revealed letter positions first from localStorage
+          // Load revealed letter positions from localStorage
           const savedRevealedLetters = localStorage.getItem(`revealedLetters:${loadedGameData.id}`);
           if (savedRevealedLetters) {
             try {
@@ -255,23 +282,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
               setRevealedLetters(new Set(positions));
             } catch (e) {
               setRevealedLetters(new Set());
-            }
-          }
-
-          // Load revealed jumbled indices from localStorage
-          const savedRevealed = localStorage.getItem(`revealedLetterCounts:${loadedGameData.id}`);
-          if (savedRevealed) {
-            try {
-              const countsObj = JSON.parse(savedRevealed);
-              const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
-              setRevealedLetterCounts(countsMap);
-              
-              // Apply grey state to scrambled jumbled letters
-              const greyIndices = applyGreyStateToJumbled(scrambled, countsMap);
-              setRevealedJumbledIndices(greyIndices);
-            } catch (e) {
-              setRevealedLetterCounts(new Map());
-              setRevealedJumbledIndices(new Set());
             }
           }
 
@@ -335,7 +345,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setJumbledLetters(scrambled);
           setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
-          // Load revealed letter positions first from localStorage
+          // Load revealed letter positions from localStorage
           const savedRevealedLetters = localStorage.getItem(`revealedLetters:${randomGameData.id}`);
           if (savedRevealedLetters) {
             try {
@@ -346,23 +356,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             }
           } else {
             setRevealedLetters(new Set());
-          }
-
-          // Load revealed jumbled indices from localStorage
-          const savedRevealed = localStorage.getItem(`revealedLetterCounts:${randomGameData.id}`);
-          if (savedRevealed) {
-            try {
-              const countsObj = JSON.parse(savedRevealed);
-              const countsMap = new Map(Object.entries(countsObj).map(([k, v]) => [k, v as number]));
-              setRevealedLetterCounts(countsMap);
-              
-              // Apply grey state to scrambled jumbled letters
-              const greyIndices = applyGreyStateToJumbled(scrambled, countsMap);
-              setRevealedJumbledIndices(greyIndices);
-            } catch (e) {
-              setRevealedLetterCounts(new Map());
-              setRevealedJumbledIndices(new Set());
-            }
           }
 
           addToPlayedGames(randomGameData.id);
@@ -385,30 +378,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
           if (Array.isArray(playerState.revealedLetters) && playerState.revealedLetters.length > 0) {
             setRevealedLetters(new Set(playerState.revealedLetters));
-            
-            // Restore grey state for jumbled letters
-            if (gameData?.word && jumbledLetters.length > 0) {
-              // Compute revealed letter counts from revealed positions
-              const answer = gameData.word.toUpperCase();
-              const countsMap = new Map<string, number>();
-              
-              playerState.revealedLetters.forEach((pos: number) => {
-                if (pos < answer.length && answer[pos] !== ' ') {
-                  const letter = answer[pos];
-                  countsMap.set(letter, (countsMap.get(letter) || 0) + 1);
-                }
-              });
-              
-              setRevealedLetterCounts(countsMap);
-              
-              // Apply grey state to current scrambled jumbled letters
-              const greyIndices = applyGreyStateToJumbled(jumbledLetters, countsMap);
-              setRevealedJumbledIndices(greyIndices);
-              
-              // Save to localStorage for consistency
-              const countsObj = Object.fromEntries(countsMap);
-              localStorage.setItem(`revealedLetterCounts:${gameData.id}`, JSON.stringify(countsObj));
-            }
           } else {
             setRevealedLetters(new Set());
           }
@@ -1072,42 +1041,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
 
     setRevealedLetters(newRevealed);
-
-    // Update revealed letter counts
-    const newRevealedCounts = new Map(revealedLetterCounts);
-    revealedLettersInHint.forEach(letter => {
-      newRevealedCounts.set(letter, (newRevealedCounts.get(letter) || 0) + 1);
-    });
-    setRevealedLetterCounts(newRevealedCounts);
     
-    // Apply grey state to jumbled letters based on letter content
-    const newRevealedJumbled = applyGreyStateToJumbled(jumbledLetters, newRevealedCounts);
-    setRevealedJumbledIndices(newRevealedJumbled);
-    
-    // Persist to localStorage
+    // Persist revealed letters to localStorage
     if (gameData?.id) {
-      const countsObj = Object.fromEntries(newRevealedCounts);
-      localStorage.setItem(`revealedLetterCounts:${gameData.id}`, JSON.stringify(countsObj));
-      
-      // Also save revealedLetters positions
       localStorage.setItem(`revealedLetters:${gameData.id}`, JSON.stringify(Array.from(newRevealed)));
     }
-  };
-
-  // Helper function to apply grey state based on letter content
-  const applyGreyStateToJumbled = (letters: string[], counts: Map<string, number>): Set<number> => {
-    const greyIndices = new Set<number>();
-    const remainingCounts = new Map(counts);
-    
-    letters.forEach((letter, idx) => {
-      const count = remainingCounts.get(letter) || 0;
-      if (count > 0) {
-        greyIndices.add(idx);
-        remainingCounts.set(letter, count - 1);
-      }
-    });
-    
-    return greyIndices;
   };
 
   const handleBackClick = () => {
@@ -2236,22 +2174,19 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           <div className="flex flex-col items-center gap-1.5">
             <div className="flex flex-wrap justify-center gap-1.5 p-1.5 rounded-xl min-h-[60px]">
               {jumbledLetters.map((letter, idx) => {
-                const isRevealed = revealedJumbledIndices.has(idx);
                 const isAvailable = availableIndices.includes(idx);
                 return (
                   <button
                     key={idx}
-                    onClick={() => !isRevealed && handleJumbledLetterClick(idx)}
-                    disabled={!isAvailable || isRevealed}
+                    onClick={() => handleJumbledLetterClick(idx)}
+                    disabled={!isAvailable}
                     className={`h-9 w-9 rounded-lg text-xl font-bold uppercase shadow-md transition-all duration-200 ${
-                      isRevealed
-                        ? 'cursor-not-allowed opacity-40 bg-gray-400'
-                        : isAvailable
-                          ? 'cursor-pointer hover:scale-110 hover:shadow-lg active:scale-95 animate-[pulse-click_2s_ease-in-out_infinite,button-glow_2s_ease-in-out_infinite]'
-                          : 'cursor-not-allowed opacity-30'
+                      isAvailable
+                        ? 'cursor-pointer hover:scale-110 hover:shadow-lg active:scale-95 animate-[pulse-click_2s_ease-in-out_infinite,button-glow_2s_ease-in-out_infinite]'
+                        : 'cursor-not-allowed opacity-30'
                     }`}
                     style={{
-                      backgroundColor: isRevealed ? '#9ca3af' : isAvailable ? colors.primary : '#9ca3af',
+                      backgroundColor: isAvailable ? colors.primary : '#9ca3af',
                       color: 'white',
                       fontFamily: '"Comic Sans MS", cursive, sans-serif',
                       animationDelay: isAvailable ? `${(idx % 8) * 0.15}s` : '0s',
