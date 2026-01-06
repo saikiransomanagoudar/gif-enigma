@@ -902,34 +902,12 @@ export async function getGameStatistics(
     const totalGuesses = totalGuessesStr ? parseInt(totalGuessesStr) : 0;
     const playersCount = await context.redis.zCard(`gamePlayers:${gameId}`);
 
-    // Normalize the correct answer for comparison
-    const normalizeAnswer = (str: string) => 
-      str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
-    const normalizedCorrectAnswer = normalizeAnswer(gameData.word);
-
-    // Get accepted synonyms and normalize them
-    const acceptedSynonyms: string[] = gameData.acceptedSynonyms 
-      ? JSON.parse(gameData.acceptedSynonyms) 
-      : [];
-    const normalizedSynonyms = acceptedSynonyms.map(syn => normalizeAnswer(syn));
-    const allCorrectAnswers = [normalizedCorrectAnswer, ...normalizedSynonyms];
-
-    // Get the actual number of players who completed the game (unique winners)
-    const completedPlayersCount = await context.redis.zCard(`gameCompletions:${gameId}`);
-
-    // Format the guesses data
     const guesses: GuessData[] = [];
     
     for (const item of guessesWithScores) {
       // Redis zRange with reverse returns items with {member, score} structure
       if (item && typeof item === 'object' && 'member' in item && 'score' in item) {
-        let count = item.score;
-        
-        // For correct answers (including synonyms), use the number of unique winners instead of raw guess count
-        if (allCorrectAnswers.includes(item.member)) {
-          count = completedPlayersCount || count; // Fallback to raw count if completedPlayersCount not available
-        }
-        
+        const count = item.score;
         const percentage = totalGuesses > 0 ? (count / totalGuesses) * 100 : 0;
         
         guesses.push({
