@@ -117,17 +117,18 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   };
 
   return (
-    <div className={`flex w-full flex-col gap-6 p-6 md:p-10 pb-24 rounded-lg ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
+    <div className={`flex w-full flex-col h-screen pb-20 ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
       <button
         ref={backButtonRef}
         onClick={handleBackClick}
-        className={`sm:w-[12%] max-sm:w-[22%] lg:w-[7%] ${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+        className="w-auto left-4 flex cursor-pointer items-center rounded-full border-none pl-3 pr-4 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
+        style={{ backgroundColor: '#FF4500' }}
       >
         <span className="mr-1 text-sm text-white">👈</span>
         <ComicText size={0.5} color="white">Back</ComicText>
       </button>
 
-      <div className="flex flex-col items-center mt-[-66px]">
+      <div className="flex flex-col items-center px-6 md:px-10 mb-4">
         <span className="text-4xl">🏆</span>
         <h2 className="text-2xl font-bold text-[#FF4500]">
           <ComicText>Top Players</ComicText>
@@ -135,18 +136,19 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center p-4">
+        <div className="flex items-center justify-center p-4 flex-1">
           <ComicText>Loading Leaderboard Data...</ComicText>
         </div>
       ) : (
-        <div className="rounded-lg shadow-md overflow-hidden">
-          <div className="grid font-bold dark:bg-gray-800 py-4 mt-[-12px] gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr 120px' }}>
-            <div className="flex justify-start pl-2"><ComicText>Rank</ComicText></div>
-            <div className="flex justify-center"><ComicText>Player</ComicText></div>
-            <div className="flex justify-end pr-2"><ComicText>Score</ComicText></div>
-          </div>
+        <div className="flex-1 overflow-hidden px-6 md:px-10 flex flex-col min-h-0">
+          <div className="rounded-lg shadow-md overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="grid font-bold dark:bg-gray-800 py-4 gap-4 sm:gap-6 md:gap-8 lg:gap-10 flex-shrink-0" style={{ gridTemplateColumns: '50px 1fr 120px' }}>
+              <div className="flex justify-start pl-2"><ComicText>Rank</ComicText></div>
+              <div className="flex justify-center"><ComicText>Player</ComicText></div>
+              <div className="flex justify-end pr-2"><ComicText>Score</ComicText></div>
+            </div>
 
-          <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+          <div className="overflow-y-auto custom-scrollbar flex-1 min-h-0">
           {leaderboard.length > 0 ? (
             leaderboard.map((entry, index) => {
               const isCurrentUser = entry.username === currentUsername;
@@ -193,6 +195,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
               <ComicText>No leaderboard data available yet</ComicText>
             </div>
           )}
+          </div>
           </div>
         </div>
       )}
