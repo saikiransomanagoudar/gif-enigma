@@ -10,7 +10,7 @@ const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length
 
 // Weighted random selection: 70% word, 30% phrase
 const pickInputType = (): 'word' | 'phrase' => {
-  return Math.random() < 0.7 ? 'word' : 'phrase';
+  return Math.random() < 0.5 ? 'word' : 'phrase';
 };
 
 // Fallback data for when API is rate limited
@@ -149,6 +149,11 @@ Devvit.addSchedulerJob({
     }
 
     const word = recommendations[0];
+    
+    // Determine actual input type based on the word content
+    // This ensures the question text matches the actual content type
+    const actualInputType = word.includes(' ') ? 'phrase' : 'word';
+    inputType = actualInputType;
     
     // Try API for synonyms
     try {
