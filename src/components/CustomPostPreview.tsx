@@ -118,7 +118,7 @@ export const CustomPostPreview = ({
         if (result.hasPlayedAll) {
           errorMessage = '🎉 Amazing! You\'ve played all available games! Check back later for new ones.';
         } else if (result.error && result.error.includes('No games available yet')) {
-          errorMessage = '🎨 No games yet! Click "Let\'s Build" to create the first game.';
+          errorMessage = '🎨 No games available! Click "Let\'s Build" to create the game.';
         } else if (result.error) {
           errorMessage = result.error;
         } else {
