@@ -92,6 +92,7 @@ export interface LeaderboardEntry {
   bestScore?: number;
   totalScore?: number;
   averageScore?: number;
+  snoovatarUrl?: string;
 }
 
 export interface PostCommentResponse {

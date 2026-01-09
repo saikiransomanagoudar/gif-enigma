@@ -14,10 +14,12 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   const [userStats, setUserStats] = useState<{ totalScore: number; rank: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const backButtonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const subtitleRef = useRef<HTMLDivElement>(null);
+  const userRowRef = useRef<HTMLDivElement>(null);
 
   const fetchLeaderboard = () => {
     window.parent.postMessage({ type: 'GET_TOP_SCORES' }, '*');
@@ -44,17 +46,18 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
 
       if (msg?.type === 'GET_TOP_SCORES_RESULT') {
         if (msg.success && Array.isArray(msg.scores)) {
-          const top10 = msg.scores
+          const top50 = msg.scores
             .sort((a: { bestScore: number }, b: { bestScore: number }) => b.bestScore - a.bestScore)
-            .slice(0, 10);
+            .slice(0, 50);
 
-          setLeaderboard(top10);
+          setLeaderboard(top50);
         }
         setIsLoading(false);
       }
 
       if (msg?.type === 'GET_CURRENT_USER_RESULT' && msg.success && msg.user?.username) {
         const username = msg.user.username;
+        setCurrentUsername(username);
         window.parent.postMessage({ type: 'GET_USER_STATS', data: { username } }, '*');
       }
 
@@ -102,6 +105,17 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
     }, 450);
   };
 
+  const handleScrollToUser = () => {
+    if (userRowRef.current) {
+      userRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add pulse animation
+      userRowRef.current.classList.add('pulse-highlight');
+      setTimeout(() => {
+        userRowRef.current?.classList.remove('pulse-highlight');
+      }, 2000);
+    }
+  };
+
   return (
     <div className={`flex w-full flex-col gap-6 p-6 md:p-10 pb-24 rounded-lg ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
       <button
@@ -113,7 +127,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
         <ComicText size={0.5} color="white">Back</ComicText>
       </button>
 
-      <div className="flex flex-col items-center py-4 mt-[-66px]">
+      <div className="flex flex-col items-center mt-[-66px]">
         <span className="text-4xl">🏆</span>
         <h2 className="text-2xl font-bold text-[#FF4500]">
           <ComicText>Top Players</ComicText>
@@ -126,34 +140,53 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
         </div>
       ) : (
         <div className="rounded-lg shadow-md overflow-hidden">
-          <div className="grid font-bold dark:bg-gray-800 py-4 mt-[-12px] gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr auto' }}>
+          <div className="grid font-bold dark:bg-gray-800 py-4 mt-[-12px] gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr 120px' }}>
             <div className="flex justify-start pl-2"><ComicText>Rank</ComicText></div>
-            <div className="flex justify-start"><ComicText>Player</ComicText></div>
-            <div className="flex justify-end pr-2"><ComicText>Total Score</ComicText></div>
+            <div className="flex justify-center"><ComicText>Player</ComicText></div>
+            <div className="flex justify-end pr-2"><ComicText>Score</ComicText></div>
           </div>
 
           {leaderboard.length > 0 ? (
-            leaderboard.map((entry, index) => (
-              <div key={index} className="grid py-3 border-b dark:border-gray-700 items-center gap-4 sm:gap-6 md:gap-8 lg:gap-10" style={{ gridTemplateColumns: '50px 1fr auto' }}>
-                <div className="flex justify-start items-center pl-2">
-                  {index === 0 ? (
-                    <span className="text-2xl leading-none inline-block w-5 text-center">🥇</span>
-                  ) : index === 1 ? (
-                    <span className="text-2xl leading-none inline-block w-5 text-center">🥈</span>
-                  ) : index === 2 ? (
-                    <span className="text-2xl leading-none inline-block w-5 text-center">🥉</span>
-                  ) : (
-                    <ComicText><span className="font-semibold inline-block w-5 text-center pl-2">{index + 1}</span></ComicText>
-                  )}
+            leaderboard.map((entry, index) => {
+              const isCurrentUser = entry.username === currentUsername;
+              return (
+                <div 
+                  key={index} 
+                  ref={isCurrentUser ? userRowRef : null}
+                  className={`grid py-3 border-b dark:border-gray-700 items-center gap-4 sm:gap-6 md:gap-8 lg:gap-10 transition-all duration-300 ${
+                    isCurrentUser ? (isDarkMode ? 'bg-orange-900/30 border-orange-500/50' : 'bg-orange-100 border-orange-300') : ''
+                  }`} 
+                  style={{ gridTemplateColumns: '50px 1fr 120px' }}
+                >
+                  <div className="flex justify-start items-center pl-2">
+                    {index === 0 ? (
+                      <span className="text-2xl leading-none inline-block w-5 text-center">🥇</span>
+                    ) : index === 1 ? (
+                      <span className="text-2xl leading-none inline-block w-5 text-center">🥈</span>
+                    ) : index === 2 ? (
+                      <span className="text-2xl leading-none inline-block w-5 text-center">🥉</span>
+                    ) : (
+                      <ComicText><span className="font-semibold inline-block w-5 text-center pl-2">{index + 1}</span></ComicText>
+                    )}
+                  </div>
+                  <div className="flex justify-start items-center gap-2 min-w-0">
+                    {entry.snoovatarUrl ? (
+                      <img 
+                        src={entry.snoovatarUrl} 
+                        alt={`${entry.username}'s avatar`}
+                        className="w-8 h-8 flex-shrink-0"
+                      />
+                    ) : (
+                      <span className="text-xl w-8 h-8 flex items-center justify-center flex-shrink-0">👤</span>
+                    )}
+                    <ComicText><span className={`max-sm:text-xs ${index < 3 ? 'text-base font-semibold' : 'text-sm'} truncate`}>{entry.username}</span></ComicText>
+                  </div>
+                  <div className="flex justify-end pr-2">
+                    <ComicText><span className={`font-bold text-green-600 ${index < 3 ? 'text-base' : 'text-sm'}`}>{entry.bestScore.toLocaleString()}</span></ComicText>
+                  </div>
                 </div>
-                <div className="flex justify-start">
-                  <ComicText><span className={`max-sm:text-sm ${index < 3 ? 'text-lg font-semibold' : 'text-base'}`}>{entry.username}</span></ComicText>
-                </div>
-                <div className="flex justify-end pr-2">
-                  <ComicText><span className="font-bold text-green-600">{entry.bestScore.toLocaleString()}</span></ComicText>
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="p-4 text-center text-gray-500">
               <ComicText>No leaderboard data available yet</ComicText>
@@ -163,13 +196,23 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       )}
 
       {/* Sticky Bottom Bar for User Stats */}
-      <div className={`fixed bottom-0 left-0 right-0 ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-300"} border-t-2 shadow-lg z-50`}>
-        <div className="flex items-center justify-between px-3 py-3 max-w-full gap-2">
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+      <div 
+        className={`fixed bottom-0 left-0 right-0 ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-300"} border-2 shadow-lg z-50 rounded-2xl m-2 ${
+          userStats && userStats.rank > 0 && userStats.rank <= 50
+            ? 'cursor-pointer hover:opacity-90 active:scale-[0.98] transition-all duration-150 hover:shadow-xl active:shadow-md' 
+            : ''
+        }`}
+        onClick={userStats && userStats.rank > 0 && userStats.rank <= 50 ? handleScrollToUser : undefined}
+      >
+        <div className="flex items-center justify-between px-4 py-3 max-w-full gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-base sm:text-lg">📊</span>
             <ComicText size={0.70}>
               <span className={`${isDarkMode ? "text-gray-300" : "text-gray-700"} whitespace-nowrap`}>Your Stats</span>
             </ComicText>
+            {userStats && userStats.rank > 0 && userStats.rank <= 50 && (
+              <span className="text-sm opacity-60">👆</span>
+            )}
           </div>
           {userStats ? (
             <div className="flex items-center gap-2 sm:gap-4 flex-shrink overflow-x-auto scrollbar-hide">

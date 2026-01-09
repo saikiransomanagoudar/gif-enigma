@@ -810,6 +810,7 @@ Devvit.addCustomPostType({
               const scores = result.leaderboard.map((entry) => ({
                 username: entry.username,
                 bestScore: entry.score || 0,
+                snoovatarUrl: entry.snoovatarUrl,
               }));
 
               postMessage({

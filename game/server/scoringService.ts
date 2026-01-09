@@ -360,6 +360,15 @@ export async function getCumulativeLeaderboard(
         return { success: false, error: 'Invalid user data format' };
       }
 
+      // Fetch Snoovatar URL
+      let snoovatarUrl: string | undefined;
+      try {
+        snoovatarUrl = await context.reddit.getSnoovatarUrl(username);
+      } catch (error) {
+        console.error(`Failed to fetch Snoovatar for ${username}:`, error);
+        // Continue without avatar if fetch fails
+      }
+
       leaderboard.push({
         rank: leaderboard.length + 1,
         username: username,
@@ -368,6 +377,7 @@ export async function getCumulativeLeaderboard(
         gamesWon: Number(userStats.gamesWon || 0),
         gamesCreated: Number(userStats.gamesCreated || 0),
         bestScore: Number(userStats.bestScore || 0),
+        snoovatarUrl: snoovatarUrl,
         averageScore: Number(userStats.averageScore || 0),
         timestamp: Number(userStats.lastPlayed || 0),
       });
