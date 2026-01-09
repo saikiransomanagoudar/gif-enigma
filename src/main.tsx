@@ -796,7 +796,7 @@ Devvit.addCustomPostType({
 
           case 'GET_TOP_SCORES':
             try {
-              const result = await getCumulativeLeaderboard({ limit: 10 }, context);
+              const result = await getCumulativeLeaderboard({ limit: 50 }, context);
 
               if (!result.success || !result.leaderboard) {
                 postMessage({

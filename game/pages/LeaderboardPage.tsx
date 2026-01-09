@@ -146,6 +146,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
             <div className="flex justify-end pr-2"><ComicText>Score</ComicText></div>
           </div>
 
+          <div className="overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 280px)' }}>
           {leaderboard.length > 0 ? (
             leaderboard.map((entry, index) => {
               const isCurrentUser = entry.username === currentUsername;
@@ -174,7 +175,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
                       <img 
                         src={entry.snoovatarUrl} 
                         alt={`${entry.username}'s avatar`}
-                        className="w-8 h-8 flex-shrink-0"
+                        className="w-8 h-8 flex-shrink-0 object-contain"
                       />
                     ) : (
                       <span className="text-xl w-8 h-8 flex items-center justify-center flex-shrink-0">👤</span>
@@ -192,6 +193,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
               <ComicText>No leaderboard data available yet</ComicText>
             </div>
           )}
+          </div>
         </div>
       )}
 
