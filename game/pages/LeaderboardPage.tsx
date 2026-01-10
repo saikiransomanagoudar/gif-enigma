@@ -117,18 +117,19 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   };
 
   return (
-    <div className={`flex w-full flex-col h-screen pb-20 ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
-      <button
-        ref={backButtonRef}
-        onClick={handleBackClick}
-        className="w-auto left-4 flex cursor-pointer items-center rounded-full border-none pl-3 pr-4 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-        style={{ backgroundColor: '#FF4500' }}
-      >
-        <span className="mr-1 text-sm text-white">👈</span>
-        <ComicText size={0.5} color="white">Back</ComicText>
-      </button>
+    <div className={`flex w-full flex-col gap-6 h-screen pb-20 ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
+      <div className="px-6 md:px-10 pt-6">
+        <button
+          ref={backButtonRef}
+          onClick={handleBackClick}
+          className={`sm:w-[12%] max-sm:w-[22%] lg:w-[7%] ${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+        >
+          <span className="mr-1 text-sm text-white">👈</span>
+          <ComicText size={0.5} color="white">Back</ComicText>
+        </button>
+      </div>
 
-      <div className="flex flex-col items-center px-6 md:px-10 mb-4">
+      <div className="flex flex-col items-center px-6 md:px-10">
         <span className="text-4xl">🏆</span>
         <h2 className="text-2xl font-bold text-[#FF4500]">
           <ComicText>Top Players</ComicText>
