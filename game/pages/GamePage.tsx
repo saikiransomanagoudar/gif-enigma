@@ -1122,7 +1122,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       return;
     }
 
-    // Track the guess attempt - only track complete guesses
+    // Track the decode attempt - only track complete attempts
     if (gameData.id && username) {
       window.parent.postMessage(
         {
@@ -1137,7 +1137,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       );
     }
 
-    // Use server-side validation to check if guess is correct
+    // Use server-side validation to check if attempt is correct
     // This will handle exact matches AND semantically correct synonyms with same length
     window.parent.postMessage(
       {
@@ -2263,7 +2263,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           style={{ backgroundColor: colors.primary }}
         >
           <ComicText size={0.7} color="white">
-            GUESS IT!
+            DECODE IT!
           </ComicText>
         </button>
         

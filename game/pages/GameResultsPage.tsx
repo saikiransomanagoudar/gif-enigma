@@ -501,7 +501,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               {statistics.totalGuesses}
             </ComicText>
             <ComicText size={0.55} color={colors.textSecondary}>
-              Total Guesses
+              Total Attempts
             </ComicText>
           </div>
         </div>
@@ -510,21 +510,21 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         <div className="rounded-xl bg-white/5 p-6 backdrop-blur-sm dark:bg-gray-800/20">
           <div className="mb-4">
             <ComicText size={0.9} color={colors.primary}>
-              Guesses made
+              Decode attempts
             </ComicText>
           </div>
 
           {statistics.guesses.length === 0 ? (
             <div className="py-8 text-center">
               <ComicText size={0.7} color={colors.textSecondary}>
-                No guesses yet.
+                No attempts yet.
               </ComicText>
             </div>
           ) : (
             <div className="space-y-4">
               {filterGuesses(statistics.guesses, 'mask')
                 .filter((guessData) => {
-                  // Filter out guesses that don't match the answer's normalized length
+                  // Filter out attempts that don't match the answer's normalized length
                   const normalizeLength = (str: string) => 
                     str.replace(/\s+/g, '').replace(/[^\w]/g, '').length;
                   return normalizeLength(guessData.guess) === normalizeLength(statistics.answer);
@@ -601,7 +601,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                         ></div>
                         <div className="absolute inset-0 flex items-center justify-center">
                           <ComicText size={0.65} color={isDarkMode ? '#E5E7EB' : '#374151'}>
-                            {guessData.count} guess{guessData.count !== 1 ? 'es' : ''}
+                            {guessData.count} attempt{guessData.count !== 1 ? 's' : ''}
                           </ComicText>
                         </div>
                       </div>
