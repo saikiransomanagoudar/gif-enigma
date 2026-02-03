@@ -41,7 +41,7 @@ export type WebviewToBlockMessage =
     }
   | { type: 'GET_GEMINI_SYNONYMS'; data: { word: string } }
   | {
-      type: 'SEARCH_TENOR_GIFS';
+      type: 'SEARCH_GIPHY_GIFS';
       data: {
         query: string;
         limit?: number;
@@ -50,14 +50,14 @@ export type WebviewToBlockMessage =
       };
     }
   | {
-      type: 'SEARCH_BATCH_TENOR_GIFS';
+      type: 'SEARCH_BATCH_GIPHY_GIFS';
       data: {
         queries: string[];
         limit?: number;
       };
     }
   | {
-      type: 'CHECK_TENOR_CACHE';
+      type: 'CHECK_GIPHY_CACHE';
       data: {
         query: string;
       };
@@ -309,20 +309,20 @@ export type BlocksToWebviewMessage =
       error?: string;
     }
   | {
-      type: 'SEARCH_TENOR_GIFS_RESULT';
+      type: 'SEARCH_GIPHY_GIFS_RESULT';
       success: boolean;
       results?: any[];
       next?: string;
       error?: string;
     }
   | {
-      type: 'SEARCH_BATCH_TENOR_GIFS_RESULT';
+      type: 'SEARCH_BATCH_GIPHY_GIFS_RESULT';
       success: boolean;
       results?: { [query: string]: any[] };
       error?: string;
     }
   | {
-      type: 'CHECK_TENOR_CACHE_RESULT';
+      type: 'CHECK_GIPHY_CACHE_RESULT';
       success: boolean;
       cached?: boolean;
       query?: string;

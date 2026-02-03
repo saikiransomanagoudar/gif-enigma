@@ -1,5 +1,17 @@
 name: gif-enigma
 
+# Network configuration - whitelist external domains
+net:
+  outbound:
+    - api.giphy.com
+    - i.redd.it
+    - media.giphy.com
+    - media0.giphy.com
+    - media1.giphy.com
+    - media2.giphy.com
+    - media3.giphy.com
+    - media4.giphy.com
+
 # Assets
 assets:
   - name: eyebrows.gif

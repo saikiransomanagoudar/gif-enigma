@@ -18,7 +18,7 @@ type DevvitMessage =
   | { type: 'initialData'; data: { username: string; currentCounter: number } }
   | { type: 'updateCounter'; data: { currentCounter: number } }
   | {
-      type: 'SEARCH_TENOR_GIFS_RESULT';
+      type: 'SEARCH_GIPHY_GIFS_RESULT';
       success: boolean;
       results?: any[];
       error?: string;
@@ -74,7 +74,7 @@ type WebViewMessage =
   | { type: 'webViewReady' }
   | { type: 'setCounter'; data: { newCounter: number } }
   | {
-      type: 'SEARCH_TENOR_GIFS';
+      type: 'SEARCH_GIPHY_GIFS';
       data: {
         query: string;
         limit?: number;
@@ -235,7 +235,7 @@ function App() {
             );
             break;
 
-          case 'SEARCH_TENOR_GIFS_RESULT':
+          case 'SEARCH_GIPHY_GIFS_RESULT':
             setIsLoading((prev) => ({ ...prev, search: false }));
             if (typedMessage.success) {
               setSearchResults(typedMessage.results || []);
@@ -461,11 +461,11 @@ function App() {
     window.parent.postMessage(message, '*');
   };
 
-  // Search Tenor GIFs
-  const searchTenorGifs = (query: string, limit = 8) => {
+  // Search GIPHY GIFs
+  const searchGiphyGifs = (query: string, limit = 8) => {
     setIsLoading((prev) => ({ ...prev, search: true }));
     sendMessageToDevvit({
-      type: 'SEARCH_TENOR_GIFS',
+      type: 'SEARCH_GIPHY_GIFS',
       data: {
         query,
         limit,
@@ -610,7 +610,7 @@ function App() {
     const commonProps = {
       userData,
       sendMessageToDevvit,
-      searchTenorGifs,
+      searchGiphyGifs,
       searchResults,
       searchError,
       isLoading,

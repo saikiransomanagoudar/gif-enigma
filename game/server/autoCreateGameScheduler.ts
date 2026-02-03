@@ -1,6 +1,6 @@
 import { Devvit, ScheduledJobEvent, JobContext, Context } from '@devvit/public-api';
 import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server.js';
-import { searchTenorGifs } from './tenorApi.server.js';
+import { searchGiphyGifs } from './giphyApi.server.js';
 import { removeSystemUsersFromLeaderboard, saveGame } from './gameHandler.server.js';
 import { validateGifWordMatch } from './geminiService.js';
 import type { CategoryType } from '../shared.js';
@@ -52,7 +52,7 @@ Devvit.addSchedulerJob({
     if (!force) {
       try {
         const subreddit = await context.reddit.getCurrentSubreddit();
-        const subredditName = subreddit.name.toLowerCase();        
+        const subredditName = subreddit.name.toLowerCase();
         if (subredditName !== 'playgifenigma') {
           return;
         }
@@ -112,7 +112,7 @@ Devvit.addSchedulerJob({
           return;
         }
       } catch (tzErr) {
-        
+
       }
     }
 
@@ -128,16 +128,16 @@ Devvit.addSchedulerJob({
       const recResult = await fetchGeminiRecommendations(context, category, inputType, 10);
       if (recResult.success && recResult.recommendations?.length) {
         recommendations = recResult.recommendations;
-        
+
       } else {
         throw new Error('API failed or no recommendations');
       }
     } catch (error) {
-      
+
       // Use fallback data
       const categoryData = fallbackData[category] || fallbackData['Viral Vibes'];
       const selectedData = (categoryData as any)[inputType];
-      
+
       // If the selected inputType doesn't have data, fall back to 'word' and update inputType accordingly
       if (selectedData && selectedData.length > 0) {
         recommendations = selectedData;
@@ -145,50 +145,50 @@ Devvit.addSchedulerJob({
         recommendations = categoryData['word'];
         inputType = 'word';
       }
-      
+
     }
 
     const word = recommendations[0];
-    
+
     // Determine actual input type based on the word content
     // This ensures the question text matches the actual content type
     const actualInputType = word.includes(' ') ? 'phrase' : 'word';
     inputType = actualInputType;
-    
+
     // Try API for synonyms
     try {
       const synResult = await fetchGeminiSynonyms(context, word);
       if (synResult.success && synResult.synonyms?.length) {
         synonyms = synResult.synonyms;
-        
+
       } else {
         throw new Error('API failed or no synonyms');
       }
     } catch (error) {
-      
+
       // Use fallback synonyms
       synonyms = (fallbackSynonyms as any)[word.toUpperCase()] || [
         ['think', 'guess', 'solve', 'answer'],
-        ['brain', 'mind', 'logic', 'reason'], 
+        ['brain', 'mind', 'logic', 'reason'],
         ['puzzle', 'mystery', 'riddle', 'challenge'],
         ['find', 'discover', 'reveal', 'uncover']
       ];
-      
+
     }
 
     const gifUrls: string[] = [];
     const gifDescriptions: string[] = [];
     const gifSearchTerms: string[] = [];
-    
+
     for (const synonymGroup of synonyms) {
       if (gifUrls.length >= 4) break;
-      
+
       const term = synonymGroup[0];
-      const gifs = await searchTenorGifs(context, term, 1);
+      const gifs = await searchGiphyGifs(context, term, 1);
       if (gifs[0]) {
         const gifUrl = gifs[0].media_formats?.tinygif?.url;
         const gifDescription = gifs[0].content_description || gifs[0].title || term;
-        
+
         if (gifUrl) {
           gifUrls.push(gifUrl);
           gifDescriptions.push(gifDescription);
@@ -201,8 +201,8 @@ Devvit.addSchedulerJob({
     }
 
     const validation = await validateGifWordMatch(
-      { 
-        word, 
+      {
+        word,
         gifDescriptions,
         searchTerms: gifSearchTerms,
       },
@@ -212,7 +212,7 @@ Devvit.addSchedulerJob({
     if (!validation.isValid || validation.matchScore < 0.5) {
       return;
     }
-    
+
     const maskedWord = word
       .split('')
       .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -233,7 +233,7 @@ Devvit.addSchedulerJob({
         inputType,
       },
       context
-    );    
+    );
   },
 });
 

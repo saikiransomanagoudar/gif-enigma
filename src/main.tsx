@@ -6,7 +6,7 @@ import {
   useAsync,
 } from '@devvit/public-api';
 import { BlocksToWebviewMessage, WebviewToBlockMessage } from '../game/shared.js';
-import { searchTenorGifs, searchMultipleTenorGifs } from '../game/server/tenorApi.server.js';
+import { searchGiphyGifs, searchMultipleGiphyGifs } from '../game/server/giphyApi.server.js';
 import {
   saveGame,
   getGame,
@@ -81,13 +81,6 @@ import '../game/server/autoCreateGameScheduler.js';
 
 Devvit.addSettings([
   {
-    name: 'tenor-api-key',
-    label: 'Tenor API Key',
-    type: 'string',
-    isSecret: true,
-    scope: 'app',
-  },
-  {
     name: 'oauth-client-id',
     label: 'OAuth Client ID',
     type: 'string',
@@ -97,6 +90,13 @@ Devvit.addSettings([
   {
     name: 'gemini-api-key',
     label: 'Gemini API Key',
+    type: 'string',
+    isSecret: true,
+    scope: 'app',
+  },
+  {
+    name: 'giphy-api-key',
+    label: 'Giphy API Key',
     type: 'string',
     isSecret: true,
     scope: 'app',
@@ -127,7 +127,12 @@ Devvit.configure({
   media: true,
   kvStore: true,
   redis: true,
-  http: true,
+  http: {
+    domains: [
+      'api.giphy.com',
+      'generativelanguage.googleapis.com',
+    ],
+  },
   realtime: true,
 });
 
@@ -697,37 +702,41 @@ Devvit.addCustomPostType({
             }
             break;
           }
-          case 'SEARCH_TENOR_GIFS':
+          case 'SEARCH_GIPHY_GIFS':
             try {
-              const gifResults = await searchTenorGifs(
+              console.log(`[GIPHY] Direct search started for: "${event.data.query}"`);
+              const gifResults = await searchGiphyGifs(
                 context,
                 event.data.query,
-                event.data.limit || 8
+                event.data.limit || 4
               );
 
+              console.log(`[GIPHY] Direct search completed for: "${event.data.query}", results: ${gifResults.length}`);
               postMessage({
-                type: 'SEARCH_TENOR_GIFS_RESULT',
+                type: 'SEARCH_GIPHY_GIFS_RESULT',
                 success: true,
                 results: gifResults,
               });
+              console.log(`[GIPHY] SEARCH_GIPHY_GIFS_RESULT sent to frontend`);
             } catch (error) {
+              console.log(`[GIPHY] Direct search error for: "${event.data.query}": ${error}`);
               postMessage({
-                type: 'SEARCH_TENOR_GIFS_RESULT',
+                type: 'SEARCH_GIPHY_GIFS_RESULT',
                 success: false,
                 error: String(error),
               });
             }
             break;
 
-          case 'CHECK_TENOR_CACHE':
+          case 'CHECK_GIPHY_CACHE':
             try {
-              // Check if results are cached in Redis
-              const cachedResults = await context.redis.get(`tenorSearch:${event.data.query.toLowerCase()}`);
-              
+              // Check if results are cached in Redis (using new GIPHY cache prefix)
+              const cachedResults = await context.redis.get(`giphy_search:${encodeURIComponent(event.data.query.toLowerCase().trim())}`);
+
               if (cachedResults) {
                 const results = JSON.parse(cachedResults);
                 postMessage({
-                  type: 'CHECK_TENOR_CACHE_RESULT',
+                  type: 'CHECK_GIPHY_CACHE_RESULT',
                   success: true,
                   cached: true,
                   query: event.data.query,
@@ -735,7 +744,7 @@ Devvit.addCustomPostType({
                 });
               } else {
                 postMessage({
-                  type: 'CHECK_TENOR_CACHE_RESULT',
+                  type: 'CHECK_GIPHY_CACHE_RESULT',
                   success: true,
                   cached: false,
                   query: event.data.query,
@@ -743,29 +752,29 @@ Devvit.addCustomPostType({
               }
             } catch (error) {
               postMessage({
-                type: 'CHECK_TENOR_CACHE_RESULT',
+                type: 'CHECK_GIPHY_CACHE_RESULT',
                 success: false,
                 error: String(error),
               });
             }
             break;
 
-          case 'SEARCH_BATCH_TENOR_GIFS':
+          case 'SEARCH_BATCH_GIPHY_GIFS':
             try {
-              const batchResults = await searchMultipleTenorGifs(
+              const batchResults = await searchMultipleGiphyGifs(
                 context,
                 event.data.queries,
-                event.data.limit || 16
+                event.data.limit || 4
               );
 
               postMessage({
-                type: 'SEARCH_BATCH_TENOR_GIFS_RESULT',
+                type: 'SEARCH_BATCH_GIPHY_GIFS_RESULT',
                 success: true,
                 results: batchResults,
               });
             } catch (error) {
               postMessage({
-                type: 'SEARCH_BATCH_TENOR_GIFS_RESULT',
+                type: 'SEARCH_BATCH_GIPHY_GIFS_RESULT',
                 success: false,
                 error: String(error),
               });
@@ -774,11 +783,11 @@ Devvit.addCustomPostType({
 
           case 'SAVE_GAME':
             try {
-              const result = await saveGame(event.data, context);     
+              const result = await saveGame(event.data, context);
               if (result.success && result.redditPostId) {
                 setPostPreviewRefreshTrigger((prev) => prev + 1);
               }
-              
+
               postMessage({
                 type: 'SAVE_GAME_RESULT',
                 success: result.success,
@@ -924,7 +933,7 @@ Devvit.addCustomPostType({
                   timeTaken: scoreData.timeTaken,
                   timestamp: Date.now()
                 }, context);
-                
+
                 // Clear the assigned game for this user (so they get a new random one next time)
                 const assignedGameKey = `user:${scoreUsername}:assignedGame`;
                 await context.redis.del(assignedGameKey);
@@ -1454,7 +1463,7 @@ Devvit.addCustomPostType({
             try {
               const text = event.data?.text || 'Notification';
               const appearance = event.data?.appearance || 'neutral';
-              
+
               if (appearance === 'success') {
                 context.ui.showToast({ text, appearance: 'success' });
               } else if (appearance === 'error') {
@@ -1472,7 +1481,7 @@ Devvit.addCustomPostType({
               const currentState = await context.redis.get('debugMode');
               const newState = currentState === 'true' ? 'false' : 'true';
               await context.redis.set('debugMode', newState);
-              
+
               postMessage({
                 type: 'DEBUG_MODE_TOGGLED',
                 enabled: newState === 'true',
@@ -1636,7 +1645,7 @@ Devvit.addMenuItem({
     const currentState = await context.redis.get('debugMode');
     const newState = currentState === 'true' ? 'false' : 'true';
     await context.redis.set('debugMode', newState);
-    
+
     console.log(`Debug mode ${newState === 'true' ? 'enabled' : 'disabled'}`);
     context.ui.showToast(`Debug mode ${newState === 'true' ? 'enabled ✅' : 'disabled ❌'}`);
   },

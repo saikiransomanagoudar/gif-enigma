@@ -181,7 +181,7 @@ export interface PostPreviewUpdate {
   status?: 'pending' | 'published' | 'archived';
 }
 
-export interface TenorGifResult {
+export interface GiphyGifResult {
   id: string;
   url: string;
   media_formats: Record<string, { url: string }>;

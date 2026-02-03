@@ -6,7 +6,7 @@ import { CategoryType } from './CategoryPage';
 import { NavigationProps, Page } from '../lib/types';
 import * as transitions from '../../src/utils/transitions';
 
-export interface TenorGifResult {
+export interface GiphyGifResult {
   id: string;
   title: string;
   media_formats: {
@@ -47,7 +47,7 @@ export interface TenorGifResult {
   url: string;
 }
 
-const getGifUrl = (gif: TenorGifResult | null): string => {
+const getGifUrl = (gif: GiphyGifResult | null): string => {
   return gif?.url || '';
 };
 
@@ -80,26 +80,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   // GIF states
   // @ts-ignore
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [gifs, setGifs] = useState<TenorGifResult[]>([]);
-  const [selectedGifs, setSelectedGifs] = useState<(TenorGifResult | null)[]>([
+  const [gifs, setGifs] = useState<GiphyGifResult[]>([]);
+  const [selectedGifs, setSelectedGifs] = useState<(GiphyGifResult | null)[]>([
     null,
     null,
     null,
     null,
   ]);
   const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
-  const [selectedGifInModal, setSelectedGifInModal] = useState<TenorGifResult | null>(null);
+  const [selectedGifInModal, setSelectedGifInModal] = useState<GiphyGifResult | null>(null);
   const [currentModalSynonym, setCurrentModalSynonym] = useState<string>(''); // Track which synonym is being searched
 
   // Frontend memory cache for GIF results per synonym - avoids repeated fetches in current session
   // Note: This is separate from Redis cache (backend). Redis cache has 24h TTL and benefits all users.
   // Clear this frontend cache when word changes for proper display, but Redis cache remains intact.
-  const gifCache = useRef<{ [query: string]: TenorGifResult[] }>({});
+  const gifCache = useRef<{ [query: string]: GiphyGifResult[] }>({});
   const isBatchFetching = useRef<boolean>(false);
   const currentCachedWord = useRef<string>(''); // Track which word the cache belongs to
   const currentSearchTermRef = useRef<string>(''); // Track the current search term for caching results
   const batchFetchingSynonyms = useRef<Set<string>>(new Set()); // Track which synonyms are being batch-fetched
   const pendingDisplaySynonym = useRef<string | null>(null); // Track if user is waiting for a specific synonym
+  const searchRetryCount = useRef<number>(0); // Track retry attempts for rate limit recovery
 
   // UI states
   const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
@@ -494,6 +495,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         msg = msg.data.message;
       }
       if (!msg || typeof msg !== 'object') return;
+      
+      // Log all incoming messages for debugging
+      if (msg.type && msg.type.includes('GIPHY')) {
+        console.log('[GIF Modal] Message received:', msg.type);
+      }
 
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -582,6 +588,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           if (wordForCache === currentWordRef.current) {
             setSynonyms(msg.result);
             setIsLoadingSynonyms(false);
+            
+            // PRE-FETCH GIFs for ALL synonyms immediately when synonyms load
+            // This runs in background so GIFs are cached before user clicks
+            const allSynonyms = msg.result.map((s: string[]) => s[0] || '').filter(Boolean);
+            if (allSynonyms.length > 0 && !isBatchFetching.current) {
+              isBatchFetching.current = true;
+              allSynonyms.forEach((synonym: string) => {
+                batchFetchingSynonyms.current.add(synonym);
+              });
+              window.parent.postMessage(
+                {
+                  type: 'SEARCH_BATCH_GIPHY_GIFS',
+                  data: { queries: allSynonyms, limit: 4 },
+                },
+                '*'
+              );
+            }
           }
         } else {
           // API failed - use fallback only if this is the current word
@@ -594,35 +617,77 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }
       }
 
-      if (msg.type === 'SEARCH_TENOR_GIFS_RESULT') {
+      if (msg.type === 'SEARCH_GIPHY_GIFS_RESULT') {
+        console.log('[GIF Modal] Received SEARCH_GIPHY_GIFS_RESULT:', msg.success, 'results:', msg.results?.length);
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
         if (msg.success && Array.isArray(msg.results)) {
           const searchedTerm = currentSearchTermRef.current;
-          if (searchedTerm && msg.results.length > 0) {
-            gifCache.current[searchedTerm] = msg.results;
-          }
-          
-          // Complete the progress bar (100%)
-          setLoadingStage(3);
-          
-          // Wait a brief moment to show 100%, then hide loading
-          setTimeout(() => {
+          console.log('[GIF Modal] Search term:', searchedTerm, 'Results count:', msg.results.length);
+          if (msg.results.length > 0) {
+            // Got results - cache and display, reset retry counter
+            searchRetryCount.current = 0;
+            if (searchedTerm) {
+              gifCache.current[searchedTerm] = msg.results;
+            }
             setIsSearching(false);
-            setLoadingStage(0); // Reset loading stage
+            setLoadingStage(0);
             setGifs(msg.results);
-          }, 200);
-
+            console.log('[GIF Modal] GIFs set successfully');
+          } else if (searchRetryCount.current < 2) {
+            // Empty results - likely rate limited, keep loading and retry after delay (max 2 retries)
+            searchRetryCount.current++;
+            console.log(`[GIF Modal] Got empty results, retry ${searchRetryCount.current}/2 after 3s delay...`);
+            // Keep isSearching true so user sees loading state, not "No GIFs found"
+            setIsSearching(true);
+            setTimeout(() => {
+              if (currentSearchTermRef.current === searchedTerm && searchedTerm) {
+                window.parent.postMessage(
+                  {
+                    type: 'SEARCH_GIPHY_GIFS',
+                    data: { query: searchedTerm, limit: 4 },
+                  },
+                  '*'
+                );
+              }
+            }, 3000);
+          } else {
+            // Max retries reached, show empty state
+            searchRetryCount.current = 0;
+            setIsSearching(false);
+            setLoadingStage(0);
+            setGifs([]);
+          }
+        } else if (searchRetryCount.current < 2) {
+          // Error response - keep loading and retry after delay (max 2 retries)
+          searchRetryCount.current++;
+          console.log(`[GIF Modal] Search error, retry ${searchRetryCount.current}/2 after 3s delay...`);
+          const searchedTerm = currentSearchTermRef.current;
+          // Keep isSearching true so user sees loading state, not "No GIFs found"
+          setIsSearching(true);
+          setTimeout(() => {
+            if (currentSearchTermRef.current === searchedTerm && searchedTerm) {
+              window.parent.postMessage(
+                {
+                  type: 'SEARCH_GIPHY_GIFS',
+                  data: { query: searchedTerm, limit: 4 },
+                },
+                '*'
+              );
+            }
+          }, 3000);
         } else {
+          // Max retries reached on error, show empty state
+          searchRetryCount.current = 0;
           setLoadingStage(0);
           setIsSearching(false);
           setGifs([]);
         }
       }
 
-      if (msg.type === 'CHECK_TENOR_CACHE_RESULT') {
+      if (msg.type === 'CHECK_GIPHY_CACHE_RESULT') {
         isCacheCheckingRef.current = false;
         setIsCacheChecking(false);
         if (cacheCheckTimeoutRef.current) {
@@ -653,41 +718,37 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }
       }
 
-      if (msg.type === 'SEARCH_BATCH_TENOR_GIFS_RESULT') {
+      if (msg.type === 'SEARCH_BATCH_GIPHY_GIFS_RESULT') {
         if (msg.success && msg.results) {
           Object.keys(msg.results).forEach((query) => {
             const gifsForQuery = msg.results![query];
-            gifCache.current[query] = gifsForQuery;
-            
+            if (gifsForQuery && gifsForQuery.length > 0) {
+              gifCache.current[query] = gifsForQuery;
+            }
             batchFetchingSynonyms.current.delete(query);
           });
           
+          // If user clicked a synonym and is waiting, display results now
           if (pendingDisplaySynonym.current && gifCache.current[pendingDisplaySynonym.current]) {
-            const waitingFor = pendingDisplaySynonym.current;
-            
-            // Complete progress bar smoothly
-            setLoadingStage(3);
-            
-            setTimeout(() => {
-              setGifs(gifCache.current[waitingFor]);
-              setIsSearching(false);
-              setLoadingStage(0);
-              pendingDisplaySynonym.current = null;
-            }, 200);
-          } else if (pendingDisplaySynonym.current) {
-            // If pending but no results, clear loading state
-            setLoadingStage(0);
-            setIsSearching(false);
+            const waiting = pendingDisplaySynonym.current;
             pendingDisplaySynonym.current = null;
+            setGifs(gifCache.current[waiting]);
+            setIsSearching(false);
+            setLoadingStage(0);
           }
+          console.log('[GIF Modal] Batch completed, cached results for:', Object.keys(msg.results).join(', '));
         } else {
-          batchFetchingSynonyms.current.clear();  
+          batchFetchingSynonyms.current.clear();
+          // If waiting and batch failed, trigger direct search
           if (pendingDisplaySynonym.current) {
-            setLoadingStage(0);
-            setIsSearching(false);
+            const waiting = pendingDisplaySynonym.current;
             pendingDisplaySynonym.current = null;
+            window.parent.postMessage(
+              { type: 'SEARCH_GIPHY_GIFS', data: { query: waiting, limit: 4 } },
+              '*'
+            );
           }
-        }   
+        }
         isBatchFetching.current = false;
       }
 
@@ -720,9 +781,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setGifs([]);
     setSelectedGifInModal(null);
     currentSearchTermRef.current = term;
+    searchRetryCount.current = 0; // Reset retry counter for new search
 
-    if (gifCache.current[term]) {
-      // Cached results - display instantly without loading animation
+    // Check cache first - display instantly if available
+    if (gifCache.current[term] && gifCache.current[term].length > 0) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -730,14 +792,29 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setGifs(gifCache.current[term]);
       setIsSearching(false);
       setLoadingStage(0);
+      batchFetchingSynonyms.current.delete(term);
       return;
     }
 
+    // If batch is already fetching this synonym, wait for it (no separate search needed)
     if (batchFetchingSynonyms.current.has(term)) {
       setIsSearching(true);
       pendingDisplaySynonym.current = term;
+      // Set a timeout - if batch doesn't complete in 10s, do direct search
+      setTimeout(() => {
+        if (pendingDisplaySynonym.current === term && !gifCache.current[term]) {
+          pendingDisplaySynonym.current = null;
+          // Batch taking too long, do direct search
+          window.parent.postMessage(
+            { type: 'SEARCH_GIPHY_GIFS', data: { query: term, limit: 4 } },
+            '*'
+          );
+        }
+      }, 10000);
       return;
-    }    
+    }
+
+    // No cache and not in batch - do direct search
     setIsSearching(true);
 
     if (timeoutRef.current) {
@@ -747,8 +824,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     
     window.parent.postMessage(
       {
-        type: 'SEARCH_TENOR_GIFS',
-        data: { query: term, limit: 12 },
+        type: 'SEARCH_GIPHY_GIFS',
+        data: { query: term, limit: 4 },
       },
       '*'
     );
@@ -768,7 +845,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       isCacheCheckingRef.current = true;
       window.parent.postMessage(
         {
-          type: 'CHECK_TENOR_CACHE',
+          type: 'CHECK_GIPHY_CACHE',
           data: { query: term },
         },
         '*'
@@ -792,48 +869,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }, 25000);
   };
 
-  const batchFetchRemainingGifs = (excludeSynonym: string, allSynonyms: string[]) => {
-    if (allSynonyms.length < 4) {
-      return;
-    }
-    const remainingSynonyms = allSynonyms.filter(s => s !== excludeSynonym);    
-    const uncachedSynonyms = remainingSynonyms.filter(s => !gifCache.current[s]);
-    
-    if (uncachedSynonyms.length === 0) {
-      return;
-    }
-    
-    uncachedSynonyms.forEach(synonym => {
-      batchFetchingSynonyms.current.add(synonym);
-    });
-
-    window.parent.postMessage(
-      {
-        type: 'SEARCH_BATCH_TENOR_GIFS',
-        data: { 
-          queries: uncachedSynonyms,
-          limit: 12 
-        },
-      },
-      '*'
-    );
-    
-    setTimeout(() => {
-      uncachedSynonyms.forEach(synonym => {
-        // Only clear if still pending (not in cache)
-        if (!gifCache.current[synonym]) {
-          batchFetchingSynonyms.current.delete(synonym);
-        }
-      });
-      
-      if (pendingDisplaySynonym.current && !gifCache.current[pendingDisplaySynonym.current]) {
-        const waitingSynonym = pendingDisplaySynonym.current;
-        pendingDisplaySynonym.current = null;
-        searchGifs(waitingSynonym);
-      }
-    }, 50000); // Balanced timeout for batch fetch
-  };
-
   const handleBackClick = () => {
     if (headerRef.current) {
       transitions.fadeOut(headerRef.current, { duration: 200 });
@@ -847,7 +882,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }, 300);
   };
 
-  const selectGifForSlot = (gif: TenorGifResult) => {
+  const selectGifForSlot = (gif: GiphyGifResult) => {
     if (selectedGifIndex !== null && selectedGifIndex >= 0 && selectedGifIndex < 4) {
       const gifUrl = getGifUrl(gif);
       if (!gifUrl) {
@@ -1016,14 +1051,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       setMessage('');
                       setMessageType('info');
                       
-                      // Fetch clicked synonym's GIFs
+                      // Fetch clicked synonym's GIFs (will use cache if batch already loaded them)
                       searchGifs(defaultSynonym);
-                      
-                      // Parallel batch for remaining synonyms
-                      const allSynonyms = synonyms.map(s => s[0] || '').filter(Boolean);
-                      if (allSynonyms.length >= 4 && !isBatchFetching.current) {
-                        batchFetchRemainingGifs(defaultSynonym, allSynonyms);
-                      }
+                      // Note: Batch pre-fetch for all synonyms happens when synonyms load, not here
                     }
                   }}
                   className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${
@@ -1234,6 +1264,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   );
                 })}
               </div>
+            </div>
+          )}
+          {!isSearching && gifs.length > 0 && (
+            <div className="flex justify-center mt-2 mb-2">
+              <img
+                src="/giphy-attribution-marks/PoweredBy_200px-White_HorizText.png"
+                alt="Powered by GIPHY"
+                className="h-3 opacity-80"
+              />
             </div>
           )}
           {selectedGifInModal && (
