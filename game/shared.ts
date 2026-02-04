@@ -233,7 +233,15 @@ export type WebviewToBlockMessage =
       };
     }
   | { type: 'TOGGLE_DEBUG_MODE' }
-  | { type: 'GET_DEBUG_MODE' };
+  | { type: 'GET_DEBUG_MODE' }
+  | {
+      type: 'FETCH_PREGENERATED_ITEMS';
+      data: {
+        category: string;
+        inputType: 'word' | 'phrase';
+        count?: number;
+      };
+    };
 
 export type BlocksToWebviewMessage =
   | {
@@ -311,6 +319,7 @@ export type BlocksToWebviewMessage =
   | {
       type: 'SEARCH_GIPHY_GIFS_RESULT';
       success: boolean;
+      query?: string;
       results?: any[];
       next?: string;
       error?: string;
@@ -319,6 +328,13 @@ export type BlocksToWebviewMessage =
       type: 'SEARCH_BATCH_GIPHY_GIFS_RESULT';
       success: boolean;
       results?: { [query: string]: any[] };
+      error?: string;
+    }
+  | {
+      type: 'SEARCH_BATCH_GIPHY_GIFS_PARTIAL';
+      success: boolean;
+      query?: string;
+      results?: any[];
       error?: string;
     }
   | {
@@ -627,6 +643,19 @@ export type BlocksToWebviewMessage =
     | {
       type: 'DEBUG_MODE_TOGGLED';
       enabled: boolean;
+    }
+    | {
+      type: 'FETCH_PREGENERATED_ITEMS_RESULT';
+      success: boolean;
+      items?: Array<{
+        word: string;
+        synonyms: string[][];
+        category: string;
+        inputType: 'word' | 'phrase';
+      }>;
+      category?: string;
+      inputType?: 'word' | 'phrase';
+      error?: string;
     };
 
 export type DevvitMessage = {

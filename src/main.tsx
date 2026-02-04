@@ -68,6 +68,10 @@ import {
   fetchGeminiRecommendations,
   fetchGeminiSynonyms,
 } from '../game/server/geminiApi.server.js';
+import { 
+  fetchMultiplePreGenerated,
+  hasRecentlyRun
+} from '../game/server/dailyPreGenerator.js';
 import { Preview } from './components/Preview.js';
 import { CustomPostPreview } from './components/CustomPostPreview.js';
 import { GamePostPreview } from './components/GamePostPreview.js';
@@ -674,6 +678,38 @@ Devvit.addCustomPostType({
             break;
           }
 
+          case 'FETCH_PREGENERATED_ITEMS': {
+            try {
+              if (!event.data || !event.data.category || !event.data.inputType) {
+                throw new Error('Missing category or inputType');
+              }
+              
+              const count = event.data.count || 20;
+              const result = await fetchMultiplePreGenerated(
+                context,
+                event.data.category,
+                event.data.inputType,
+                count
+              );
+              
+              postMessage({
+                type: 'FETCH_PREGENERATED_ITEMS_RESULT',
+                success: result.success,
+                items: result.items || [],
+                category: event.data.category,
+                inputType: event.data.inputType,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'FETCH_PREGENERATED_ITEMS_RESULT',
+                success: false,
+                error: String(error),
+                items: [],
+              });
+            }
+            break;
+          }
+
           case 'GET_GEMINI_SYNONYMS': {
             try {
 
@@ -704,25 +740,23 @@ Devvit.addCustomPostType({
           }
           case 'SEARCH_GIPHY_GIFS':
             try {
-              console.log(`[GIPHY] Direct search started for: "${event.data.query}"`);
               const gifResults = await searchGiphyGifs(
                 context,
                 event.data.query,
                 event.data.limit || 4
               );
 
-              console.log(`[GIPHY] Direct search completed for: "${event.data.query}", results: ${gifResults.length}`);
               postMessage({
                 type: 'SEARCH_GIPHY_GIFS_RESULT',
                 success: true,
+                query: event.data.query,
                 results: gifResults,
               });
-              console.log(`[GIPHY] SEARCH_GIPHY_GIFS_RESULT sent to frontend`);
             } catch (error) {
-              console.log(`[GIPHY] Direct search error for: "${event.data.query}": ${error}`);
               postMessage({
                 type: 'SEARCH_GIPHY_GIFS_RESULT',
                 success: false,
+                query: event.data.query,
                 error: String(error),
               });
             }
@@ -761,10 +795,19 @@ Devvit.addCustomPostType({
 
           case 'SEARCH_BATCH_GIPHY_GIFS':
             try {
+              // Send incremental results as each query completes
               const batchResults = await searchMultipleGiphyGifs(
                 context,
                 event.data.queries,
-                event.data.limit || 4
+                event.data.limit || 4,
+                (query, results) => {
+                  postMessage({
+                    type: 'SEARCH_BATCH_GIPHY_GIFS_PARTIAL',
+                    success: true,
+                    query,
+                    results,
+                  });
+                }
               );
 
               postMessage({
@@ -1625,15 +1668,37 @@ Devvit.addMenuItem({
 });
 
 Devvit.addMenuItem({
-  label: '🔥 Trigger Cache Prewarmer',
+  label: '🚀 Trigger Daily Pre-Generator',
+  location: 'subreddit',
+  forUserType: 'moderator',
+  onPress: async (_, context) => {
+    // Check if already ran recently
+    const recentlyRun = await hasRecentlyRun(context);
+    if (recentlyRun) {
+      context.ui.showToast('⏱️ Pre-generator already ran in the last 23 hours. Try again tomorrow!');
+      return;
+    }
+    
+    await context.scheduler.runJob({
+      name: 'cache_prewarmer',
+      data: { runPreGen: true },
+      runAt: new Date(),
+    });
+    context.ui.showToast('✅ Triggered daily pre-generator! This may take a few minutes...');
+  },
+});
+
+Devvit.addMenuItem({
+  label: '🔄 Force Regenerate (Override Cooldown)',
   location: 'subreddit',
   forUserType: 'moderator',
   onPress: async (_, context) => {
     await context.scheduler.runJob({
       name: 'cache_prewarmer',
+      data: { runPreGen: true, force: true },
       runAt: new Date(),
     });
-    context.ui.showToast('✅ Triggered cache prewarmer manually!');
+    context.ui.showToast('✅ Forcing pre-generation (ignoring cooldown)...');
   },
 });
 
@@ -1646,7 +1711,6 @@ Devvit.addMenuItem({
     const newState = currentState === 'true' ? 'false' : 'true';
     await context.redis.set('debugMode', newState);
 
-    console.log(`Debug mode ${newState === 'true' ? 'enabled' : 'disabled'}`);
     context.ui.showToast(`Debug mode ${newState === 'true' ? 'enabled ✅' : 'disabled ❌'}`);
   },
 });

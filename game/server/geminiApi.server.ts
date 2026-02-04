@@ -20,34 +20,33 @@ export async function fetchGeminiRecommendations(
   context: Context,
   category: CategoryType,
   inputType: 'word' | 'phrase',
-  count = 20
+  count = 20,
+  excludeWords: string[] = []
 ): Promise<{ success: boolean; recommendations: string[]; error?: string; debug?: any }> {
   
-  // Add randomization factor to cache keys to maintain multiple result sets
-  // We'll use day of week (0-6) to rotate through different cache sets
   const dayOfWeek = new Date().getDay();
   const cacheKey = `${RECS_CACHE_PREFIX}${category}:${inputType}:${count}:day${dayOfWeek}`.toLowerCase();
 
   const cachedData = await context.redis.get(cacheKey);
   if (cachedData) {
-    // Add proper type assertion for the parsed data
     const parsed = JSON.parse(cachedData) as string[];
-    
-    // Even for cached results, shuffle them for diversity
-    // and take slightly more items than requested to ensure variety
+
     const shuffledResults = shuffleArray(parsed);
-    
-    // Return shuffled subset of our cached results
+
     return {
       success: true,
       recommendations: shuffledResults.slice(0, count),
       debug: { source: 'cache', cacheKey, originalCount: parsed.length }
     };
   }
-  
-  // Request more than we need so we can shuffle and have variety
+
   const requestCount = Math.min(50, count * 2);
-  const result = await getRecommendations({ category, inputType, count: requestCount }, context);
+  const result = await getRecommendations({ 
+    category, 
+    inputType, 
+    count: requestCount,
+    excludeWords 
+  }, context);
   
 
   if (result.success && result.recommendations) {
@@ -73,6 +72,59 @@ export async function fetchGeminiRecommendations(
     error: result.error,
     debug: result.debug || {}
   };
+}
+
+// Bulk fetch all cached recommendations for instant loading
+export async function bulkFetchCachedRecommendations(
+  context: Context
+): Promise<{ [key: string]: string[] }> {
+  const categories: CategoryType[] = ['Viral Vibes', 'Cinematic Feels', 'Gaming Moments', 'Story Experiences'];
+  const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
+  const dayOfWeek = new Date().getDay();
+  const count = 20;
+  
+  const result: { [key: string]: string[] } = {};
+  
+  // Fetch all 8 combinations in parallel
+  const promises = categories.flatMap(category =>
+    inputTypes.map(async inputType => {
+      const cacheKey = `${RECS_CACHE_PREFIX}${category}:${inputType}:${count}:day${dayOfWeek}`.toLowerCase();
+      const frontendKey = `${category}-${inputType}`;
+      
+      const cachedData = await context.redis.get(cacheKey);
+      if (cachedData) {
+        const parsed = JSON.parse(cachedData) as string[];
+        const shuffledResults = shuffleArray(parsed);
+        result[frontendKey] = shuffledResults.slice(0, count);
+      }
+    })
+  );
+  
+  await Promise.allSettled(promises);
+  return result;
+}
+
+// Bulk fetch cached synonyms for multiple words
+export async function bulkFetchCachedSynonyms(
+  context: Context,
+  words: string[]
+): Promise<{ [word: string]: string[][] }> {
+  const dayOfWeek = new Date().getDay();
+  const result: { [word: string]: string[][] } = {};
+  
+  // Fetch all words' synonyms in parallel
+  const promises = words.map(async word => {
+    const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
+    
+    const cachedData = await context.redis.get(cacheKey);
+    if (cachedData) {
+      const parsed = JSON.parse(cachedData) as string[][];
+      result[word] = parsed;
+    }
+  });
+  
+  await Promise.allSettled(promises);
+  return result;
 }
 
 export async function fetchGeminiSynonyms(

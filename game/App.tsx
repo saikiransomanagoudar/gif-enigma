@@ -306,23 +306,6 @@ function App() {
             }
             break;
 
-          // case 'NAVIGATION':
-          //   console.log(
-          //     '[DEBUG-CRITICAL] App.tsx: Direct NAVIGATION message received:',
-          //     typedMessage
-          //   );
-          //   // Handle gameId for game page
-          //   if (typedMessage.page === 'game' && typedMessage.gameId) {
-          //     console.log(
-          //       '[DEBUG-CRITICAL] App.tsx: Setting gameId for game page:',
-          //       typedMessage.gameId
-          //     );
-          //     setGameId(typedMessage.gameId);
-          //   }
-          //   console.log('[DEBUG-CRITICAL] App.tsx: Updating currentPage to:', typedMessage.page);
-          //   setCurrentPage(typedMessage.page);
-          //   break;
-
           case 'NAVIGATION_RESULT':
             if (typedMessage.success && typedMessage.page) {
               // Handle gameId for game page

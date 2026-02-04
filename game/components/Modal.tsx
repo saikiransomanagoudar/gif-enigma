@@ -82,7 +82,7 @@ export const Modal: React.FC<ModalProps> = ({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           tabIndex={-1}
-          className="pointer-events-auto w-full max-w-lg rounded-xl p-4 select-none focus:outline-none"
+          className="pointer-events-auto w-[360px] max-w-[90vw] rounded-xl p-4 select-none focus:outline-none"
           style={{
             backgroundColor: colors.cardBackground,
             boxShadow: `0 8px 20px rgba(${colors.primary.replace('#', '')}, 0.5)`,
@@ -90,10 +90,10 @@ export const Modal: React.FC<ModalProps> = ({
           }}
         >
           <div className="mb-3 flex items-center justify-between">
-            <div>
+            <div className="min-w-0 flex-1 pr-2">
               {title.includes('Select a GIF for') && title !== "Select a GIF of your choice" ? (
                 <ComicText size={0.8} color={colors.textPrimary}>
-                  Select a GIF for <span style={{ color: '#FBBF24' }}>{title.replace('Select a GIF for ', '')}</span>
+                  Select a GIF for <span style={{ color: '#FBBF24' }} className="truncate">{title.replace('Select a GIF for ', '')}</span>
                 </ComicText>
               ) : (
                 <ComicText size={0.8} color={colors.textPrimary}>

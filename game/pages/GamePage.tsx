@@ -497,7 +497,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       
       if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
         setDebugMode(actualMessage.enabled);
-        console.log('[GamePage] Debug mode', actualMessage.enabled ? 'enabled' : 'disabled');
       }
     };
 

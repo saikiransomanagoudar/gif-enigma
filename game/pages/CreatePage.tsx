@@ -72,10 +72,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   // Cache for recommendations to avoid repeated API calls
   const recommendationsCache = useRef<{ [key: string]: string[] }>({});
   const synonymsCache = useRef<{ [key: string]: string[][] }>({});
-  const currentWordRef = useRef<string>(''); // Track current word immediately, before state updates
-  const hasShownDataRef = useRef<{ [key: string]: boolean }>({}); // Track if user has seen data for this cache key
-  const pendingRequestsRef = useRef<Set<string>>(new Set()); // Track all pending API requests by cache key
-  const synonymTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({}); // Track synonym fetch timeouts
+  const currentWordRef = useRef<string>('');
+  const hasShownDataRef = useRef<{ [key: string]: boolean }>({});
+  const pendingRequestsRef = useRef<Set<string>>(new Set());
+  const synonymTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // GIF states
   // @ts-ignore
@@ -89,18 +89,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   ]);
   const [selectedGifIndex, setSelectedGifIndex] = useState<number | null>(null);
   const [selectedGifInModal, setSelectedGifInModal] = useState<GiphyGifResult | null>(null);
-  const [currentModalSynonym, setCurrentModalSynonym] = useState<string>(''); // Track which synonym is being searched
+  const [currentModalSynonym, setCurrentModalSynonym] = useState<string>('');
 
   // Frontend memory cache for GIF results per synonym - avoids repeated fetches in current session
-  // Note: This is separate from Redis cache (backend). Redis cache has 24h TTL and benefits all users.
   // Clear this frontend cache when word changes for proper display, but Redis cache remains intact.
   const gifCache = useRef<{ [query: string]: GiphyGifResult[] }>({});
   const isBatchFetching = useRef<boolean>(false);
-  const currentCachedWord = useRef<string>(''); // Track which word the cache belongs to
-  const currentSearchTermRef = useRef<string>(''); // Track the current search term for caching results
-  const batchFetchingSynonyms = useRef<Set<string>>(new Set()); // Track which synonyms are being batch-fetched
-  const pendingDisplaySynonym = useRef<string | null>(null); // Track if user is waiting for a specific synonym
-  const searchRetryCount = useRef<number>(0); // Track retry attempts for rate limit recovery
+  const currentCachedWord = useRef<string>('');
+  const currentSearchTermRef = useRef<string>('');
+  const batchFetchingSynonyms = useRef<Set<string>>(new Set());
+  const pendingDisplaySynonym = useRef<string | null>(null);
+  const searchRetryCount = useRef<number>(0);
 
   // UI states
   const [showSearchInput, setShowSearchInput] = useState<boolean>(false);
@@ -113,9 +112,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [loadingStage, setLoadingStage] = useState<number>(0); // 0, 1, 2 for progress steps
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [isCacheChecking, setIsCacheChecking] = useState<boolean>(false);
+  const [isWaitingForResults, setIsWaitingForResults] = useState<boolean>(false);
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
-  const [bonusAwarded, setBonusAwarded] = useState<boolean>(true); // Track if bonus was awarded
+  const [bonusAwarded, setBonusAwarded] = useState<boolean>(true);
 
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -125,6 +125,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const cacheCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const cacheRetryIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
   const isCacheCheckingRef = React.useRef<boolean>(false);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
 
@@ -134,8 +135,61 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       // GIFs are loaded but loading state is still active - clear it
       setIsSearching(false);
       setLoadingStage(0);
+      setIsWaitingForResults(false);
     }
   }, [gifs, isSearching]);
+
+  // Retry cache check while modal is open and still loading
+  useEffect(() => {
+    // Only run if modal is open, we're waiting for results, and no GIFs yet
+    if (!showSearchInput || gifs.length > 0 || !isWaitingForResults) {
+      if (cacheRetryIntervalRef.current) {
+        clearInterval(cacheRetryIntervalRef.current);
+        cacheRetryIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const currentTerm = currentSearchTermRef.current;
+    if (!currentTerm) return;
+
+    // Retry cache check every 2 seconds while waiting
+    cacheRetryIntervalRef.current = setInterval(() => {
+      const term = currentSearchTermRef.current;
+      if (!term || gifs.length > 0 || !isWaitingForResults) {
+        if (cacheRetryIntervalRef.current) {
+          clearInterval(cacheRetryIntervalRef.current);
+          cacheRetryIntervalRef.current = null;
+        }
+        return;
+      }
+
+      // Check local cache first
+      if (gifCache.current[term] && gifCache.current[term].length > 0) {
+        setGifs(gifCache.current[term]);
+        setIsSearching(false);
+        setIsWaitingForResults(false);
+        pendingDisplaySynonym.current = null;
+        if (cacheRetryIntervalRef.current) {
+          clearInterval(cacheRetryIntervalRef.current);
+          cacheRetryIntervalRef.current = null;
+        }
+        return;
+      }
+
+      window.parent.postMessage(
+        { type: 'CHECK_GIPHY_CACHE', data: { query: term } },
+        '*'
+      );
+    }, 2000);
+
+    return () => {
+      if (cacheRetryIntervalRef.current) {
+        clearInterval(cacheRetryIntervalRef.current);
+        cacheRetryIntervalRef.current = null;
+      }
+    };
+  }, [showSearchInput, gifs.length, isWaitingForResults]);
 
   // Progress bar that fills smoothly and completes when GIFs load
   useEffect(() => {
@@ -143,6 +197,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setLoadingStage(0);
       return;
     }
+    
+    // Start at 0.1 immediately so loading shows right away (loadingStage > 0)
+    setLoadingStage(0.1);
     
     // Continuous smooth animation using requestAnimationFrame
     let startTime: number | null = null;
@@ -156,7 +213,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       // Uses logarithmic easing for natural deceleration
       const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / 2000)) + 15 * (elapsed / 10000));
       
-      setLoadingStage(progress / 100 * 3); // Convert to 0-3 scale (3 = 100%)
+      setLoadingStage(Math.max(0.1, progress / 100 * 3)); // Convert to 0-3 scale, min 0.1
       
       // Continue animation until GIFs load
       if (progress < 95) {
@@ -173,33 +230,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     };
   }, [isSearching]);
 
-  // Pre-fetch both word and phrase recommendations on mount for instant toggling
-  useEffect(() => {
-    // Pre-fetch the opposite type in the background for instant switching
-    const oppositeType: 'word' | 'phrase' = inputType === 'word' ? 'phrase' : 'word';
-    const oppositeCacheKey = `${currentCategory}-${oppositeType}`;
-    
-    if (!recommendationsCache.current[oppositeCacheKey]) {
-      // Fetch in background without showing loading state
-      setTimeout(() => {
-        // Track this pre-fetch request
-        pendingRequestsRef.current.add(oppositeCacheKey);
-        
-        window.parent.postMessage(
-          {
-            type: 'GET_GEMINI_RECOMMENDATIONS',
-            data: {
-              category: currentCategory,
-              inputType: oppositeType,
-              count: 20,
-            },
-          },
-          '*'
-        );
-      }, 1000);
-    }
-  }, [currentCategory, inputType]);
-
   useEffect(() => {
     if (category) {
       setCurrentCategory(category);
@@ -208,14 +238,51 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     // Clear previous state immediately
     setSynonyms([]);
     setSecretInput('');
-    setIsLoadingSynonyms(true);
-    setIsLoadingRecommendations(true);
     
     // Clear any pending synonym timeouts
     Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
     synonymTimeoutRef.current = {};
     
-    fetchRecommendations();
+    // Check if we have cached pre-generated data first
+    const cacheKey = `${currentCategory}-${inputType}`;
+    if (recommendationsCache.current[cacheKey]) {
+      const cachedData = recommendationsCache.current[cacheKey];
+      const firstWord = cachedData[0];
+      
+      // Only display if BOTH recommendations AND synonyms are ready
+      if (synonymsCache.current[firstWord]) {
+        // INSTANT display - everything is pre-generated and cached
+        setRecommendations(cachedData);
+        setCurrentRecIndex(0);
+        currentWordRef.current = firstWord;
+        setSecretInput(firstWord);
+        setIsLoadingRecommendations(false);
+        setSynonyms(synonymsCache.current[firstWord]);
+        setIsLoadingSynonyms(false);
+      } else {
+        // Synonyms not ready - this shouldn't happen with pre-generated data
+        setIsLoadingRecommendations(true);
+        setIsLoadingSynonyms(true);
+        currentWordRef.current = firstWord;
+        setSecretInput(firstWord);
+        setSynonyms([]);
+      }
+    } else {
+      // No cached data - fetch pre-generated items
+      setIsLoadingSynonyms(true);
+      setIsLoadingRecommendations(true);
+      window.parent.postMessage(
+        { 
+          type: 'FETCH_PREGENERATED_ITEMS', 
+          data: { 
+            category: currentCategory, 
+            inputType,
+            count: 20 
+          } 
+        },
+        '*'
+      );
+    }
   }, [currentCategory, inputType]);
 
   const getFallbackRecommendations = () => {
@@ -240,112 +307,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     const categoryData = fallbacks[currentCategory] || fallbacks['Viral Vibes'];
     return categoryData[inputType] || categoryData['word'];
-  };
-
-  const fetchRecommendations = async () => {
-    const cacheKey = `${currentCategory}-${inputType}`;
-    
-    // Check cache first
-    if (recommendationsCache.current[cacheKey]) {
-      const cachedData = recommendationsCache.current[cacheKey];
-      setRecommendations(cachedData);
-      setCurrentRecIndex(0);
-      currentWordRef.current = cachedData[0]; // Update ref immediately
-      setSecretInput(cachedData[0]);
-      setIsLoadingRecommendations(false);
-      hasShownDataRef.current[cacheKey] = true; // Mark as shown
-      
-      // Check if synonyms are already cached, otherwise show loading state
-      if (synonymsCache.current[cachedData[0]]) {
-        setSynonyms(synonymsCache.current[cachedData[0]]);
-        setIsLoadingSynonyms(false);
-      } else {
-        // Show loading state and fetch synonyms
-        setSynonyms([]);
-        setIsLoadingSynonyms(true);
-        fetchSynonyms(cachedData[0]);
-      }
-      return;
-    }
-    
-    // Show loading state immediately - no fallback data shown
-    setIsLoadingRecommendations(true);
-    setSecretInput('');
-    setSynonyms([]);
-    setIsLoadingSynonyms(true);
-    
-    // Track that we're making a request for this specific cache key
-    pendingRequestsRef.current.add(cacheKey);
-    
-    // Send API request immediately
-    window.parent.postMessage(
-      {
-        type: 'GET_GEMINI_RECOMMENDATIONS',
-        data: {
-          category: currentCategory,
-          inputType: inputType,
-          count: 20,
-        },
-      },
-      '*'
-    );
-    
-    // Fallback timeout after 10 seconds in case API fails
-    const fallbackTimeout = setTimeout(() => {
-      // Only show fallback if API hasn't responded yet (check if still pending)
-      if (pendingRequestsRef.current.has(cacheKey)) {
-        const fallbackData = getFallbackRecommendations();
-        recommendationsCache.current[cacheKey] = fallbackData;
-        setRecommendations(fallbackData);
-        setSecretInput(fallbackData[0]);
-        currentWordRef.current = fallbackData[0];
-        setIsLoadingRecommendations(false);
-        hasShownDataRef.current[cacheKey] = true;
-        fetchSynonyms(fallbackData[0]);
-        pendingRequestsRef.current.delete(cacheKey);
-      }
-    }, 10000);
-    
-    // Store timeout for cleanup
-    return () => clearTimeout(fallbackTimeout);
-  };
-
-  const getFallbackSynonyms = (word: string) => {
-    const synonymMap: { [key: string]: string[][] } = {
-      // Words
-      'ELEPHANT': [['animal', 'large', 'trunk', 'gray'], ['mammal', 'big', 'ivory', 'herd'], ['creature', 'huge', 'tusk', 'safari'], ['beast', 'massive', 'memory', 'zoo']],
-      'BUTTERFLY': [['insect', 'wings', 'colorful', 'fly'], ['caterpillar', 'metamorphosis', 'beautiful', 'flutter'], ['pollinate', 'delicate', 'spring', 'garden'], ['transform', 'graceful', 'pattern', 'flower']],
-      'RAINBOW': [['colors', 'rain', 'sky', 'arc'], ['spectrum', 'prism', 'light', 'beautiful'], ['seven', 'vibrant', 'nature', 'hope'], ['weather', 'bright', 'magical', 'end']],
-      'MOUNTAIN': [['peak', 'high', 'climb', 'rock'], ['summit', 'elevation', 'hiking', 'snow'], ['range', 'altitude', 'view', 'nature'], ['hill', 'slope', 'adventure', 'trail']],
-      'OCEAN': [['sea', 'water', 'waves', 'blue'], ['deep', 'vast', 'marine', 'salt'], ['current', 'tide', 'shore', 'fish'], ['aquatic', 'huge', 'surf', 'boat']],
-      'STARWARS': [['space', 'lightsaber', 'force', 'jedi'], ['galaxy', 'darth', 'vader', 'rebel'], ['yoda', 'luke', 'princess', 'leia'], ['death', 'star', 'empire', 'hope']],
-      'POKEMON': [['pikachu', 'catch', 'trainer', 'battle'], ['ash', 'gym', 'evolution', 'pokeball'], ['gotta', 'catch', 'em', 'all'], ['monster', 'creature', 'adventure', 'friend']],
-      'HARRY': [['potter', 'wizard', 'hogwarts', 'magic'], ['spell', 'wand', 'voldemort', 'hermione'], ['ron', 'weasley', 'quidditch', 'dumbledore'], ['gryffindor', 'invisibility', 'cloak', 'phoenix']],
-      'BATMAN': [['dark', 'knight', 'gotham', 'hero'], ['bruce', 'wayne', 'cape', 'bat'], ['joker', 'villain', 'justice', 'fight'], ['superhero', 'batmobile', 'robin', 'cave']],
-      'FROZEN': [['ice', 'cold', 'snow', 'winter'], ['elsa', 'anna', 'princess', 'disney'], ['let it go', 'olaf', 'kingdom', 'magic'], ['sisters', 'love', 'frozen heart', 'snowman']],
-      
-      // Phrases - Movies
-      'MAY THE FORCE BE WITH YOU': [['star wars', 'jedi', 'force', 'power'], ['lightsaber', 'space', 'galaxy', 'sci-fi'], ['luke skywalker', 'rebellion', 'empire', 'hope'], ['iconic', 'movie quote', 'blessing', 'farewell']],
-      'I AM YOUR FATHER': [['star wars', 'darth vader', 'reveal', 'twist'], ['shocking', 'truth', 'dark side', 'villain'], ['luke', 'family', 'secret', 'father'], ['plot twist', 'iconic line', 'dramatic', 'revelation']],
-      'TO INFINITY AND BEYOND': [['toy story', 'buzz', 'catchphrase', 'space'], ['adventure', 'limitless', 'forever', 'pixar'], ['toys', 'flying', 'heroic', 'optimistic'], ['iconic quote', 'animated', 'childhood', 'dreams']],
-      
-      // Phrases - Gaming
-      'GAME OVER': [['defeat', 'lost', 'retry', 'arcade'], ['end', 'failure', 'try again', 'classic'], ['screen', 'gaming', 'finished', 'done'], ['retro', 'pixel', 'game end', 'loser']],
-      'LEVEL UP': [['progress', 'upgrade', 'advance', 'skill'], ['gaming', 'achievement', 'success', 'grow'], ['experience', 'power up', 'improve', 'rank'], ['rpg', 'stats', 'stronger', 'victory']],
-      'NEW HIGH SCORE': [['achievement', 'record', 'winner', 'best'], ['gaming', 'arcade', 'leaderboard', 'top'], ['success', 'victory', 'champion', 'first'], ['beat', 'highest', 'scoreboard', 'celebrate']],
-      
-      // Phrases - General
-      'ONCE UPON A TIME': [['story', 'fairy tale', 'beginning', 'fantasy'], ['narrative', 'opening', 'classic', 'magical'], ['storybook', 'imagination', 'adventure', 'tale'], ['princess', 'kingdom', 'enchanted', 'legend']],
-      'HAPPY BIRTHDAY': [['celebration', 'party', 'cake', 'gift'], ['congratulations', 'special day', 'wishes', 'joy'], ['balloons', 'candles', 'age', 'festive'], ['song', 'celebrate', 'present', 'friend']],
-      'GOOD MORNING': [['greeting', 'hello', 'wake up', 'sunrise'], ['breakfast', 'early', 'start', 'day'], ['cheerful', 'fresh', 'new day', 'positive'], ['coffee', 'sunshine', 'smile', 'energy']],
-    };
-
-    return synonymMap[word.toUpperCase()] || [
-      ['think', 'guess', 'solve', 'answer'],
-      ['brain', 'mind', 'logic', 'reason'], 
-      ['puzzle', 'mystery', 'riddle', 'challenge'],
-      ['find', 'discover', 'reveal', 'uncover']
-    ];
   };
 
   const fetchSynonyms = async (word: string) => {
@@ -373,18 +334,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       },
       '*'
     );
-    
-    // Fallback timeout after 10 seconds in case API fails
-    synonymTimeoutRef.current[word] = setTimeout(() => {
-      // Only show fallback if we still don't have data for this specific word
-      if (currentWordRef.current === word && (!synonymsCache.current[word] || synonymsCache.current[word].length === 0)) {
-        const fallbackSynonyms = getFallbackSynonyms(word);
-        synonymsCache.current[word] = fallbackSynonyms; // Cache the fallback
-        setSynonyms(fallbackSynonyms);
-        setIsLoadingSynonyms(false);
-      }
-      delete synonymTimeoutRef.current[word];
-    }, 10000);
   };
 
   const getNextRecommendation = () => {
@@ -450,6 +399,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   useEffect(() => {
     setIsPageLoaded(true);
 
+    // Fetch pre-generated items on mount - NO API calls, instant data
+    window.parent.postMessage(
+      { 
+        type: 'FETCH_PREGENERATED_ITEMS', 
+        data: { 
+          category: currentCategory, 
+          inputType,
+          count: 20 
+        } 
+      },
+      '*'
+    );
+
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
         duration: 300,
@@ -491,21 +453,51 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
     const handleMessage = (event: MessageEvent) => {
       let msg = event.data;
+      
       if (msg?.type === 'devvit-message' && msg.data?.message) {
         msg = msg.data.message;
       }
       if (!msg || typeof msg !== 'object') return;
       
-      // Log all incoming messages for debugging
-      if (msg.type && msg.type.includes('GIPHY')) {
-        console.log('[GIF Modal] Message received:', msg.type);
+      if (msg.type === 'FETCH_PREGENERATED_ITEMS_RESULT') {
+        if (msg.success && Array.isArray(msg.items) && msg.items.length > 0) {
+          const cacheKey = `${msg.category}-${msg.inputType}`;
+          
+          // Extract words and synonyms from pre-generated items
+          const words = msg.items.map((item: any) => item.word);
+          
+          // Populate both caches atomically
+          recommendationsCache.current[cacheKey] = words;
+          msg.items.forEach((item: any) => {
+            synonymsCache.current[item.word] = item.synonyms;
+          });
+          
+          // Display first word and synonyms INSTANTLY - everything is pre-generated
+          const firstWord = words[0];
+          setRecommendations(words);
+          setCurrentRecIndex(0);
+          currentWordRef.current = firstWord;
+          setSecretInput(firstWord);
+          setIsLoadingRecommendations(false);
+          setSynonyms(synonymsCache.current[firstWord]);
+          setIsLoadingSynonyms(false);
+          
+          console.log(`[PRE-GEN] Loaded ${words.length} pre-generated items for ${msg.category} - ${msg.inputType}`);
+        } else {
+          console.error('[PRE-GEN] No pre-generated items available, using fallback data');
+          // Use fallback recommendations if pre-generation failed
+          const cacheKey = `${currentCategory}-${inputType}`;
+          const fallbackData = getFallbackRecommendations();
+          recommendationsCache.current[cacheKey] = fallbackData;
+          setRecommendations(fallbackData);
+          setCurrentRecIndex(0);
+          currentWordRef.current = fallbackData[0];
+          setSecretInput(fallbackData[0]);
+          setIsLoadingRecommendations(false);
+          fetchSynonyms(fallbackData[0]);
+        }
       }
-
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-
+      
       if (msg.type === 'GET_GEMINI_RECOMMENDATIONS_RESULT') {
         if (msg.success && Array.isArray(msg.result)) {
           const filtered = msg.result.filter((r: string) => r.length >= 5);
@@ -536,22 +528,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             
             // Fetch synonyms for the first word
             fetchSynonyms(filtered[0]);
-            
-            // Pre-fetch synonyms for ALL recommendations in the background
-            filtered.slice(1).forEach((word: string, index: number) => {
-              // Stagger the requests slightly to avoid overwhelming the API
-              setTimeout(() => {
-                if (!synonymsCache.current[word]) {
-                  window.parent.postMessage(
-                    {
-                      type: 'GET_GEMINI_SYNONYMS',
-                      data: { word },
-                    },
-                    '*'
-                  );
-                }
-              }, (index + 1) * 500);
-            });
           }
         } else {
           // Only show fallback if we don't already have data for the current type
@@ -586,14 +562,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           }
           // Only update UI if this is for the current word
           if (wordForCache === currentWordRef.current) {
+            // Display word AND synonyms together
+            const cacheKey = `${currentCategory}-${inputType}`;
+            if (recommendationsCache.current[cacheKey]) {
+              const cachedData = recommendationsCache.current[cacheKey];
+              const wordIndex = cachedData.indexOf(wordForCache);
+              if (wordIndex >= 0) {
+                setRecommendations(cachedData);
+                setCurrentRecIndex(wordIndex);
+                setSecretInput(wordForCache);
+                setIsLoadingRecommendations(false);
+              }
+            }
+            
             setSynonyms(msg.result);
             setIsLoadingSynonyms(false);
             
             // PRE-FETCH GIFs for ALL synonyms immediately when synonyms load
-            // This runs in background so GIFs are cached before user clicks
             const allSynonyms = msg.result.map((s: string[]) => s[0] || '').filter(Boolean);
-            if (allSynonyms.length > 0 && !isBatchFetching.current) {
+            if (allSynonyms.length > 0) {
               isBatchFetching.current = true;
+              batchFetchingSynonyms.current.clear();
               allSynonyms.forEach((synonym: string) => {
                 batchFetchingSynonyms.current.add(synonym);
               });
@@ -606,41 +595,33 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               );
             }
           }
-        } else {
-          // API failed - use fallback only if this is the current word
-          if (wordForCache === currentWordRef.current && !synonymsCache.current[wordForCache]) {
-            const fallbackSynonyms = getFallbackSynonyms(wordForCache);
-            synonymsCache.current[wordForCache] = fallbackSynonyms; // Cache the fallback
-            setSynonyms(fallbackSynonyms);
-            setIsLoadingSynonyms(false);
-          }
         }
       }
 
       if (msg.type === 'SEARCH_GIPHY_GIFS_RESULT') {
-        console.log('[GIF Modal] Received SEARCH_GIPHY_GIFS_RESULT:', msg.success, 'results:', msg.results?.length);
-        if (timeoutRef.current) {
+        const searchedTerm = (msg.query as string) || currentSearchTermRef.current;
+        
+        // Only clear timeout if this is for the current search
+        if (searchedTerm === currentSearchTermRef.current && timeoutRef.current) {
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
+        
         if (msg.success && Array.isArray(msg.results)) {
-          const searchedTerm = currentSearchTermRef.current;
-          console.log('[GIF Modal] Search term:', searchedTerm, 'Results count:', msg.results.length);
           if (msg.results.length > 0) {
-            // Got results - cache and display, reset retry counter
             searchRetryCount.current = 0;
             if (searchedTerm) {
               gifCache.current[searchedTerm] = msg.results;
             }
-            setIsSearching(false);
-            setLoadingStage(0);
-            setGifs(msg.results);
-            console.log('[GIF Modal] GIFs set successfully');
-          } else if (searchRetryCount.current < 2) {
-            // Empty results - likely rate limited, keep loading and retry after delay (max 2 retries)
+            
+            if (searchedTerm === currentSearchTermRef.current) {
+              setGifs(msg.results);
+              setIsSearching(false);
+              setLoadingStage(0);
+              setIsWaitingForResults(false);
+            }
+          } else if (searchedTerm === currentSearchTermRef.current && searchRetryCount.current < 2) {
             searchRetryCount.current++;
-            console.log(`[GIF Modal] Got empty results, retry ${searchRetryCount.current}/2 after 3s delay...`);
-            // Keep isSearching true so user sees loading state, not "No GIFs found"
             setIsSearching(true);
             setTimeout(() => {
               if (currentSearchTermRef.current === searchedTerm && searchedTerm) {
@@ -653,19 +634,16 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 );
               }
             }, 3000);
-          } else {
+          } else if (searchedTerm === currentSearchTermRef.current) {
             // Max retries reached, show empty state
             searchRetryCount.current = 0;
             setIsSearching(false);
             setLoadingStage(0);
+            setIsWaitingForResults(false);
             setGifs([]);
           }
-        } else if (searchRetryCount.current < 2) {
-          // Error response - keep loading and retry after delay (max 2 retries)
+        } else if (searchedTerm === currentSearchTermRef.current && searchRetryCount.current < 2) {
           searchRetryCount.current++;
-          console.log(`[GIF Modal] Search error, retry ${searchRetryCount.current}/2 after 3s delay...`);
-          const searchedTerm = currentSearchTermRef.current;
-          // Keep isSearching true so user sees loading state, not "No GIFs found"
           setIsSearching(true);
           setTimeout(() => {
             if (currentSearchTermRef.current === searchedTerm && searchedTerm) {
@@ -678,42 +656,83 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               );
             }
           }, 3000);
-        } else {
+        } else if (searchedTerm === currentSearchTermRef.current) {
           // Max retries reached on error, show empty state
           searchRetryCount.current = 0;
           setLoadingStage(0);
           setIsSearching(false);
+          setIsWaitingForResults(false);
           setGifs([]);
         }
       }
 
       if (msg.type === 'CHECK_GIPHY_CACHE_RESULT') {
+        const query = msg.query;
+        
         isCacheCheckingRef.current = false;
         setIsCacheChecking(false);
         if (cacheCheckTimeoutRef.current) {
           clearTimeout(cacheCheckTimeoutRef.current);
           cacheCheckTimeoutRef.current = null;
         }
+        
+        // Clear the search timeout since we got a response
+        if (timeoutRef.current && currentSearchTermRef.current === query) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        
         if (msg.success && msg.cached && Array.isArray(msg.results) && msg.results.length > 0) {
-          const query = msg.query;
           if (query) {
             gifCache.current[query] = msg.results;
-            // Only update UI if this is still the current search
-            if (currentSearchTermRef.current === query) {
+            if (currentSearchTermRef.current === query && pendingDisplaySynonym.current === query) {
+              pendingDisplaySynonym.current = null;
               setGifs(msg.results);
               setIsSearching(false);
               setLoadingStage(0);
+              setIsWaitingForResults(false);
             }
           }
         } else {
-          // Cache check completed but no results found
-          if (currentSearchTermRef.current === msg.query) {
+          if (currentSearchTermRef.current === query && pendingDisplaySynonym.current === query) {
+            window.parent.postMessage(
+              { type: 'SEARCH_GIPHY_GIFS', data: { query: query, limit: 4 } },
+              '*'
+            );
+            timeoutRef.current = setTimeout(() => {
+              if (currentSearchTermRef.current === query) {
+                setIsSearching(false);
+                setIsWaitingForResults(false);
+              }
+            }, 25000);
+          }
+        }
+      }
+
+      if (msg.type === 'SEARCH_BATCH_GIPHY_GIFS_PARTIAL') {
+        if (msg.success && msg.query) {
+          const query = msg.query as string;
+          const results = (msg.results as GiphyGifResult[]) || [];
+          
+          if (results.length > 0) {
+            gifCache.current[query] = results;
+          }
+          batchFetchingSynonyms.current.delete(query);
+          const isWaitingForThis = pendingDisplaySynonym.current === query || 
+                                   currentSearchTermRef.current === query;
+          
+          if (isWaitingForThis && results.length > 0) {
+            pendingDisplaySynonym.current = null;
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setGifs(results);
             setIsSearching(false);
             setLoadingStage(0);
-            // Only set empty if we truly have no cache
-            if (!gifCache.current[msg.query] || gifCache.current[msg.query].length === 0) {
-              setGifs([]);
-            }
+            setIsWaitingForResults(false);
+          } else if (pendingDisplaySynonym.current === query && results.length === 0) {
+            setIsWaitingForResults(false);
           }
         }
       }
@@ -728,18 +747,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             batchFetchingSynonyms.current.delete(query);
           });
           
-          // If user clicked a synonym and is waiting, display results now
-          if (pendingDisplaySynonym.current && gifCache.current[pendingDisplaySynonym.current]) {
-            const waiting = pendingDisplaySynonym.current;
+          // Check if we should display - either pendingDisplaySynonym or currentSearchTerm
+          const searchTerm = currentSearchTermRef.current;
+          const waiting = pendingDisplaySynonym.current || searchTerm;
+          
+          if (waiting && gifCache.current[waiting] && gifCache.current[waiting].length > 0) {
             pendingDisplaySynonym.current = null;
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
             setGifs(gifCache.current[waiting]);
             setIsSearching(false);
             setLoadingStage(0);
+            setIsWaitingForResults(false);
           }
-          console.log('[GIF Modal] Batch completed, cached results for:', Object.keys(msg.results).join(', '));
         } else {
           batchFetchingSynonyms.current.clear();
-          // If waiting and batch failed, trigger direct search
           if (pendingDisplaySynonym.current) {
             const waiting = pendingDisplaySynonym.current;
             pendingDisplaySynonym.current = null;
@@ -770,6 +794,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (cacheCheckTimeoutRef.current) {
         clearTimeout(cacheCheckTimeoutRef.current);
       }
+      if (cacheRetryIntervalRef.current) {
+        clearInterval(cacheRetryIntervalRef.current);
+      }
       // Clear all synonym timeouts
       Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
       synonymTimeoutRef.current = {};
@@ -778,12 +805,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
   const searchGifs = async (term: string) => {
     if (!term) return;
-    setGifs([]);
+    
     setSelectedGifInModal(null);
     currentSearchTermRef.current = term;
-    searchRetryCount.current = 0; // Reset retry counter for new search
+    searchRetryCount.current = 0;
 
-    // Check cache first - display instantly if available
     if (gifCache.current[term] && gifCache.current[term].length > 0) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -792,30 +818,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setGifs(gifCache.current[term]);
       setIsSearching(false);
       setLoadingStage(0);
-      batchFetchingSynonyms.current.delete(term);
+      setIsWaitingForResults(false);
       return;
     }
 
-    // If batch is already fetching this synonym, wait for it (no separate search needed)
-    if (batchFetchingSynonyms.current.has(term)) {
-      setIsSearching(true);
-      pendingDisplaySynonym.current = term;
-      // Set a timeout - if batch doesn't complete in 10s, do direct search
-      setTimeout(() => {
-        if (pendingDisplaySynonym.current === term && !gifCache.current[term]) {
-          pendingDisplaySynonym.current = null;
-          // Batch taking too long, do direct search
-          window.parent.postMessage(
-            { type: 'SEARCH_GIPHY_GIFS', data: { query: term, limit: 4 } },
-            '*'
-          );
-        }
-      }, 10000);
-      return;
-    }
-
-    // No cache and not in batch - do direct search
+    setGifs([]);
     setIsSearching(true);
+    setIsWaitingForResults(true);
+    pendingDisplaySynonym.current = term;
 
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -823,50 +833,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
     
     window.parent.postMessage(
-      {
-        type: 'SEARCH_GIPHY_GIFS',
-        data: { query: term, limit: 4 },
-      },
+      { type: 'CHECK_GIPHY_CACHE', data: { query: term } },
       '*'
     );
     
-    // Timeout that checks cache before giving up
     timeoutRef.current = setTimeout(() => {
-      // Before showing error, check if results arrived in cache during the wait
-      if (gifCache.current[term]) {
-        setGifs(gifCache.current[term]);
-        setIsSearching(false);
-        setLoadingStage(0);
-        return;
+      if (currentSearchTermRef.current === term && pendingDisplaySynonym.current === term) {
+        window.parent.postMessage(
+          { type: 'SEARCH_GIPHY_GIFS', data: { query: term, limit: 4 } },
+          '*'
+        );
       }
-      
-      // Request cache check from backend before declaring failure
-      setIsCacheChecking(true);
-      isCacheCheckingRef.current = true;
-      window.parent.postMessage(
-        {
-          type: 'CHECK_GIPHY_CACHE',
-          data: { query: term },
-        },
-        '*'
-      );
-      
-      // Safety timeout: if cache check doesn't respond in 5 seconds, finalize
-      cacheCheckTimeoutRef.current = setTimeout(() => {
-        if (isCacheCheckingRef.current && currentSearchTermRef.current === term) {
-          isCacheCheckingRef.current = false;
-          setIsCacheChecking(false);
-          setIsSearching(false);
-          setLoadingStage(0);
-          // Only clear GIFs if we still don't have results in cache
-          if (gifCache.current[term] && gifCache.current[term].length > 0) {
-            setGifs(gifCache.current[term]);
-          } else {
-            setGifs([]);
-          }
-        }
-      }, 5000);
-    }, 25000);
+    }, 3000);
   };
 
   const handleBackClick = () => {
@@ -1185,7 +1163,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         confirmDisabled={!selectedGifInModal}
       >
         <div className="flex flex-col gap-4">
-           {isSearching && loadingStage > 0 && (
+           {(isSearching || isCacheChecking) && (
              <div className="flex flex-col items-center justify-center pt-12 pb-8">
                {/* Progress Bar */}
                <div className="w-full max-w-md px-4">
@@ -1193,7 +1171,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                    <div
                      className="h-full rounded-full"
                      style={{
-                       width: `${Math.min(100, (loadingStage / 3) * 100)}%`,
+                       width: `${Math.min(100, Math.max(5, (loadingStage / 3) * 100))}%`,
                        backgroundColor: colors.primary,
                        boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)',
                        transition: 'width 0.1s linear',
@@ -1212,14 +1190,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                </div>
              </div>
            )}
-          {!isSearching && !isCacheChecking && gifs.length === 0 && (
+          {/* Show loading spinner if still waiting for results (even after timeout) */}
+          {!isSearching && !isCacheChecking && isWaitingForResults && gifs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500"></div>
+              <ComicText size={0.6} color="#60A5FA" className="text-center mt-3">
+                Loading GIFs...
+              </ComicText>
+            </div>
+          )}
+          {!isSearching && !isCacheChecking && !isWaitingForResults && gifs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8">
               <ComicText size={0.6} color="#94A3B8" className="text-center">
                 No GIFs found. Try a different word/phrase.
               </ComicText>
             </div>
           )}
-          {!isSearching && gifs.length > 0 && (
+          {gifs.length > 0 && (
             <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2">
               <div className="grid grid-cols-2 gap-2">
                 {gifs.map((gif, idx) => {
@@ -1249,10 +1236,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                             fallback.textContent = '🎬 GIF not available';
                             e.currentTarget.parentNode?.appendChild(fallback);
                           }}
-                          onLoad={(e) => {
-                            e.currentTarget.style.opacity = '1';
-                          }}
-                          style={{ opacity: 0, transition: 'opacity 0.3s' }}
                         />
                       </div>
                       {/* <div className="bg-gray-800 p-2 text-center">
@@ -1266,7 +1249,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               </div>
             </div>
           )}
-          {!isSearching && gifs.length > 0 && (
+          {gifs.length > 0 && (
             <div className="flex justify-center mt-2 mb-2">
               <img
                 src="/giphy-attribution-marks/PoweredBy_200px-White_HorizText.png"

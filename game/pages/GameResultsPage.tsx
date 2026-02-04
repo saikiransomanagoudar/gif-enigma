@@ -319,7 +319,6 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
       if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
         setDebugMode(actualMessage.enabled);
-        console.log('[GameResultsPage] Debug mode', actualMessage.enabled ? 'enabled' : 'disabled');
       }
     };
 

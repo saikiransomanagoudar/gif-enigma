@@ -19,11 +19,11 @@ export async function preWarmCache(context: Context): Promise<void> {
       if (recsResult.success && recsResult.recommendations) {
         recommendationsWarmed++;
 
-        const synonymCount = inputType === 'phrase' ? 10 : 5;
-        const topWords = recsResult.recommendations.slice(0, synonymCount);
+        // Cache synonyms for ALL recommendations (all 20, not just first 5)
+        const allWords = recsResult.recommendations;
 
         // Run synonym fetches in parallel within each category
-        const synonymPromises = topWords.map(word =>
+        const synonymPromises = allWords.map(word =>
           fetchGeminiSynonyms(context, word).then(synResult => {
             if (synResult.success && synResult.synonyms) {
               synonymsWarmed++;

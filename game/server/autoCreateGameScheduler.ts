@@ -247,9 +247,19 @@ Devvit.addSchedulerJob({
 
 Devvit.addSchedulerJob({
   name: 'cache_prewarmer',
-  onRun: async (_event: ScheduledJobEvent<undefined>, rawContext: JobContext) => {
+  onRun: async (event: ScheduledJobEvent<{ runPreGen?: boolean; force?: boolean } | undefined>, rawContext: JobContext) => {
     const context = rawContext as unknown as Context;
-    const { preWarmCache } = await import('./cachePreWarmer.js');
-    await preWarmCache(context);
+    
+    // Run pre-generation if explicitly requested OR if no data specified (default behavior)
+    const runPreGen = event?.data?.runPreGen !== false; // Defaults to true
+    const force = event?.data?.force || false;
+    
+    if (runPreGen) {
+      const { preGenerateItems } = await import('./dailyPreGenerator.js');
+      await preGenerateItems(context, force);
+    } else {
+      const { preWarmCache } = await import('./cachePreWarmer.js');
+      await preWarmCache(context);
+    }
   },
 });

@@ -19,11 +19,12 @@ export async function getRecommendations(
     category: CategoryType;
     inputType: 'word' | 'phrase';
     count?: number;
+    excludeWords?: string[];
   },
   context: Context
 ): Promise<{ success: boolean; recommendations?: string[]; error?: string; debug?: any }> {
   try {
-    const { category, inputType, count = 20 } = params;
+    const { category, inputType, count = 20, excludeWords = [] } = params;
 
     const apiKey = await context.settings.get('gemini-api-key');
 
@@ -35,10 +36,15 @@ export async function getRecommendations(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
     const timestamp = Date.now();
     const randomSeed = Math.floor(Math.random() * 1000);
+    
+    // Build exclusion clause if we have words to exclude
+    const exclusionClause = excludeWords.length > 0 
+      ? `\n\nIMPORTANT: DO NOT include any of these previously used ${inputType}s: ${excludeWords.join(', ')}.` 
+      : '';
 
     const prompt =
       inputType === 'word'
@@ -54,7 +60,7 @@ export async function getRecommendations(
                 : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
         } 
     All words must be at least 5 characters long and safe for all audiences (not NSFW).
-    DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the words.
+    DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the words.${exclusionClause}
     
     IMPORTANT GIF SEARCH OPTIMIZATION:
     - Choose words that have VISUAL APPEAL when animated
@@ -78,7 +84,7 @@ export async function getRecommendations(
                 : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
         } 
     Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).
-    DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the phrases.
+    DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the phrases.${exclusionClause}
     
     IMPORTANT GIF SEARCH OPTIMIZATION:
     - Focus on phrases that describe ACTIONS or REACTIONS (like "mind blown" or "happy dance")
@@ -271,7 +277,7 @@ export async function getSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
     const timestamp = Date.now();
     const randomSeed = Math.floor(Math.random() * 1000);
@@ -719,7 +725,7 @@ export async function getSemanticSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
     // Calculate word length (without spaces/punctuation)
     const normalizedWord = word.replace(/\s+/g, '').replace(/[^\w]/g, '');
@@ -880,7 +886,7 @@ export async function validateGifWordMatch(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
     const prompt = `Evaluate if these GIFs match the secret word or phrase for a GIF-guessing game with progressive hints.
 

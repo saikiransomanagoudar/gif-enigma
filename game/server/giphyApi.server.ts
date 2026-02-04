@@ -81,8 +81,6 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
     // Use fixed_height_small as tinygif equivalent (smallest animated version)
     const tinygifSource = images.fixed_height_small || images.preview_gif || images.fixed_width_small;
 
-    console.log(`[GIPHY DEBUG] Transforming GIF ${raw.id}: tinygif source URL = ${tinygifSource?.url || 'NONE'}`);
-
     return {
         id: raw.id,
         title: raw.title || '',
@@ -106,47 +104,29 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
 
 async function cacheGiphyGif(context: Context, giphyGif: GiphyGifResult): Promise<GiphyGifResult> {
     const cacheKey = `${GIF_CACHE_PREFIX}${giphyGif.id}`;
-    console.log(`[GIPHY DEBUG] cacheGiphyGif called for ID: ${giphyGif.id}`);
 
     try {
-        // 1. Check Redis cache for ALL formats
         const cachedFormats = await context.redis.get(cacheKey);
         if (cachedFormats) {
-            console.log(`[GIPHY DEBUG] Found cached GIF for ID: ${giphyGif.id}`);
             return JSON.parse(cachedFormats);
         }
 
-        // 2. Upload and cache only essential formats first (tinygif) for speed
         const uploadedFormats: Record<string, GiphyGifFormat> = {};
-
-        // Helper: quick utility checks
         const isRedditCdn = (url?: string) => !!url && url.startsWith('https://i.redd.it/');
 
-        // Helper: fast upload with reduced timeout to fail faster on rate limits
         const fastUpload = async (url: string): Promise<string> => {
-            console.log(`[GIPHY DEBUG] Attempting to upload GIF to Reddit CDN: ${url}`);
-            try {
-                const uploadPromise = context.media.upload({ url, type: 'gif' });
-                const result = await Promise.race([
-                    uploadPromise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 2500))
-                ]);
-                // @ts-expect-error Result is from uploadPromise
-                const mediaUrl: string = (result.mediaUrl as string) || url;
-                console.log(`[GIPHY DEBUG] Upload result: ${mediaUrl}`);
-                return mediaUrl;
-            } catch (err) {
-                console.log(`[GIPHY DEBUG] Upload failed: ${err}`);
-                throw err;
-            }
+            const uploadPromise = context.media.upload({ url, type: 'gif' });
+            const result = await Promise.race([
+                uploadPromise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('upload-timeout')), 2500))
+            ]);
+            // @ts-expect-error Result is from uploadPromise
+            return (result.mediaUrl as string) || url;
         };
 
-        // Get the tinygif URL to upload
         const tinygifUrl = giphyGif.media_formats.tinygif?.url;
-        console.log(`[GIPHY DEBUG] tinygif URL to upload: ${tinygifUrl}`);
 
         if (!tinygifUrl) {
-            console.log(`[GIPHY DEBUG] No tinygif URL available for GIF ${giphyGif.id}, skipping upload`);
             return {
                 ...giphyGif,
                 url: '',
@@ -157,29 +137,21 @@ async function cacheGiphyGif(context: Context, giphyGif: GiphyGifResult): Promis
             };
         }
 
-        // Upload tinygif format
         try {
             const mediaUrl = await fastUpload(tinygifUrl);
-            console.log(`[GIPHY DEBUG] Uploaded mediaUrl: ${mediaUrl}, isRedditCdn: ${isRedditCdn(mediaUrl)}`);
 
             if (isRedditCdn(mediaUrl)) {
-                // Trust the upload result - if media.upload() returns a Reddit CDN URL, it's valid
-                // Don't do additional verification fetch as it causes rate limiting issues
                 uploadedFormats.tinygif = { ...giphyGif.media_formats.tinygif, url: mediaUrl };
-                console.log(`[GIPHY DEBUG] Reddit CDN URL accepted from upload`);
             }
-        } catch (error) {
-            console.log(`[GIPHY DEBUG] Upload failed for GIF ${giphyGif.id}: ${error}`);
+        } catch {
+            // Upload failed, continue without uploaded format
         }
 
-        // Keep gif format with original URL as fallback (not uploaded to avoid slowdown)
         if (giphyGif.media_formats.gif?.url) {
             uploadedFormats.gif = giphyGif.media_formats.gif;
         }
 
-        // 3. Create final cached result (use uploaded tinygif) - MUST be Reddit CDN
         const preferredUrl = uploadedFormats.tinygif?.url || '';
-        console.log(`[GIPHY DEBUG] Final preferredUrl for GIF ${giphyGif.id}: ${preferredUrl}`);
 
         const cachedResult = {
             ...giphyGif,
@@ -190,9 +162,7 @@ async function cacheGiphyGif(context: Context, giphyGif: GiphyGifResult): Promis
             url: preferredUrl
         };
 
-        // ONLY accept Reddit CDN URLs - if upload failed, return empty to skip this GIF
         if (!isRedditCdn(cachedResult.url)) {
-            console.log(`[GIPHY DEBUG] GIF ${giphyGif.id} rejected - not a Reddit CDN URL`);
             return {
                 ...cachedResult,
                 url: '',
@@ -203,19 +173,16 @@ async function cacheGiphyGif(context: Context, giphyGif: GiphyGifResult): Promis
             } as GiphyGifResult;
         }
 
-        // 4. Store ALL formats in Redis (non-blocking - don't fail if cache fails)
-        console.log(`[GIPHY DEBUG] Caching GIF ${giphyGif.id} with Reddit CDN URL`);
         try {
             await context.redis.set(cacheKey, JSON.stringify(cachedResult));
             await context.redis.expire(cacheKey, CACHE_TTL);
-        } catch (cacheErr) {
-            console.log(`[GIPHY DEBUG] Redis cache failed for ${giphyGif.id}, but returning valid result: ${cacheErr}`);
+        } catch {
+            // Redis cache failed, but return valid result anyway
         }
 
         return cachedResult;
 
-    } catch (error) {
-        console.log(`[GIPHY DEBUG] cacheGiphyGif error for ${giphyGif.id}: ${error}`);
+    } catch {
         return giphyGif;
     }
 }
@@ -225,10 +192,7 @@ export async function searchGiphyGifs(
     query: string,
     limit: number = 4
 ): Promise<GiphyGifResult[]> {
-    console.log(`[GIPHY DEBUG] searchGiphyGifs called with query: "${query}", limit: ${limit}`);
-
     if (!query || query.trim() === '') {
-        console.log(`[GIPHY DEBUG] Empty query, returning empty array`);
         return [];
     }
 
@@ -238,20 +202,17 @@ export async function searchGiphyGifs(
 
         if (cachedData) {
             const results = JSON.parse(cachedData);
-            console.log(`[GIPHY DEBUG] Found ${results.length} cached results for query: "${query}"`);
             if (results.length >= limit) {
                 return results;
             }
         }
-    } catch (cacheError) {
-        console.log(`[GIPHY DEBUG] Cache check error: ${cacheError}`);
+    } catch {
+        // Cache check failed, continue with API fetch
     }
 
     const apiKey = await context.settings.get('giphy-api-key');
-    console.log(`[GIPHY DEBUG] API key retrieved: ${apiKey ? 'YES (length: ' + String(apiKey).length + ')' : 'NO/EMPTY'}`);
 
     if (!apiKey) {
-        console.log(`[GIPHY DEBUG] ERROR: No GIPHY API key configured!`);
         return [];
     }
 
@@ -333,10 +294,7 @@ export async function searchGiphyGifs(
 
     while (collected.length < desiredCount && page < MAX_PAGES) {
         const fetchLimit = 50;
-        // GIPHY API URL - using 'g' rating for family-friendly content
         const apiUrl = `https://api.giphy.com/v1/gifs/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&limit=${fetchLimit}&offset=${offset}&rating=g`;
-
-        console.log(`[GIPHY DEBUG] Fetching page ${page + 1}, offset ${offset}, URL: ${apiUrl.replace(String(apiKey), 'API_KEY_HIDDEN')}`);
 
         try {
             const response = await fetch(apiUrl, {
@@ -346,27 +304,20 @@ export async function searchGiphyGifs(
                 },
             });
 
-            console.log(`[GIPHY DEBUG] API response status: ${response.status}`);
-
             if (!response.ok) {
-                const errorText = await response.text();
-                console.log(`[GIPHY DEBUG] API error response: ${errorText}`);
-                throw new Error(`GIPHY API returned status ${response.status}: ${errorText}`);
+                throw new Error(`GIPHY API returned status ${response.status}`);
             }
 
             const data = await response.json();
-            console.log(`[GIPHY DEBUG] API response - data array length: ${data?.data?.length || 0}, pagination: ${JSON.stringify(data?.pagination || {})}`);
 
             if (!data || !data.data || data.data.length === 0) {
-                console.log(`[GIPHY DEBUG] No more results from API`);
                 break;
             }
 
             const results = data.data;
-            console.log(`[GIPHY DEBUG] Processing ${results.length} raw results (sequential to avoid rate limits)`);
 
             let consecutiveErrors = 0;
-            const MAX_CONSECUTIVE_ERRORS = 3; // Stop trying after 3 consecutive upload failures
+            const MAX_CONSECUTIVE_ERRORS = 3;
 
             for (let i = 0; i < results.length && collected.length < desiredCount; i++) {
                 const result = results[i] as GiphyRawGifResult;
@@ -381,35 +332,27 @@ export async function searchGiphyGifs(
 
                 try {
                     cachedGif = await cacheGiphyGif(context, transformed);
-                    // Reset error counter on success
                     if (cachedGif.url && cachedGif.url.startsWith('https://i.redd.it/')) {
                         consecutiveErrors = 0;
                     }
-                } catch (error) {
-                    console.log(`[GIPHY DEBUG] Error caching GIF ${result.id}: ${error}`);
+                } catch {
                     consecutiveErrors++;
                     cachedGif = transformed;
                     
-                    // Brief wait before next attempt
                     const backoffMs = Math.min(200 * consecutiveErrors, 800);
                     await new Promise(resolve => setTimeout(resolve, backoffMs));
                     
-                    // Check if we should stop due to rate limiting
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        console.log(`[GIPHY DEBUG] Stopping after ${consecutiveErrors} consecutive errors (likely rate limited)`);
                         break;
                     }
                 }
 
                 const hasValidUrl = typeof cachedGif?.url === 'string' && cachedGif.url.startsWith('https://i.redd.it/');
-                console.log(`[GIPHY DEBUG] GIF ${cachedGif.id}: url="${cachedGif.url}", hasValidUrl=${hasValidUrl}`);
 
                 if (hasValidUrl && !seenIds.has(cachedGif.id)) {
-                    // Successfully got a valid URL - reset error counter even if skipped for similarity
                     consecutiveErrors = 0;
                     
                     if (isSimilarToCollected(cachedGif)) {
-                        console.log(`[GIPHY DEBUG] GIF ${cachedGif.id} skipped - too similar to existing`);
                         continue;
                     }
 
@@ -418,32 +361,23 @@ export async function searchGiphyGifs(
                     const metadata = extractMetadata(cachedGif);
                     if (metadata) {
                         collectedMetadata.set(cachedGif.id, metadata);
-                        seenBaseUrls.add(metadata.baseUrl); // Track base URL to prevent duplicates
+                        seenBaseUrls.add(metadata.baseUrl);
                     }
-
-                    console.log(`[GIPHY DEBUG] GIF ${cachedGif.id} added to collection (total: ${collected.length})`);
                     
-                    // Delay between uploads - balanced for speed vs rate limits
                     if (collected.length < desiredCount) {
                         await new Promise(resolve => setTimeout(resolve, 400));
                     }
                 } else {
-                    // Track failed uploads (no valid URL)
                     consecutiveErrors++;
                     
-                    // Backoff delay on failure
                     const backoffMs = Math.min(500 * consecutiveErrors, 1500);
-                    console.log(`[GIPHY DEBUG] Upload failed, waiting ${backoffMs}ms...`);
                     await new Promise(resolve => setTimeout(resolve, backoffMs));
                     
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        console.log(`[GIPHY DEBUG] Stopping after ${consecutiveErrors} consecutive failures (likely rate limited)`);
                         break;
                     }
                 }
             }
-
-            console.log(`[GIPHY DEBUG] Page complete: collected ${collected.length} GIFs so far`);
 
             if (collected.length >= desiredCount) break;
 
@@ -451,23 +385,19 @@ export async function searchGiphyGifs(
             page += 1;
 
             if (data.pagination && offset >= data.pagination.total_count) {
-                console.log(`[GIPHY DEBUG] Reached end of results (offset ${offset} >= total ${data.pagination.total_count})`);
                 break;
             }
-        } catch (fetchError) {
-            console.log(`[GIPHY DEBUG] Fetch error on page ${page + 1}: ${fetchError}`);
+        } catch {
             break;
         }
     }
 
     const usableResults = collected.slice(0, desiredCount);
-    console.log(`[GIPHY DEBUG] Final results: ${usableResults.length} GIFs with valid Reddit CDN URLs`);
 
     if (usableResults.length > 0) {
         const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
         await context.redis.set(cacheKey, JSON.stringify(usableResults));
         await context.redis.expire(cacheKey, CACHE_TTL);
-        console.log(`[GIPHY DEBUG] Cached ${usableResults.length} results for query: "${query}"`);
     }
 
     return usableResults;
@@ -475,14 +405,14 @@ export async function searchGiphyGifs(
 
 /**
  * Search GIPHY GIFs for multiple queries in parallel and cache all results in Redis.
+ * Calls onResult callback as each query completes for incremental updates.
  */
 export async function searchMultipleGiphyGifs(
     context: Context,
     queries: string[],
-    limit: number = 4
+    limit: number = 4,
+    onResult?: (query: string, results: GiphyGifResult[]) => void
 ): Promise<{ [query: string]: GiphyGifResult[] }> {
-    console.log(`[GIPHY DEBUG] searchMultipleGiphyGifs called with ${queries.length} queries`);
-
     if (!queries || queries.length === 0) {
         return {};
     }
@@ -493,14 +423,15 @@ export async function searchMultipleGiphyGifs(
         return {};
     }
 
+    const resultMap: { [query: string]: GiphyGifResult[] } = {};
+
     try {
         const searchWithTimeout = async () => {
             const timeoutPromise = new Promise<{ [query: string]: GiphyGifResult[] }>((_, reject) => {
-                setTimeout(() => reject(new Error('Batch search timeout')), 30000); // 30 second timeout
+                setTimeout(() => reject(new Error('Batch search timeout')), 30000);
             });
 
             const searchPromise = (async () => {
-                const resultMap: { [query: string]: GiphyGifResult[] } = {};
                 const uncachedQueries: string[] = [];
 
                 for (const query of uniqueQueries) {
@@ -511,44 +442,35 @@ export async function searchMultipleGiphyGifs(
                             const cachedResults = JSON.parse(cachedData);
                             if (cachedResults.length >= limit) {
                                 resultMap[query] = cachedResults;
-                                console.log(`[GIPHY DEBUG] Batch - found ${cachedResults.length} cached results for: "${query}"`);
+                                if (onResult) onResult(query, cachedResults);
                             } else {
                                 uncachedQueries.push(query);
                             }
                         } else {
                             uncachedQueries.push(query);
                         }
-                    } catch (cacheErr) {
-                        console.log(`[GIPHY DEBUG] Batch - cache check error for "${query}": ${cacheErr}`);
+                    } catch {
                         uncachedQueries.push(query);
                     }
                 }
 
-                console.log(`[GIPHY DEBUG] Batch - ${uncachedQueries.length} queries need fetching (PARALLEL)`);
-
-                // Process ALL queries in PARALLEL for speed
-                // Each query will handle its own rate limiting internally
                 const fetchPromises = uncachedQueries.map(async (query, index) => {
-                    // Stagger start times slightly to avoid thundering herd
-                    await new Promise(resolve => setTimeout(resolve, index * 200));
+                    await new Promise(resolve => setTimeout(resolve, index * 150));
                     
                     try {
                         const results = await searchGiphyGifs(context, query, limit);
-                        console.log(`[GIPHY DEBUG] Batch - fetched ${results.length} results for: "${query}"`);
+                        resultMap[query] = results;
+                        if (onResult) onResult(query, results);
                         return { query, results };
-                    } catch (err) {
-                        console.log(`[GIPHY DEBUG] Batch - error fetching "${query}": ${err}`);
+                    } catch {
+                        resultMap[query] = [];
+                        if (onResult) onResult(query, []);
                         return { query, results: [] as GiphyGifResult[] };
                     }
                 });
 
-                const fetchResults = await Promise.all(fetchPromises);
-                
-                for (const { query, results } of fetchResults) {
-                    resultMap[query] = results;
-                }
+                await Promise.all(fetchPromises);
 
-                console.log(`[GIPHY DEBUG] Batch - completed with ${Object.keys(resultMap).length} results`);
                 return resultMap;
             })();
 
@@ -556,20 +478,20 @@ export async function searchMultipleGiphyGifs(
         };
 
         return await searchWithTimeout();
-    } catch (error) {
-        console.log(`[GIPHY DEBUG] Batch search error: ${error}`);
-        const resultMap: { [query: string]: GiphyGifResult[] } = {};
+    } catch {
         for (const query of uniqueQueries) {
-            try {
-                const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
-                const cachedData = await context.redis.get(cacheKey);
-                if (cachedData) {
-                    resultMap[query] = JSON.parse(cachedData);
-                } else {
+            if (!resultMap[query]) {
+                try {
+                    const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+                    const cachedData = await context.redis.get(cacheKey);
+                    if (cachedData) {
+                        resultMap[query] = JSON.parse(cachedData);
+                    } else {
+                        resultMap[query] = [];
+                    }
+                } catch {
                     resultMap[query] = [];
                 }
-            } catch {
-                resultMap[query] = [];
             }
         }
         return resultMap;
