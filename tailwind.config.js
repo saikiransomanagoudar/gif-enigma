@@ -14,8 +14,8 @@ export default {
 
         keyframes: {
           'modal-fade-in': {
-            '0%': { opacity: '0', transform: 'scale(0.8)' },
-            '70%': { transform: 'scale(1.05)' },
+            '0%': { opacity: '0', transform: 'scale(0.5)' },
+            '70%': { transform: 'scale(1.08)' },
             '100%': { opacity: '1', transform: 'scale(1)' },
           },
           'float-up': {
@@ -44,7 +44,7 @@ export default {
     extend: {
       animation: {
         'bounce-slow': 'bounce 2s ease-in-out infinite',
-        'modal-fade-in': 'modal-fade-in 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+        'modal-fade-in': 'modal-fade-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
         'float-up': 'float-up 3s ease-out infinite',
         'vibrate': 'vibrate 0.6s cubic-bezier(.36,.07,.19,.97) both',
       },

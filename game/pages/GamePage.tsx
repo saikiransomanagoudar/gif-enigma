@@ -1468,8 +1468,10 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
   }, [gameFlowState, gameData?.id, onNavigate]);
 
-  if (gameFlowState === 'won') {
-    // Show brief celebration with score
+  // Show score modal overlay when won
+  const renderScoreModal = () => {
+    if (gameFlowState !== 'won') return null;
+    
     return (
       <>
         <div className="fixed inset-0 z-40 backdrop-blur-md transition-all duration-500" style={{ backgroundColor: 'rgba(0, 0, 0, 0.2)' }}></div>
@@ -1502,7 +1504,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         </div>
       </>
     );
-  }
+  };
 
   return (
     <div
@@ -2277,6 +2279,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </div>
         </div>
       )}
+
+      {renderScoreModal()}
     </div>
   );
 };
