@@ -169,7 +169,14 @@ export async function saveScore(
     // Update cumulative leaderboard
     await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
 
-    // -------- End Cumulative Leaderboard Additions --------
+    // Invalidate leaderboard cache
+    try {
+      const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
+      await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
+    } catch (cacheError) {
+      console.error('Failed to invalidate leaderboard cache:', cacheError);
+      // Continue even if cache invalidation fails
+    }
 
     return { success: true };
   } catch (error) {
@@ -327,6 +334,19 @@ export async function getCumulativeLeaderboard(
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
     const { limit = 10 } = params;
+    const cacheKey = `leaderboard:cumulative:${limit}`;
+    const cacheTTL = 120; // 2 minutes cache
+
+    // Try to get cached leaderboard
+    try {
+      const cached = await context.redis.get(cacheKey);
+      if (cached) {
+        const leaderboard = JSON.parse(cached) as LeaderboardEntry[];
+        return { success: true, leaderboard };
+      }
+    } catch (cacheError) {
+      console.log('Cache read failed, fetching fresh data:', cacheError);
+    }
 
     // Get top users from cumulative leaderboard
     const leaderboardItems = await context.redis.zRange('cumulativeLeaderboard', 0, limit - 1, {
@@ -338,49 +358,69 @@ export async function getCumulativeLeaderboard(
       return { success: true, leaderboard: [] };
     }
 
-    const leaderboard: LeaderboardEntry[] = [];
-
-    for (let i = 0; i < leaderboardItems.length; i++) {
-      const item = leaderboardItems[i];
+    // Filter and collect valid usernames first
+    const validUsers: Array<{ username: string; item: typeof leaderboardItems[0] }> = [];
+    
+    for (const item of leaderboardItems) {
       const username = typeof item.member === 'string' ? item.member : '';
-
+      
       // Skip anonymous users
       if (!username || username.toLowerCase() === 'anonymous') {
         continue;
       }
+      
+      validUsers.push({ username, item });
+    }
 
-      // Get user stats
-      const userStats = (await context.redis.hGetAll(`userStats:${username}`)) || {};
-
-      if (!userStats || Object.keys(userStats).length === 0) {
-        continue;
-      }
-
-      if (!userStats || typeof userStats !== 'object') {
-        return { success: false, error: 'Invalid user data format' };
-      }
-
-      // Fetch Snoovatar URL
-      let snoovatarUrl: string | undefined;
+    // Fetch all user stats and snoovatars in parallel
+    const leaderboardPromises = validUsers.map(async ({ username, item }) => {
       try {
-        snoovatarUrl = await context.reddit.getSnoovatarUrl(username);
-      } catch (error) {
-        console.error(`Failed to fetch Snoovatar for ${username}:`, error);
-        // Continue without avatar if fetch fails
-      }
+        // Fetch user stats and snoovatar in parallel
+        const [userStats, snoovatarUrl] = await Promise.all([
+          context.redis.hGetAll(`userStats:${username}`),
+          context.reddit.getSnoovatarUrl(username).catch((error) => {
+            console.error(`Failed to fetch Snoovatar for ${username}:`, error);
+            return undefined;
+          }),
+        ]);
 
-      leaderboard.push({
-        rank: leaderboard.length + 1,
-        username: username,
-        score: Number(userStats.totalScore ?? item.score),
-        gamesPlayed: Number(userStats.gamesPlayed || 0),
-        gamesWon: Number(userStats.gamesWon || 0),
-        gamesCreated: Number(userStats.gamesCreated || 0),
-        bestScore: Number(userStats.bestScore || 0),
-        snoovatarUrl: snoovatarUrl,
-        averageScore: Number(userStats.averageScore || 0),
-        timestamp: Number(userStats.lastPlayed || 0),
-      });
+        if (!userStats || Object.keys(userStats).length === 0) {
+          return null;
+        }
+
+        return {
+          username: username,
+          score: Number(userStats.totalScore ?? item.score),
+          gamesPlayed: Number(userStats.gamesPlayed || 0),
+          gamesWon: Number(userStats.gamesWon || 0),
+          gamesCreated: Number(userStats.gamesCreated || 0),
+          bestScore: Number(userStats.bestScore || 0),
+          snoovatarUrl: snoovatarUrl,
+          averageScore: Number(userStats.averageScore || 0),
+          timestamp: Number(userStats.lastPlayed || 0),
+        } as Omit<LeaderboardEntry, 'rank'>;
+      } catch (error) {
+        console.error(`Error fetching data for ${username}:`, error);
+        return null;
+      }
+    });
+
+    const leaderboardResults = await Promise.all(leaderboardPromises);
+    
+    // Filter out null results and add ranks
+    const leaderboard: LeaderboardEntry[] = leaderboardResults
+      .filter((entry): entry is Omit<LeaderboardEntry, 'rank'> => entry !== null)
+      .map((entry, index) => ({
+        ...entry,
+        rank: index + 1,
+      }));
+
+    // Cache the result
+    try {
+      await context.redis.set(cacheKey, JSON.stringify(leaderboard), { expiration: new Date(Date.now() + cacheTTL * 1000) });
+    } catch (cacheError) {
+      console.error('Failed to cache leaderboard:', cacheError);
+      // Continue without caching
     }
 
     return { success: true, leaderboard };
@@ -468,6 +508,14 @@ export async function awardCreationBonus(
 
     if (shouldAwardBonus) {
       await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
+      
+      // Invalidate leaderboard cache
+      try {
+        const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
+        await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
+      } catch (cacheError) {
+        console.error('Failed to invalidate leaderboard cache:', cacheError);
+      }
     }
 
     return { success: true, bonusAwarded: shouldAwardBonus };

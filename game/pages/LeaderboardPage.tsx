@@ -108,7 +108,6 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   const handleScrollToUser = () => {
     if (userRowRef.current) {
       userRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Add pulse animation
       userRowRef.current.classList.add('pulse-highlight');
       setTimeout(() => {
         userRowRef.current?.classList.remove('pulse-highlight');
@@ -117,21 +116,19 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   };
 
   return (
-    <div className={`flex w-full flex-col gap-6 h-screen pb-20 ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
-      <div className="px-6 md:px-10 pt-6">
-        <button
-          ref={backButtonRef}
-          onClick={handleBackClick}
-          className={`sm:w-[12%] max-sm:w-[22%] lg:w-[7%] ${isDarkMode ? 'bg-[#FF4500] text-white' :`bg-[#FF4500] text-black`} flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
-        >
-          <span className="mr-1 text-sm text-white">👈</span>
-          <ComicText size={0.5} color="white">Back</ComicText>
-        </button>
-      </div>
+    <div className={`flex w-full flex-col gap-3 h-screen pb-20 relative ${isDarkMode ? "bg-gray-900 text-white" : "bg-[#E8E5DA] text-black"}`}>
+      <button
+        ref={backButtonRef}
+        onClick={handleBackClick}
+        className={`absolute top-4 left-4 md:left-6 z-10 bg-[#FF4500] text-white flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+      >
+        <span className="mr-1 text-sm">👈</span>
+        <ComicText size={0.5} color="white">Back</ComicText>
+      </button>
 
-      <div className="flex flex-col items-center px-6 md:px-10">
-        <span className="text-4xl">🏆</span>
-        <h2 className="text-2xl font-bold text-[#FF4500]">
+      <div className="flex items-center justify-center gap-1 px-6 md:px-10 pt-4 pb-2">
+        <span className="text-2xl">🏆</span>
+        <h2 className="text-xl font-bold text-[#FF4500]">
           <ComicText>Top Players</ComicText>
         </h2>
       </div>
