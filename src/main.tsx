@@ -824,6 +824,39 @@ Devvit.addCustomPostType({
             }
             break;
 
+          case 'CHECK_CREATION_LIMIT':
+            try {
+              const username = context.userId ? (await context.reddit.getUserById(context.userId))?.username || 'anonymous' : 'anonymous';
+              
+              // Check recent creations count
+              const now = Date.now();
+              const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+              const recentCreationsKey = `user:${username}:recentCreations`;
+              
+              const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
+                by: 'rank',
+              });
+              
+              const creationsInLast24h = recentCreations.filter((item) => {
+                return item.score >= twentyFourHoursAgo;
+              });
+              
+              const canCreate = creationsInLast24h.length < 4;
+              
+              postMessage({
+                type: 'CHECK_CREATION_LIMIT_RESULT',
+                canCreate,
+                count: creationsInLast24h.length,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'CHECK_CREATION_LIMIT_RESULT',
+                canCreate: true, // Allow creation on error
+                error: String(error),
+              });
+            }
+            break;
+
           case 'SAVE_GAME':
             try {
               const result = await saveGame(event.data, context);

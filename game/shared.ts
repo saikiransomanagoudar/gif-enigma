@@ -235,6 +235,7 @@ export type WebviewToBlockMessage =
     }
   | { type: 'TOGGLE_DEBUG_MODE' }
   | { type: 'GET_DEBUG_MODE' }
+  | { type: 'CHECK_CREATION_LIMIT' }
   | {
       type: 'FETCH_PREGENERATED_ITEMS';
       data: {
@@ -656,6 +657,12 @@ export type BlocksToWebviewMessage =
       }>;
       category?: string;
       inputType?: 'word' | 'phrase';
+      error?: string;
+    }
+    | {
+      type: 'CHECK_CREATION_LIMIT_RESULT';
+      canCreate: boolean;
+      count?: number;
       error?: string;
     };
 
