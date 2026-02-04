@@ -119,6 +119,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [bonusAwarded, setBonusAwarded] = useState<boolean>(true);
+  const [isQuickCreate, setIsQuickCreate] = useState<boolean>(false);
   const [isBatchPreFetching, setIsBatchPreFetching] = useState<boolean>(false);
 
   const headerRef = useRef<HTMLDivElement>(null);
@@ -212,9 +213,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     const animate = (currentTime: number) => {
       if (!startTime) startTime = currentTime;
       const elapsed = currentTime - startTime;
-      
-      // Batch pre-fetching: faster progress (shows it's working in background)
-      // Individual search: slower progress (more patient waiting)
+
       const timeScale = isBatchPreFetching ? 2500 : 5000;
       const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / timeScale)) + 15 * (elapsed / (timeScale * 2)));
       
@@ -858,13 +857,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
 
-    // Not cached - this is a new request
     setGifs([]);
     setIsSearching(true);
     setIsWaitingForResults(true);
     pendingDisplaySynonym.current = term;
     
-    // If batch fetch hasn't been triggered yet, trigger it NOW for ALL synonyms
     if (!isBatchFetching.current && synonyms.length > 0) {
       const allSynonyms = synonyms.map((group) => group[0]).filter(Boolean);
       if (allSynonyms.length > 0) {
@@ -886,8 +883,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
     }
     
-    // ALSO fetch the clicked synonym individually for immediate display
-    // This ensures the user sees results quickly for their clicked slot
     pendingDisplaySynonym.current = term;
 
     if (timeoutRef.current) {
@@ -958,7 +953,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
 
-    // Set creating state IMMEDIATELY to disable button and prevent multiple clicks
     setIsCreating(true);
 
     // Check daily limit first
@@ -995,12 +989,13 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (!canCreate) {
       setIsCreating(false);
       setBonusAwarded(false);
+      setIsQuickCreate(false);
       setShowSuccessModal(true);
       return;
     }
 
-    // Show success modal immediately for user feedback
     setBonusAwarded(true);
+    setIsQuickCreate(true);
     setShowSuccessModal(true);
 
     // Small delay to ensure UI is ready
@@ -1014,12 +1009,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         return;
       }
 
-      // Check which synonyms need fetching
       const needsFetching = synonymsToFetch.filter(synonym => 
         !gifCache.current[synonym] || gifCache.current[synonym].length === 0
       );
 
-      // If we need to fetch any, trigger batch fetch and wait
       if (needsFetching.length > 0) {
         
         // Create a promise that resolves when batch completes
@@ -1041,8 +1034,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           { type: 'SEARCH_BATCH_GIPHY_GIFS', data: { queries: needsFetching, limit: 6 } },
           '*'
         );
-        
-        // Wait for batch to complete
         await batchCompletePromise;
       }
 
@@ -1110,7 +1101,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
   };
 
-  const submitGame = () => {
+  const submitGame = async () => {
     const validGifs = selectedGifs.filter((gif) => gif !== null);
     if (!secretInput) {
       return;
@@ -1119,7 +1110,51 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
 
+    // Check daily limit first
+    window.parent.postMessage(
+      { type: 'CHECK_CREATION_LIMIT' },
+      '*'
+    );
+
+    // Wait for limit check response
+    const limitCheckPromise = new Promise<boolean>((resolve) => {
+      const handleLimitCheck = (event: MessageEvent) => {
+        let msg = event.data;
+        if (msg?.type === 'devvit-message' && msg.data?.message) {
+          msg = msg.data.message;
+        }
+        
+        if (msg?.type === 'CHECK_CREATION_LIMIT_RESULT') {
+          window.removeEventListener('message', handleLimitCheck);
+          resolve(msg.canCreate === true);
+        }
+      };
+      
+      window.addEventListener('message', handleLimitCheck);
+      
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        window.removeEventListener('message', handleLimitCheck);
+        resolve(true); // Allow creation on timeout
+      }, 5000);
+    });
+
+    const canCreate = await limitCheckPromise;
+    
+    if (!canCreate) {
+      setBonusAwarded(false);
+      setIsQuickCreate(false);
+      setShowSuccessModal(true);
+      return;
+    }
+
+    // Set creating state only after limit check passes
     setIsCreating(true);
+
+    // Show success modal immediately for user feedback
+    setBonusAwarded(true);
+    setIsQuickCreate(false);
+    setShowSuccessModal(true);
 
     try {
       const wordArray = secretInput.split('');
@@ -1626,15 +1661,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     {bonusAwarded ? '🎉' : '⚠️'}
                   </div>
                   <ComicText size={1} color={colors.primary} className="mb-2 text-center">
-                    {bonusAwarded ? 'Game Creation in Progress!' : 'Daily Creation Limit Reached'}
+                    {bonusAwarded ? (isQuickCreate ? 'Game Creation in Progress!' : 'Game Created Successfully!') : 'Daily Creation Limit Reached'}
                   </ComicText>
                   {bonusAwarded ? (
                     <>
                       <ComicText size={0.6} color="white" className="mb-2 text-center">
-                        Your puzzle is being created...
+                        {isQuickCreate ? 'Your puzzle is being created...' : 'Your puzzle has been posted!'}
                       </ComicText>
                       <ComicText size={0.5} color="#94A3B8" className="mb-2 text-center">
-                        Check the subreddit feed in a moment
+                        Check the subreddit feed {isQuickCreate ? 'in a moment' : 'now'}
                       </ComicText>
                     </>
                   ) : (
