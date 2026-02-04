@@ -1029,7 +1029,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     
     const hintsUsedSoFar = Math.ceil(revealedLetters.size / revealCount);
     if (hintsUsedSoFar >= maxHints) {
-      window.alert(`No more letter hints available for this word length (${wordLength} letters).`);
       return;
     }
 
