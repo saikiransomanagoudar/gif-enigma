@@ -116,6 +116,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [isPageLoaded, setIsPageLoaded] = useState<boolean>(false);
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [bonusAwarded, setBonusAwarded] = useState<boolean>(true);
+  const [isBatchPreFetching, setIsBatchPreFetching] = useState<boolean>(false);
+  const [isQuickCreating, setIsQuickCreating] = useState<boolean>(false);
 
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -209,9 +211,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (!startTime) startTime = currentTime;
       const elapsed = currentTime - startTime;
       
-      // Asymptotic approach: quickly gets to 80%, then slows down approaching 95%
-      // Uses logarithmic easing for natural deceleration
-      const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / 2000)) + 15 * (elapsed / 10000));
+      // Batch pre-fetching: faster progress (shows it's working in background)
+      // Individual search: slower progress (more patient waiting)
+      const timeScale = isBatchPreFetching ? 2500 : 5000;
+      const progress = Math.min(95, 80 * (1 - Math.exp(-elapsed / timeScale)) + 15 * (elapsed / (timeScale * 2)));
       
       setLoadingStage(Math.max(0.1, progress / 100 * 3)); // Convert to 0-3 scale, min 0.1
       
@@ -228,7 +231,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [isSearching]);
+  }, [isSearching, isBatchPreFetching]);
 
   useEffect(() => {
     if (category) {
@@ -309,11 +312,39 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     return categoryData[inputType] || categoryData['word'];
   };
 
+  const preFetchAllGifs = async (synonymGroups: string[][]) => {
+    if (!synonymGroups || synonymGroups.length === 0) return;
+    
+    const searchTerms = synonymGroups.map(group => group[0]).filter(Boolean);
+    if (searchTerms.length === 0) return;
+    
+    // Check if all are already cached
+    const allCached = searchTerms.every(term => gifCache.current[term]?.length > 0);
+    if (allCached) {
+      return;
+    }
+    
+    // Show loading state for batch pre-fetch
+    setIsBatchPreFetching(true);
+    setIsSearching(true);
+    
+    // Request batch fetch for all search terms
+    window.parent.postMessage(
+      {
+        type: 'SEARCH_BATCH_GIPHY_GIFS',
+        data: { queries: searchTerms, limit: 16 }
+      },
+      '*'
+    );
+  };
+
   const fetchSynonyms = async (word: string) => {
     // Check cache first
     if (synonymsCache.current[word]) {
       setSynonyms(synonymsCache.current[word]);
       setIsLoadingSynonyms(false);
+      // Pre-fetch GIFs for these synonyms
+      preFetchAllGifs(synonymsCache.current[word]);
       return;
     }
     
@@ -577,23 +608,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             
             setSynonyms(msg.result);
             setIsLoadingSynonyms(false);
-            
-            // PRE-FETCH GIFs for ALL synonyms immediately when synonyms load
-            const allSynonyms = msg.result.map((s: string[]) => s[0] || '').filter(Boolean);
-            if (allSynonyms.length > 0) {
-              isBatchFetching.current = true;
-              batchFetchingSynonyms.current.clear();
-              allSynonyms.forEach((synonym: string) => {
-                batchFetchingSynonyms.current.add(synonym);
-              });
-              window.parent.postMessage(
-                {
-                  type: 'SEARCH_BATCH_GIPHY_GIFS',
-                  data: { queries: allSynonyms, limit: 4 },
-                },
-                '*'
-              );
-            }
           }
         }
       }
@@ -628,7 +642,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 window.parent.postMessage(
                   {
                     type: 'SEARCH_GIPHY_GIFS',
-                    data: { query: searchedTerm, limit: 4 },
+                    data: { query: searchedTerm, limit: 6 },
                   },
                   '*'
                 );
@@ -650,7 +664,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               window.parent.postMessage(
                 {
                   type: 'SEARCH_GIPHY_GIFS',
-                  data: { query: searchedTerm, limit: 4 },
+                  data: { query: searchedTerm, limit: 6 },
                 },
                 '*'
               );
@@ -696,7 +710,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         } else {
           if (currentSearchTermRef.current === query && pendingDisplaySynonym.current === query) {
             window.parent.postMessage(
-              { type: 'SEARCH_GIPHY_GIFS', data: { query: query, limit: 4 } },
+              { type: 'SEARCH_GIPHY_GIFS', data: { query: query, limit: 6 } },
               '*'
             );
             timeoutRef.current = setTimeout(() => {
@@ -714,10 +728,13 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           const query = msg.query as string;
           const results = (msg.results as GiphyGifResult[]) || [];
           
+          // Cache the results
           if (results.length > 0) {
             gifCache.current[query] = results;
           }
           batchFetchingSynonyms.current.delete(query);
+          
+          // If this is the synonym the user clicked on, display immediately
           const isWaitingForThis = pendingDisplaySynonym.current === query || 
                                    currentSearchTermRef.current === query;
           
@@ -747,6 +764,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             batchFetchingSynonyms.current.delete(query);
           });
           
+          // Clear batch pre-fetch loading state
+          setIsBatchPreFetching(false);
+          isBatchFetching.current = false;
+          
           // Check if we should display - either pendingDisplaySynonym or currentSearchTerm
           const searchTerm = currentSearchTermRef.current;
           const waiting = pendingDisplaySynonym.current || searchTerm;
@@ -761,14 +782,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             setIsSearching(false);
             setLoadingStage(0);
             setIsWaitingForResults(false);
+          } else {
+            // Batch complete, clear loading if no specific wait
+            setIsSearching(false);
+            setLoadingStage(0);
           }
         } else {
+          setIsBatchPreFetching(false);
+          isBatchFetching.current = false;
           batchFetchingSynonyms.current.clear();
           if (pendingDisplaySynonym.current) {
             const waiting = pendingDisplaySynonym.current;
             pendingDisplaySynonym.current = null;
             window.parent.postMessage(
-              { type: 'SEARCH_GIPHY_GIFS', data: { query: waiting, limit: 4 } },
+              { type: 'SEARCH_GIPHY_GIFS', data: { query: waiting, limit: 6 } },
               '*'
             );
           }
@@ -778,6 +805,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       if (msg.type === 'SAVE_GAME_RESULT') {
         setIsCreating(false);
+        setIsQuickCreating(false);
         if (msg.success && msg.result && msg.result.success) {
           setBonusAwarded(msg.result.bonusAwarded !== false); // Default to true if not specified
           setShowSuccessModal(true);
@@ -810,6 +838,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     currentSearchTermRef.current = term;
     searchRetryCount.current = 0;
 
+    // Check cache first - if cached, display instantly
     if (gifCache.current[term] && gifCache.current[term].length > 0) {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -819,12 +848,40 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setIsSearching(false);
       setLoadingStage(0);
       setIsWaitingForResults(false);
+      setIsBatchPreFetching(false);
       return;
     }
 
+    // Not cached - this is a new request
     setGifs([]);
     setIsSearching(true);
     setIsWaitingForResults(true);
+    pendingDisplaySynonym.current = term;
+    
+    // If batch fetch hasn't been triggered yet, trigger it NOW for ALL synonyms
+    if (!isBatchFetching.current && synonyms.length > 0) {
+      const allSynonyms = synonyms.map((group) => group[0]).filter(Boolean);
+      if (allSynonyms.length > 0) {
+        isBatchFetching.current = true;
+        setIsBatchPreFetching(true);
+        batchFetchingSynonyms.current.clear();
+        allSynonyms.forEach((synonym) => {
+          batchFetchingSynonyms.current.add(synonym);
+        });
+        
+        // Trigger batch fetch in parallel
+        window.parent.postMessage(
+          {
+            type: 'SEARCH_BATCH_GIPHY_GIFS',
+            data: { queries: allSynonyms, limit: 6 },
+          },
+          '*'
+        );
+      }
+    }
+    
+    // ALSO fetch the clicked synonym individually for immediate display
+    // This ensures the user sees results quickly for their clicked slot
     pendingDisplaySynonym.current = term;
 
     if (timeoutRef.current) {
@@ -840,7 +897,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     timeoutRef.current = setTimeout(() => {
       if (currentSearchTermRef.current === term && pendingDisplaySynonym.current === term) {
         window.parent.postMessage(
-          { type: 'SEARCH_GIPHY_GIFS', data: { query: term, limit: 4 } },
+          { type: 'SEARCH_GIPHY_GIFS', data: { query: term, limit: 6 } },
           '*'
         );
       }
@@ -887,6 +944,106 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     const newSelectedGifs = [...selectedGifs];
     newSelectedGifs[index] = null;
     setSelectedGifs(newSelectedGifs);
+  };
+
+  const handleQuickCreate = async () => {
+    if (!secretInput) {
+      setMessage(`No valid recommended ${inputType} selected yet.`);
+      setMessageType('error');
+      return;
+    }
+
+    if (synonyms.length < 4) {
+      setMessage('Please wait for synonyms to load...');
+      setMessageType('error');
+      return;
+    }
+
+    // Show modal immediately to block UI interactions
+    setIsQuickCreating(true);
+    setShowSuccessModal(true);
+
+    try {
+      // Auto-fetch first GIF for each synonym
+      const autoGifUrls: string[] = [];
+      const autoGifDescriptions: string[] = [];
+      const autoSearchTerms: string[] = [];
+
+      for (let i = 0; i < Math.min(4, synonyms.length); i++) {
+        const synonym = synonyms[i][0];
+        if (!synonym) continue;
+
+        // Check cache first
+        let gifResults = gifCache.current[synonym];
+        
+        if (!gifResults || gifResults.length === 0) {
+          // Not cached, trigger fetch
+          window.parent.postMessage(
+            { type: 'SEARCH_GIPHY_GIFS', data: { query: synonym, limit: 1 } },
+            '*'
+          );
+          // Wait a bit for the result
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          gifResults = gifCache.current[synonym];
+        }
+
+        if (gifResults && gifResults.length > 0) {
+          const gif = gifResults[0];
+          const gifUrl = getGifUrl(gif);
+          if (gifUrl) {
+            autoGifUrls.push(gifUrl);
+            autoGifDescriptions.push(gif.content_description || gif.title || synonym);
+            autoSearchTerms.push(synonym);
+          }
+        }
+      }
+
+      if (autoGifUrls.length !== 4) {
+        setMessage('Failed to fetch GIFs automatically. Please try manual creation.');
+        setMessageType('error');
+        setIsQuickCreating(false);
+        setShowSuccessModal(false);
+        return;
+      }
+
+      const wordArray = secretInput.split('');
+      const maskCount = Math.floor((wordArray.length * 2) / 3);
+      const indicesToMask = new Set<number>();
+      while (indicesToMask.size < maskCount) {
+        indicesToMask.add(Math.floor(Math.random() * wordArray.length));
+      }
+      const maskedWord = wordArray
+        .map((char, i) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
+        .join('');
+
+      const questionText =
+        inputType === 'word'
+          ? 'Can you decode the word from this GIF?'
+          : 'Can you decode the phrase from this GIF?';
+
+      window.parent.postMessage(
+        {
+          type: 'SAVE_GAME',
+          data: {
+            word: secretInput,
+            category: currentCategory,
+            maskedWord,
+            questionText,
+            gifs: autoGifUrls,
+            gifDescriptions: autoGifDescriptions,
+            searchTerms: autoSearchTerms,
+            inputType,
+            postToSubreddit: true, // Ensure game is posted to subreddit
+          },
+        },
+        '*'
+      );
+    } catch (error) {
+      setIsQuickCreating(false);
+      setShowSuccessModal(false);
+      setMessage('Quick create failed. Please try again.');
+      setMessageType('error');
+    }
   };
 
   const submitGame = () => {
@@ -1195,7 +1352,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             <div className="flex flex-col items-center justify-center py-8">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500"></div>
               <ComicText size={0.6} color="#60A5FA" className="text-center mt-3">
-                Loading GIFs...
+                {isBatchPreFetching ? 'Preparing GIFs...' : 'Loading GIFs...'}
               </ComicText>
             </div>
           )}
@@ -1357,40 +1514,84 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                )}
              </div>
            </div>
-          <div className="group items-left relative justify-center">
-            <button
-              onClick={getNextRecommendation}
-              disabled={disableSecretChange}
-              className={`rounded-full px-3 py-1 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
-                disableSecretChange ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-              }`}
-              style={{ backgroundColor: colors.secondary }}
-            >
-              <ComicText size={0.6} color="#fff">
-                Try a different one
-              </ComicText>
-            </button>
-            {disableSecretChange && (
-              <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
-                Clear GIFs to pick another word/phrase
-              </div>
-            )}
+          <div className="flex items-center gap-3 justify-center mb-6">
+            <div className="group relative">
+              <button
+                onClick={getNextRecommendation}
+                disabled={disableSecretChange}
+                className={`rounded-full px-3 py-1 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
+                  disableSecretChange ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                }`}
+                style={{ backgroundColor: colors.secondary }}
+              >
+                <ComicText size={0.6} color="#fff">
+                  🔄 Try a different one
+                </ComicText>
+              </button>
+              {disableSecretChange && (
+                <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                  Clear GIFs to pick another word/phrase
+                </div>
+              )}
+            </div>
+
+            <div className="group relative">
+              <button
+                onClick={handleQuickCreate}
+                disabled={!secretInput || synonyms.length < 4 || isQuickCreating}
+                className={`rounded-full px-3 py-1 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
+                  !secretInput || synonyms.length < 4 || isQuickCreating ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                }`}
+                style={{ backgroundColor: colors.primary }}
+              >
+                <ComicText size={0.6} color="#fff">
+                  {isQuickCreating ? '⏳ Creating...' : '🚀 Quick Create'}
+                </ComicText>
+              </button>
+              {(!secretInput || synonyms.length < 4) && (
+                <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
+                  {!secretInput ? 'Select a word/phrase first' : 'Loading synonyms...'}
+                </div>
+              )}
+            </div>
           </div>
 
           {renderGifGrid()}
 
           {showSuccessModal && (
             <div className="bg-opacity-70 fixed inset-0 z-50 flex items-center justify-center bg-black backdrop-blur-sm transition-all duration-300">
-              <div className="animate-bounce-slow rounded-xl bg-gray-800 p-6 shadow-lg">
-                <div className="mb-4 text-4xl">🎉</div>
-                <ComicText size={1} color={colors.primary} className="mb-2 text-center">
-                  Game Created Successfully!
-                </ComicText>
-                <ComicText size={0.7} color="white" className="mb-2 text-center">
-                  Your GIF Enigma is ready to play!
-                </ComicText>
+              <div className="animate-bounce-slow rounded-xl bg-gray-800 p-6 shadow-lg max-w-md">
+                {isQuickCreating ? (
+                  // Loading state during quick create
+                  <>
+                    <div className="mb-4 text-4xl flex justify-center">⏳</div>
+                    <ComicText size={1} color={colors.primary} className="mb-2 text-center">
+                      Creating Your Game...
+                    </ComicText>
+                    <ComicText size={0.6} color="white" className="mb-2 text-center">
+                      Fetching GIFs and setting up your puzzle
+                    </ComicText>
+                    <div className="flex justify-center mt-4">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500"></div>
+                    </div>
+                  </>
+                ) : (
+                  // Success state after creation
+                  <>
+                    <div className="mb-4 text-4xl flex justify-center">🎉</div>
+                    <ComicText size={1} color={colors.primary} className="mb-2 text-center">
+                      Game Created Successfully!
+                    </ComicText>
+                    <ComicText size={0.6} color="white" className="mb-2 text-center">
+                      Your GIF Enigma is being processed...
+                    </ComicText>
+                    <ComicText size={0.5} color="#94A3B8" className="mb-2 text-center">
+                      It may take a few minutes to appear in the feed
+                    </ComicText>
+                  </>
+                )}
                 
-                {bonusAwarded ? (
+                {!isQuickCreating && bonusAwarded ? (
                   <div className="mt-6 mb-4 flex items-center justify-center">
                     <div className="animate-pulse rounded-lg border-2 border-yellow-400 bg-gradient-to-r from-yellow-500 to-orange-500 px-4 py-2 shadow-lg">
                       <div className="flex items-center gap-1.5">
@@ -1413,6 +1614,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     </div>
                   </div>
                 ) : (
+                  !isQuickCreating && (
                   <div className="mt-6 mb-4 flex items-center justify-center">
                     <div className="rounded-lg border-2 border-orange-400 bg-gradient-to-r from-orange-600 to-red-600 px-4 py-2 shadow-lg">
                       <div className="flex items-center gap-1.5">
@@ -1432,8 +1634,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       </div>
                     </div>
                   </div>
+                  )
                 )}
 
+                {!isQuickCreating && (
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={() => {
@@ -1458,6 +1662,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                     </ComicText>
                   </button>
                 </div>
+                )}
               </div>
             </div>
           )}

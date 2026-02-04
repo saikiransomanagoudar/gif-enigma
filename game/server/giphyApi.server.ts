@@ -273,13 +273,20 @@ export async function searchGiphyGifs(
             return true;
         }
         
-        // Check for similar content description (catches same GIF with different IDs)
+        // More aggressive duplicate detection
         for (const [, existingMeta] of collectedMetadata) {
-            // Same aspect ratio AND significant word overlap = likely duplicate
-            if (Math.abs(existingMeta.aspectRatio - newMeta.aspectRatio) < 0.1) {
+            // 1. Same aspect ratio (stricter threshold for exact matches)
+            const aspectDiff = Math.abs(existingMeta.aspectRatio - newMeta.aspectRatio);
+            if (aspectDiff < 0.05) { // Very similar aspect ratio
+                // 2. Check word overlap in description (lowered threshold from 0.6 to 0.5)
                 const commonWordCount = [...newMeta.words].filter(w => existingMeta.words.has(w)).length;
                 const totalWords = Math.max(newMeta.words.size, existingMeta.words.size);
-                if (totalWords > 0 && commonWordCount / totalWords > 0.6) {
+                if (totalWords > 0 && commonWordCount / totalWords > 0.5) {
+                    return true;
+                }
+                
+                // 3. If descriptions are very similar AND aspect ratios match closely, it's likely the same GIF
+                if (totalWords > 0 && commonWordCount / totalWords > 0.4 && aspectDiff < 0.02) {
                     return true;
                 }
             }
