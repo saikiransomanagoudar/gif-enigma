@@ -78,8 +78,8 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
         };
     };
 
-    // Use fixed_height_small as tinygif equivalent (smallest animated version)
-    const tinygifSource = images.fixed_height_small || images.preview_gif || images.fixed_width_small;
+    // Use fixed_height as tinygif equivalent (better quality, ~200px height)
+    const tinygifSource = images.fixed_height || images.downsized || images.fixed_height_small;
 
     return {
         id: raw.id,

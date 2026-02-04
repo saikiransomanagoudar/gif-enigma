@@ -103,8 +103,8 @@ function transformGiphyResult(raw: GiphyRawGifResult, query: string): GiphyGifRe
         title: raw.title || '',
         media_formats: {
             gif: toFormat(images.original),
-            tinygif: toFormat(images.fixed_height_small) || toFormat(images.preview_gif),
-            mediumgif: toFormat(images.fixed_height) || toFormat(images.downsized),
+            tinygif: toFormat(images.fixed_height) || toFormat(images.downsized),
+            mediumgif: toFormat(images.original) || toFormat(images.fixed_height),
             nanogif: toFormat(images.preview_gif) || toFormat(images.fixed_width_small),
         },
         content_description: raw.alt_text || raw.title || `${query} gif`,
