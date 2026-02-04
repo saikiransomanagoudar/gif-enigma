@@ -51,10 +51,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   // @ts-ignore
   const [gameId, setGameId] = useState<string | null>(propGameId || null);
   const [guessCount, setGuessCount] = useState(0);
-  const [isCommentPosting, setIsCommentPosting] = useState(false);
-  const [isCommentPosted, setIsCommentPosted] = useState(false);
-  const [winningGuess, setWinningGuess] = useState<string | null>(null);
-  const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
   const lastSubmittedGuessRef = useRef<string>('');
   const [showIncorrectPopup, setShowIncorrectPopup] = useState(false);
   const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
@@ -66,6 +62,65 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const hintButtonRef = useRef<HTMLDivElement>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // Client-side score calculation (same logic as server)
+  const calculateScoreClientSide = (params: {
+    word: string;
+    gifHintCount: number;
+    revealedLetterCount: number;
+    timeTaken: number;
+  }): {
+    score: number;
+    gifPenalty: number;
+    wordPenalty: number;
+    timeTaken: number;
+  } => {
+    const { word, gifHintCount, revealedLetterCount, timeTaken } = params;
+
+    const cleanWord = word.replace(/\s+/g, '');
+    const wordLength = cleanWord.length;
+
+    let score = 100;
+    let gifPenalty = 0;
+    let wordPenalty = 0;
+
+    if (gifHintCount >= 2) {
+      if (gifHintCount === 2) {
+        gifPenalty = 10;
+      } else if (gifHintCount === 3) {
+        gifPenalty = 20;
+      } else if (gifHintCount >= 4) {
+        gifPenalty = 40;
+      }
+    }
+
+    if (revealedLetterCount > 0 && wordLength >= 5) {
+      let hintsUsed = 0;
+      let lettersPerHint = 2;
+
+      if (wordLength >= 5 && wordLength <= 7) {
+        lettersPerHint = 2;
+        hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
+        wordPenalty = hintsUsed * 50;
+      } else if (wordLength >= 8 && wordLength <= 10) {
+        lettersPerHint = 2;
+        hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
+        wordPenalty = hintsUsed * 25;
+      } else if (wordLength >= 11 && wordLength <= 15) {
+        lettersPerHint = 2;
+        hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
+        wordPenalty = hintsUsed * 15;
+      } else if (wordLength >= 16 && wordLength <= 25) {
+        lettersPerHint = 3;
+        hintsUsed = Math.ceil(revealedLetterCount / lettersPerHint);
+        wordPenalty = hintsUsed * 10;
+      }
+    }
+
+    score = Math.max(0, score - gifPenalty - wordPenalty);
+
+    return { score, gifPenalty, wordPenalty, timeTaken };
+  };
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -252,7 +307,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       '*'
     );
     window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
-    window.parent.postMessage({ type: 'GET_DEBUG_MODE' }, '*');
     loadPlayedGameIds();
 
     const handleMessage = (event: MessageEvent) => {
@@ -457,19 +511,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setShowLeaderboard(true);
         }
       }
-      if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
-        if (debugMode) console.log('[GamePage] Received POST_COMPLETION_COMMENT_RESULT:', actualMessage);
-        setIsCommentPosting(false);
-        if (actualMessage.success) {
-          if (debugMode) console.log('[GamePage] Comment posted successfully');
-          setIsCommentPosted(true);
-        } else {
-          if (debugMode) console.error('[GamePage] Failed to post comment:', actualMessage.error);
-          try {
-            window.alert(actualMessage.error || 'Failed to post comment');
-          } catch {}
-        }
-      }
       if (actualMessage.type === 'HAS_USER_COMPLETED_GAME_RESULT') {
         if (actualMessage.success && actualMessage.completed) {
           setGameFlowState('completed');
@@ -485,7 +526,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       if (actualMessage.type === 'VALIDATE_GUESS_RESULT') {
         if (actualMessage.success) {
           if (actualMessage.isCorrect) {
-            setWinningGuess(lastSubmittedGuessRef.current);
             setIsCorrect(true);
           } else {
             setIsCorrect(false);
@@ -493,10 +533,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         } else {
           setIsCorrect(false);
         }
-      }
-      
-      if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
-        setDebugMode(actualMessage.enabled);
       }
     };
 
@@ -684,6 +720,26 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         setRevealedLetters(allIndices);
       }, 100);
 
+      // Calculate score immediately (client-side) for instant display
+      const timeTakenSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
+      const calculatedScore = calculateScoreClientSide({
+        word: gameData.word,
+        gifHintCount: gifHintCount,
+        revealedLetterCount: originalRevealedCount,
+        timeTaken: timeTakenSeconds,
+      });
+
+      // Set score immediately for modal display
+      setFinalScore({
+        username: currentUsername,
+        gameId: gameData.id,
+        score: calculatedScore.score,
+        gifPenalty: calculatedScore.gifPenalty,
+        wordPenalty: calculatedScore.wordPenalty,
+        timeTaken: calculatedScore.timeTaken,
+        timestamp: Date.now(),
+      });
+
       const playerState = {
         gifHintCount,
         revealedLetters: Array.from(allIndices),
@@ -861,42 +917,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }, 8000);
   };
 
-  const handlePostComment = () => {
-    if (debugMode) console.log('[GamePage] handlePostComment called - gameData:', gameData?.id, 'username:', username);
-    if (!gameData) {
-      if (debugMode) console.warn('[GamePage] Cannot post comment - no game data');
-      return;
-    }
-    if (isCommentPosting || isCommentPosted) {
-      if (debugMode) console.log('[GamePage] Comment already posting or posted');
-      return;
-    }
-    
-    // Don't allow commenting if user gave up (gifHintCount === 999)
-    if (gifHintCount >= 999) {
-      if (debugMode) console.warn('[GamePage] Cannot post comment - user gave up');
-      return;
-    }
-    
-    const currentUsername = username || 'anonymous';
-    const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
-
-    if (debugMode) console.log('[GamePage] Sending POST_COMPLETION_COMMENT - guesses:', guessCount, 'gifHints:', gifHintsUsed);
-    setIsCommentPosting(true);
-    window.parent.postMessage(
-      {
-        type: 'POST_COMPLETION_COMMENT',
-        data: {
-          gameId: gameData.id,
-          username: currentUsername,
-          numGuesses: guessCount,
-          gifHints: gifHintsUsed,
-        },
-      },
-      '*'
-    );
-  };
-
   const handleGiveUp = () => {
     if (!gameData) return;
 
@@ -935,19 +955,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           finalGuess: gameData.word,
           hasGivenUp: true,
           timeTaken: Math.floor((Date.now() - gameStartTime) / 1000),
-          commentData: {
-            numGuesses: guessCount,
-            gifHints: 999,
-            wordHints: 0,
-            hintTypeLabel: 'gave up',
-          },
         },
       },
       '*'
     );
 
-    // Save a score of 0 with maximum penalties for revealed answers
-    // This ensures the score is exactly 0 regardless of calculateScore logic
     window.parent.postMessage(
       {
         type: 'SAVE_SCORE',
@@ -1444,166 +1456,45 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     onNavigate('landing');
   };
 
+  // Auto-navigate to results page after winning (confetti plays in background)
+  useEffect(() => {
+    if (gameFlowState === 'won' && gameData?.id) {
+      // Wait for score modal to show, then navigate
+      const navigationTimer = setTimeout(() => {
+        onNavigate('gameResults', { gameId: gameData.id });
+      }, 2000); // 2 second delay to show score
+      
+      return () => clearTimeout(navigationTimer);
+    }
+  }, [gameFlowState, gameData?.id, onNavigate]);
+
   if (gameFlowState === 'won') {
+    // Show brief celebration with score
     return (
       <>
-        <div className="fixed inset-0 z-40 backdrop-blur-sm transition-all duration-500" style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}></div>
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-5 overflow-y-auto">
-          <div className="animate-modal-fade-in border-opacity-30 font-comic-sans relative w-full max-w-md overflow-hidden rounded-xl border-2 border-blue-600 bg-gradient-to-b from-gray-900 to-blue-900 shadow-2xl my-auto">
-            <div className="relative border-b border-blue-800 p-4 text-center">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="bg-opacity-70 h-24 w-24 rounded-full bg-blue-900 blur-xl"></div>
-              </div>
-
-              <div className="mb-1 inline-block -rotate-3 transform">
-                <div className="text-4xl">🎉</div>
-              </div>
-
-              <div className="relative z-10">
-                <div className="inline-block">
-                  <ComicText size={1.3} color="#FFD700">
-                    Hurray!
+        <div className="fixed inset-0 z-40 backdrop-blur-md transition-all duration-500" style={{ backgroundColor: 'rgba(0, 0, 0, 0.2)' }}></div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
+          <div className="animate-modal-fade-in relative rounded-2xl bg-gradient-to-br from-green-400 to-blue-500 p-8 text-center shadow-2xl" style={{ minWidth: '280px' }}>
+            <div className="mb-3 text-6xl">🎉</div>
+            <ComicText size={1.5} color="white">
+              Hurray!
+            </ComicText>
+            <ComicText size={0.8} color="white">
+              You guessed it right
+            </ComicText>
+            <div className="mt-4 rounded-xl bg-white/20 px-6 py-3 backdrop-blur-sm" style={{ minHeight: '80px' }}>
+              {finalScore ? (
+                <>
+                  <ComicText size={0.6} color="white">
+                    Your Score
                   </ComicText>
-                </div>
-                <div className="mt-1">
-                  <ComicText size={0.8} color="#FF4500">
-                    You guessed it right!
-                  </ComicText>
-                </div>
-              </div>
-            </div>
-            <div className="p-4 text-center">
-              <div className="bg-opacity-50 mb-4 rounded-lg border border-blue-700 bg-blue-900 p-3">
-                {(() => {
-                  const secretWord = gameData?.word.toUpperCase().replace(/\s+/g, '');                  
-                  if (winningGuess && winningGuess !== secretWord) {
-                    return (
-                      <>
-                        <div className="mb-2">
-                          <ComicText size={0.55} color="#94A3B8">
-                            Your guess:
-                          </ComicText>
-                          <div className="mt-1 text-xl font-bold text-emerald-300">
-                            {winningGuess}
-                          </div>
-                        </div>
-                        <div className="my-2 flex items-center justify-center gap-2">
-                          <div className="h-px flex-1 bg-blue-600/50"></div>
-                          <div 
-                            className="rounded-full px-2 py-0.5 border"
-                            style={{ 
-                              backgroundColor: 'rgba(167, 139, 250, 0.2)',
-                              borderColor: '#A78BFA'
-                            }}
-                          >
-                            <ComicText size={0.45} color="#C4B5FD">
-                              ✨ close match
-                            </ComicText>
-                          </div>
-                          <div className="h-px flex-1 bg-blue-600/50"></div>
-                        </div>
-                        <div className="mt-2">
-                          <ComicText size={0.55} color="#94A3B8">
-                            Original answer:
-                          </ComicText>
-                          <div className="mt-1 text-xl font-bold text-white">
-                            {gameData?.word.toUpperCase()}
-                          </div>
-                        </div>
-                      </>
-                    );
-                  } else {
-                    return (
-                      <>
-                        <ComicText size={0.55} color="#94A3B8">
-                          The answer was:
-                        </ComicText>
-                        <div className="mt-1 text-xl font-bold text-white">
-                          {gameData?.word.toUpperCase()}
-                        </div>
-                      </>
-                    );
-                  }
-                })()}
-              </div>
-
-              {isScoreSaving ? (
-                <div className="flex flex-col items-center justify-center p-3">
-                  <div className="mb-2 h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-                  <ComicText size={0.6} color="#fff">
-                    Calculating your score...
-                  </ComicText>
-                </div>
-              ) : (
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
-                  {/* Comment Results Button - Only show if user didn't give up */}
-                  {gifHintCount < 999 && (
-                    <button
-                      onClick={handlePostComment}
-                      disabled={isCommentPosting || isCommentPosted}
-                      className={`flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full px-5 py-2.5 text-white transition-all duration-300 disabled:cursor-not-allowed ${
-                        isCommentPosted
-                          ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
-                          : isCommentPosting
-                            ? 'bg-gradient-to-r from-indigo-400 to-purple-500 opacity-90 shadow-md'
-                            : 'bg-gradient-to-r from-amber-600 to-orange-600 shadow-lg hover:scale-105 hover:shadow-xl'
-                      } ${
-                        !isCommentPosted && !isCommentPosting ? 'animate-blink-button' : ''
-                      }`}
-                      aria-label={isCommentPosted ? 'Commented!' : 'Comment Results'}
-                      title={isCommentPosted ? 'Commented!' : 'Comment Results'}
-                      style={{
-                        minWidth: '192px',
-                        boxShadow: isCommentPosted
-                          ? '0 6px 16px rgba(16,185,129,0.4)'
-                          : isCommentPosting
-                            ? '0 6px 16px rgba(99,102,241,0.3)'
-                            : '0 4px 12px rgba(217,119,6,0.4)'
-                      }}
-                    >
-                      <span className="text-lg">
-                        {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
-                      </span>
-                      <span className="whitespace-nowrap">
-                        <div style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}>
-                          {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
-                        </div>
-                      </span>
-                    </button>
-                  )}
-
-                  {/* View Results Button - Secondary */}
-                  <button
-                    onClick={() => {
-                      if (gameData?.id) {
-                        onNavigate('gameResults', { gameId: gameData.id });
-                      }
-                    }}
-                    className="flex w-full sm:w-48 cursor-pointer items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-5 py-2.5 text-white font-semibold shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl"
-                    aria-label="View Results"
-                    title="View Results"
-                    style={{
-                      minWidth: '192px',
-                      boxShadow: '0 6px 16px rgba(37,99,235,0.4)'
-                    }}
-                  >
-                    <span className="text-lg">📊</span>
-                    <span className="whitespace-nowrap">
-                      <ComicText size={0.6} color="white">
-                        View Results
-                      </ComicText>
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {finalScore && !isScoreSaving && (
-                <div className="mt-3 text-center">
-                  <div className="bg-opacity-60 border-opacity-60 inline-block rounded-full border border-blue-500 bg-blue-900 px-5 py-1.5 shadow-lg">
-                    <ComicText size={0.6} color="#FFFFFF">
-                      Your Score: <span className="text-xl text-cyan-300">{finalScore.score}</span>
-                    </ComicText>
+                  <div className="text-4xl font-bold text-white" style={{ fontFamily: 'Comic Sans MS, cursive' }}>
+                    {finalScore.score}
                   </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center" style={{ minHeight: '80px' }}>
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-white border-t-transparent"></div>
                 </div>
               )}
             </div>

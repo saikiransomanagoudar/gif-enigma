@@ -240,6 +240,7 @@ export interface GameStatistics {
   guesses: GuessData[];
   creatorUsername?: string;
   acceptedSynonyms?: string[];
+  playerScore?: number;
 }
 
 export interface GetGameStatisticsResponse {

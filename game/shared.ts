@@ -223,6 +223,7 @@ export type WebviewToBlockMessage =
       type: 'GET_GAME_STATISTICS';
       data: {
         gameId: string;
+        username?: string;
       };
     }
   | {

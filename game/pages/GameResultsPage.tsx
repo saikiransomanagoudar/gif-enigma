@@ -230,6 +230,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     }
   }, [statistics]);
 
+  // Fetch statistics initially and refetch when username becomes available
   useEffect(() => {
     if (!gameId) {
       setError('No game ID provided');
@@ -237,14 +238,17 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       return;
     }
 
-    // Request statistics from the server
     window.parent.postMessage(
       {
         type: 'GET_GAME_STATISTICS',
-        data: { gameId },
+        data: { gameId, username: username || undefined },
       },
       '*'
     );
+  }, [gameId, username]);
+
+  useEffect(() => {
+    if (!gameId) return;
 
     const handleMessage = (event: MessageEvent) => {
       let actualMessage = event.data;

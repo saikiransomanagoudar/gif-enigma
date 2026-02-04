@@ -874,11 +874,11 @@ export async function trackGuess(
 
 // Get game statistics including all guesses
 export async function getGameStatistics(
-  params: { gameId: string },
+  params: { gameId: string; username?: string },
   context: Context
 ): Promise<GetGameStatisticsResponse> {
   try {
-    const { gameId } = params;
+    const { gameId, username } = params;
 
     if (!gameId) {
       return { success: false, error: 'Game ID is required' };
@@ -918,6 +918,16 @@ export async function getGameStatistics(
       }
     }
 
+    // Fetch player's score if username is provided
+    let playerScore: number | undefined;
+    if (username && username !== 'anonymous') {
+      const scoreKey = `score:${gameId}:${username}`;
+      const scoreData = await context.redis.hGetAll(scoreKey);
+      if (scoreData && scoreData.score) {
+        playerScore = parseInt(scoreData.score);
+      }
+    }
+
     return {
       success: true,
       statistics: {
@@ -928,6 +938,7 @@ export async function getGameStatistics(
         guesses,
         creatorUsername: gameData.username,
         acceptedSynonyms: gameData.acceptedSynonyms ? JSON.parse(gameData.acceptedSynonyms) : [],
+        playerScore,
       },
     };
   } catch (error) {
