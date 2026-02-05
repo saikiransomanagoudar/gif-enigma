@@ -227,6 +227,12 @@ export type WebviewToBlockMessage =
       };
     }
   | {
+      type: 'GET_CREATOR_BONUS_STATS';
+      data: {
+        gameId: string;
+      };
+    }
+  | {
       type: 'SHOW_TOAST';
       data: {
         text: string;
@@ -636,6 +642,13 @@ export type BlocksToWebviewMessage =
           percentage: number;
         }>;
       };
+      error?: string;
+    }
+    | {
+      type: 'GET_CREATOR_BONUS_STATS_RESULT';
+      success: boolean;
+      totalBonus?: number;
+      completions?: number;
       error?: string;
     }
     | {

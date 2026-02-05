@@ -11,7 +11,7 @@ import {
   GetGameStatisticsResponse,
   GuessData,
 } from '../lib/types';
-import { awardCreationBonus } from './scoringService';
+import { awardCreationBonus, awardCreatorCompletionBonus } from './scoringService';
 import { getSemanticSynonyms, validateGifWordMatch } from './geminiService.js';
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
@@ -759,6 +759,19 @@ export async function saveGameState(
         member: username,
         score: Date.now(),
       });
+
+      // Award creator completion bonus (5 XP to game creator)
+      // Only award if player didn't give up (hasGivenUp !== true AND gifHintCount < 999)
+      const didNotGiveUp = playerState.hasGivenUp !== true && 
+                           (playerState.gifHintCount === undefined || playerState.gifHintCount < 999);
+      
+      if (didNotGiveUp) {
+        const gameData = await context.redis.hGetAll(`game:${gameId}`);
+        if (gameData && gameData.username) {
+          const creatorUsername = gameData.username;
+          await awardCreatorCompletionBonus(creatorUsername, gameId, username, context);
+        }
+      }
     }
 
     return { success: true };

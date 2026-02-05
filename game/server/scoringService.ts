@@ -4,6 +4,9 @@ import { ScoreData, LeaderboardEntry } from '../lib/types';
 // Bonus XP awarded for creating a game
 export const CREATION_BONUS_XP = 20;
 
+// Bonus XP awarded to creator when someone completes their game
+export const CREATOR_COMPLETION_BONUS_XP = 5;
+
 //Calculate score based on the game state and user actions
 export function calculateScore(params: {
   word: string;
@@ -110,21 +113,27 @@ export async function saveScore(
     });
 
     // Add to game's leaderboard sorted set (higher scores first)
-    await context.redis.zAdd(`leaderboard:${gameId}`, {
-      score: score,
-      member: username,
-    });
+    // Don't add 0 scores (give-ups) to leaderboard
+    if (score > 0) {
+      await context.redis.zAdd(`leaderboard:${gameId}`, {
+        score: score,
+        member: username,
+      });
 
-    // Add to global leaderboard (higher scores first)
-    await context.redis.zAdd('globalLeaderboard', {
-      score: score,
-      member: `${gameId}:${username}`,
-    });
+      // Add to global leaderboard (higher scores first)
+      await context.redis.zAdd('globalLeaderboard', {
+        score: score,
+        member: `${gameId}:${username}`,
+      });
+    }
     // -------- Begin Cumulative Leaderboard Additions --------
-    await context.redis.zAdd(`user:${username}:completedGames`, {
-      member: gameId,
-      score: timestamp,
-    });
+    // Only add to completedGames if score > 0 (not a give-up)
+    if (score > 0) {
+      await context.redis.zAdd(`user:${username}:completedGames`, {
+        member: gameId,
+        score: timestamp,
+      });
+    }
 
     // Get existing user stats
     let userStats: {
@@ -151,7 +160,7 @@ export async function saveScore(
 
     // Calculate new stats
     const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
-    const gamesWon = Number(userStats.gamesWon || 0) + 1; // Assuming a score means they won
+    const gamesWon = score > 0 ? Number(userStats.gamesWon || 0) + 1 : Number(userStats.gamesWon || 0); // Only count as won if score > 0
     const totalScore = Number(userStats.totalScore || 0) + score;
     const bestScore = Math.max(Number(userStats.bestScore || 0), score);
     const averageScore = Math.round(totalScore / gamesPlayed);
@@ -166,15 +175,16 @@ export async function saveScore(
       lastPlayed: timestamp.toString(),
     });
 
-    // Update cumulative leaderboard
-    await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
+    // Update cumulative leaderboard (only for scores > 0)
+    if (score > 0) {
+      await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
+    }
 
     // Invalidate leaderboard cache
     try {
       const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
       await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
     } catch (cacheError) {
-      console.error('Failed to invalidate leaderboard cache:', cacheError);
       // Continue even if cache invalidation fails
     }
 
@@ -345,7 +355,7 @@ export async function getCumulativeLeaderboard(
         return { success: true, leaderboard };
       }
     } catch (cacheError) {
-      console.log('Cache read failed, fetching fresh data:', cacheError);
+      // Cache read failed, fetching fresh data
     }
 
     // Get top users from cumulative leaderboard
@@ -378,8 +388,7 @@ export async function getCumulativeLeaderboard(
         // Fetch user stats and snoovatar in parallel
         const [userStats, snoovatarUrl] = await Promise.all([
           context.redis.hGetAll(`userStats:${username}`),
-          context.reddit.getSnoovatarUrl(username).catch((error) => {
-            console.error(`Failed to fetch Snoovatar for ${username}:`, error);
+          context.reddit.getSnoovatarUrl(username).catch(() => {
             return undefined;
           }),
         ]);
@@ -400,7 +409,6 @@ export async function getCumulativeLeaderboard(
           timestamp: Number(userStats.lastPlayed || 0),
         } as Omit<LeaderboardEntry, 'rank'>;
       } catch (error) {
-        console.error(`Error fetching data for ${username}:`, error);
         return null;
       }
     });
@@ -419,7 +427,6 @@ export async function getCumulativeLeaderboard(
     try {
       await context.redis.set(cacheKey, JSON.stringify(leaderboard), { expiration: new Date(Date.now() + cacheTTL * 1000) });
     } catch (cacheError) {
-      console.error('Failed to cache leaderboard:', cacheError);
       // Continue without caching
     }
 
@@ -514,12 +521,116 @@ export async function awardCreationBonus(
         const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
         await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
       } catch (cacheError) {
-        console.error('Failed to invalidate leaderboard cache:', cacheError);
+        // Cache invalidation failed
       }
     }
 
     return { success: true, bonusAwarded: shouldAwardBonus };
   } catch (error) {
     return { success: false, error: String(error), bonusAwarded: false };
+  }
+}
+
+export async function awardCreatorCompletionBonus(
+  creatorUsername: string,
+  gameId: string,
+  completedByUsername: string,
+  context: Context
+): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
+  try {
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
+
+    // Don't award bonus if creator is a system user
+    if (systemUsernames.some((sysUser) => creatorUsername.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
+    }
+
+    // Don't award bonus if the creator completed their own game
+    if (creatorUsername.toLowerCase() === completedByUsername.toLowerCase()) {
+      return { success: true, bonusAwarded: false, error: 'Creators cannot earn bonus from their own games' };
+    }
+
+    // Don't award bonus if a system user completed the game
+    if (systemUsernames.some((sysUser) => completedByUsername.toLowerCase() === sysUser.toLowerCase())) {
+      return { success: true, bonusAwarded: false, error: 'System user completions do not award bonus' };
+    }
+
+    // Track creator bonus for this game in a sorted set (to prevent duplicate bonuses from same player)
+    const creatorBonusKey = `creatorBonus:${gameId}`;
+    const alreadyAwarded = await context.redis.zScore(creatorBonusKey, completedByUsername);
+    
+    if (alreadyAwarded !== null && alreadyAwarded !== undefined) {
+      // Already awarded bonus for this player completing this game
+      return { success: true, bonusAwarded: false, error: 'Bonus already awarded for this completion' };
+    }
+
+    // Mark this completion as awarded
+    await context.redis.zAdd(creatorBonusKey, {
+      member: completedByUsername,
+      score: Date.now(),
+    });
+
+    // Get or initialize creator stats
+    let creatorStats: any = await context.redis.hGetAll(`userStats:${creatorUsername}`).catch(() => ({}));
+
+    if (!creatorStats || Object.keys(creatorStats).length === 0) {
+      await context.redis.hSet(`userStats:${creatorUsername}`, {
+        gamesPlayed: '0',
+        gamesCreated: '0',
+        totalScore: '0',
+        bestScore: '0',
+        averageScore: '0',
+        creatorBonusEarned: '0',
+      });
+      creatorStats = await context.redis.hGetAll(`userStats:${creatorUsername}`);
+    }
+
+    // Award the bonus XP
+    const totalScore = Number(creatorStats.totalScore || 0) + CREATOR_COMPLETION_BONUS_XP;
+    const creatorBonusEarned = Number(creatorStats.creatorBonusEarned || 0) + CREATOR_COMPLETION_BONUS_XP;
+
+    await context.redis.hSet(`userStats:${creatorUsername}`, {
+      ...creatorStats,
+      totalScore: totalScore.toString(),
+      creatorBonusEarned: creatorBonusEarned.toString(),
+      lastPlayed: Date.now().toString(),
+    });
+
+    // Update cumulative leaderboard
+    await context.redis.zIncrBy('cumulativeLeaderboard', creatorUsername, CREATOR_COMPLETION_BONUS_XP);
+    
+    // Invalidate leaderboard cache
+    try {
+      const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
+      await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
+    } catch (cacheError) {
+      // Cache invalidation failed
+    }
+
+    return { success: true, bonusAwarded: true };
+  } catch (error) {
+    return { success: false, error: String(error), bonusAwarded: false };
+  }
+}
+
+export async function getCreatorBonusStats(
+  gameId: string,
+  context: Context
+): Promise<{ success: boolean; totalBonus?: number; completions?: number; error?: string }> {
+  try {
+    const creatorBonusKey = `creatorBonus:${gameId}`;
+    const completions = await context.redis.zCard(creatorBonusKey);
+    const totalBonus = completions * CREATOR_COMPLETION_BONUS_XP;
+
+    return { success: true, totalBonus, completions };
+  } catch (error) {
+    return { success: false, error: String(error) };
   }
 }

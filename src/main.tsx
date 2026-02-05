@@ -20,6 +20,7 @@ import {
   trackGuess,
   getGameStatistics,
   validateGuess,
+  getCreatorBonusStats,
 } from '../game/server/gameHandler.server.js';
 
 // Helper function for navigation to post
@@ -953,7 +954,7 @@ Devvit.addCustomPostType({
                 revealedLetters: event.data.revealedLetters || [],
                 guess: event.data.finalGuess || '',
                 lastPlayed: Date.now(),
-                isCompleted: true,
+                isCompleted: !event.data.hasGivenUp,
                 hasGivenUp: event.data.hasGivenUp || false,
               };
 
@@ -1542,6 +1543,35 @@ Devvit.addCustomPostType({
             } catch (error) {
               postMessage({
                 type: 'GET_GAME_STATISTICS_RESULT',
+                success: false,
+                error: String(error),
+              });
+            }
+            break;
+
+          case 'GET_CREATOR_BONUS_STATS':
+            try {
+              if (!event.data || !event.data.gameId) {
+                postMessage({
+                  type: 'GET_CREATOR_BONUS_STATS_RESULT',
+                  success: false,
+                  error: 'Missing required data: gameId is required',
+                });
+                return;
+              }
+
+              const bonusResult = await getCreatorBonusStats(event.data.gameId, context);
+
+              postMessage({
+                type: 'GET_CREATOR_BONUS_STATS_RESULT',
+                success: bonusResult.success,
+                totalBonus: bonusResult.totalBonus,
+                completions: bonusResult.completions,
+                error: bonusResult.error || undefined,
+              });
+            } catch (error) {
+              postMessage({
+                type: 'GET_CREATOR_BONUS_STATS_RESULT',
                 success: false,
                 error: String(error),
               });

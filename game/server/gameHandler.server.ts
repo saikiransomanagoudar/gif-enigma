@@ -48,6 +48,8 @@ export {
   validateGuess,
 };
 
+export { getCreatorBonusStats } from './scoringService';
+
 export async function getRandomGame(
   params: { excludeIds?: string[]; preferUserCreated?: boolean; username?: string; useStickyNavigation?: boolean },
   context: any

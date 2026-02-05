@@ -22,6 +22,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
   const [acceptedSynonyms, setAcceptedSynonyms] = useState<string[]>([]);
   const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
+  const [creatorBonusStats, setCreatorBonusStats] = useState<{ totalBonus: number; completions: number } | null>(null);
 
   // Play Again handling (reuse landing page logic)
   const [isFindingGame, setIsFindingGame] = useState(false);
@@ -247,6 +248,19 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     );
   }, [gameId, username]);
 
+  // Fetch creator bonus stats if user is the creator
+  useEffect(() => {
+    if (gameId && username && statistics?.creatorUsername && username === statistics.creatorUsername) {
+      window.parent.postMessage(
+        {
+          type: 'GET_CREATOR_BONUS_STATS',
+          data: { gameId },
+        },
+        '*'
+      );
+    }
+  }, [gameId, username, statistics?.creatorUsername]);
+
   useEffect(() => {
     if (!gameId) return;
 
@@ -262,6 +276,15 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           setStatistics(actualMessage.statistics);
         } else {
           setError(actualMessage.error || 'Failed to load statistics');
+        }
+      }
+
+      if (actualMessage.type === 'GET_CREATOR_BONUS_STATS_RESULT') {
+        if (actualMessage.success && typeof actualMessage.totalBonus === 'number') {
+          setCreatorBonusStats({
+            totalBonus: actualMessage.totalBonus,
+            completions: actualMessage.completions || 0,
+          });
         }
       }
 
@@ -511,10 +534,27 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
         {/* Guesses Section */}
         <div className="rounded-xl bg-white/5 p-6 backdrop-blur-sm dark:bg-gray-800/20">
-          <div className="mb-4">
+          <div className={`mb-4 flex items-center ${username && statistics?.creatorUsername && username === statistics.creatorUsername && statistics.creatorUsername !== 'gif-enigma' && creatorBonusStats && creatorBonusStats.totalBonus > 0 ? 'justify-between' : 'justify-center'}`}>
             <ComicText size={0.9} color={colors.primary}>
               Decode attempts
             </ComicText>
+            {/* Creator Bonus Badge - compact inline */}
+            {username && statistics?.creatorUsername && username === statistics.creatorUsername && 
+             statistics.creatorUsername !== 'gif-enigma' && creatorBonusStats && creatorBonusStats.totalBonus > 0 && (
+              <div 
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 border border-amber-500/40"
+                style={{ 
+                  background: isDarkMode 
+                    ? 'linear-gradient(135deg, rgba(217, 119, 6, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)'
+                    : 'linear-gradient(135deg, rgba(252, 211, 77, 0.4) 0%, rgba(251, 191, 36, 0.3) 100%)'
+                }}
+              >
+                <span className="text-sm">✨</span>
+                <ComicText size={0.5} color="#D97706">
+                  +{creatorBonusStats.totalBonus} XP
+                </ComicText>
+              </div>
+            )}
           </div>
 
           {statistics.guesses.length === 0 ? (
