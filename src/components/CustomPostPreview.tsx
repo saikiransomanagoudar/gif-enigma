@@ -225,7 +225,7 @@ export const CustomPostPreview = ({
           <spacer size="small" />
         </vstack>
       ) : (
-        <hstack width="100%" height={`${cardSize + 32}px`} padding="small" alignment="center middle" gap="small">
+        <hstack width="100%" height={`${cardSize + 32}px`} padding="small" alignment="center middle" gap="medium">
           {/* Let's Play Card */}
           <vstack
             backgroundColor="#c6c6e1"
@@ -276,7 +276,7 @@ export const CustomPostPreview = ({
           darkBackgroundColor="#2d3142"
           lightBackgroundColor="#E8E5DA"
           cornerRadius="medium"
-          width={`${2 * cardSize}px`}
+          width={`${2.1 * cardSize}px`}
           padding="medium"
           alignment="center middle"
           border="thin"
