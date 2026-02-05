@@ -76,6 +76,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const hasShownDataRef = useRef<{ [key: string]: boolean }>({});
   const pendingRequestsRef = useRef<Set<string>>(new Set());
   const synonymTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
+  const activeFetchRef = useRef<string | null>(null); // Track current fetch to prevent duplicates
+  const lastCategoryRef = useRef<CategoryType | null>(null); // Track last synced category
+  const processedMessagesRef = useRef<Set<string>>(new Set()); // Track processed messages to prevent duplicates
   
   // Quick Create batch completion callback
   const batchCompletionCallbackRef = useRef<(() => void) | null>(null);
@@ -121,6 +124,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [bonusAwarded, setBonusAwarded] = useState<boolean>(true);
   const [isQuickCreate, setIsQuickCreate] = useState<boolean>(false);
   const [isBatchPreFetching, setIsBatchPreFetching] = useState<boolean>(false);
+  const [timeUntilReset, setTimeUntilReset] = useState<number>(0); // milliseconds until reset
 
   const headerRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -133,6 +137,36 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const cacheRetryIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
   const isCacheCheckingRef = React.useRef<boolean>(false);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
+
+  // Countdown timer effect
+  useEffect(() => {
+    if (timeUntilReset <= 0) return;
+    
+    const interval = setInterval(() => {
+      setTimeUntilReset(prev => {
+        const newTime = prev - 1000;
+        return newTime > 0 ? newTime : 0;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [timeUntilReset]);
+
+  // Format time remaining helper
+  const formatTimeRemaining = (ms: number): string => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
 
   // Safety: Clear loading state if GIFs are ready but modal is stuck loading
   useEffect(() => {
@@ -235,10 +269,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   }, [isSearching, isBatchPreFetching]);
 
   useEffect(() => {
-    if (category) {
-      setCurrentCategory(category);
+    if (category && category !== lastCategoryRef.current) {
+      lastCategoryRef.current = category;
+      if (currentCategory !== category) {
+        setCurrentCategory(category);
+      }
     }
+  }, [category, currentCategory]);
 
+  useEffect(() => {
+    const cacheKey = `${currentCategory}-${inputType}`;
+    
+    if (activeFetchRef.current === cacheKey) {
+      return;
+    }
+    
+    // Clear any pending fallback timer from previous fetch
+    if ((window as any).__createPageFallbackTimer) {
+      clearTimeout((window as any).__createPageFallbackTimer);
+      (window as any).__createPageFallbackTimer = null;
+    }
+    
     // Clear previous state immediately
     setSynonyms([]);
     setSecretInput('');
@@ -247,8 +298,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
     synonymTimeoutRef.current = {};
     
-    // Check if we have cached pre-generated data first
-    const cacheKey = `${currentCategory}-${inputType}`;
     if (recommendationsCache.current[cacheKey]) {
       const cachedData = recommendationsCache.current[cacheKey];
       const firstWord = cachedData[0];
@@ -263,8 +312,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setIsLoadingRecommendations(false);
         setSynonyms(synonymsCache.current[firstWord]);
         setIsLoadingSynonyms(false);
+        if (activeFetchRef.current === cacheKey || activeFetchRef.current === null) {
+          activeFetchRef.current = null;
+        }
       } else {
-        // Synonyms not ready - this shouldn't happen with pre-generated data
         setIsLoadingRecommendations(true);
         setIsLoadingSynonyms(true);
         currentWordRef.current = firstWord;
@@ -272,9 +323,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setSynonyms([]);
       }
     } else {
-      // No cached data - fetch pre-generated items
       setIsLoadingSynonyms(true);
       setIsLoadingRecommendations(true);
+      activeFetchRef.current = cacheKey; 
+      
+      // Clear any previous deduplication for this specific cacheKey to allow fresh fetch
+      const messageIdPattern = `FETCH_PREGENERATED_ITEMS_RESULT-${currentCategory}-${inputType}-`;
+      Array.from(processedMessagesRef.current).forEach(id => {
+        if (id.startsWith(messageIdPattern)) {
+          processedMessagesRef.current.delete(id);
+        }
+      });
+      
       window.parent.postMessage(
         { 
           type: 'FETCH_PREGENERATED_ITEMS', 
@@ -286,6 +346,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         },
         '*'
       );
+      
+      // Fallback timeout - if no response in 5 seconds, use fallback data
+      const fallbackTimer = setTimeout(() => {
+        const fallbackData = getFallbackRecommendations();
+        recommendationsCache.current[cacheKey] = fallbackData;
+        setRecommendations(fallbackData);
+        setCurrentRecIndex(0);
+        currentWordRef.current = fallbackData[0];
+        setSecretInput(fallbackData[0]);
+        setIsLoadingRecommendations(false);
+        fetchSynonyms(fallbackData[0]);
+        activeFetchRef.current = null;
+      }, 5000);
+      
+      // Store timer so we can clear it if response comes
+      (window as any).__createPageFallbackTimer = fallbackTimer;
     }
   }, [currentCategory, inputType]);
 
@@ -492,32 +568,62 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (!msg || typeof msg !== 'object') return;
       
       if (msg.type === 'FETCH_PREGENERATED_ITEMS_RESULT') {
+        // Generate unique message ID to prevent duplicate processing
+        const messageId = `${msg.type}-${msg.category}-${msg.inputType}-${msg.items?.length || 0}`;
+        
+        if (processedMessagesRef.current.has(messageId)) {
+          return;
+        }
+        processedMessagesRef.current.add(messageId);
+        
+        // Clean up old message IDs to prevent memory leak (keep last 50)
+        if (processedMessagesRef.current.size > 50) {
+          const arr = Array.from(processedMessagesRef.current);
+          processedMessagesRef.current = new Set(arr.slice(-50));
+        }
+        
+        // Capture current fetch state at the START to avoid race conditions
+        const capturedActiveFetch = activeFetchRef.current;
+        
+        // Clear fallback timer if it exists
+        if ((window as any).__createPageFallbackTimer) {
+          clearTimeout((window as any).__createPageFallbackTimer);
+          (window as any).__createPageFallbackTimer = null;
+        }
+        
+        const resultCacheKey = `${msg.category}-${msg.inputType}`;
+        const isCurrentFetch = capturedActiveFetch === resultCacheKey;
+        
         if (msg.success && Array.isArray(msg.items) && msg.items.length > 0) {
           const cacheKey = `${msg.category}-${msg.inputType}`;
           
-          // Extract words and synonyms from pre-generated items
+          // ALWAYS populate cache first, even if this is a stale response
           const words = msg.items.map((item: any) => item.word);
-          
-          // Populate both caches atomically
           recommendationsCache.current[cacheKey] = words;
           msg.items.forEach((item: any) => {
             synonymsCache.current[item.word] = item.synonyms;
           });
           
-          // Display first word and synonyms INSTANTLY - everything is pre-generated
-          const firstWord = words[0];
-          setRecommendations(words);
-          setCurrentRecIndex(0);
-          currentWordRef.current = firstWord;
-          setSecretInput(firstWord);
-          setIsLoadingRecommendations(false);
-          setSynonyms(synonymsCache.current[firstWord]);
-          setIsLoadingSynonyms(false);
-        } else {
-          // Use fallback recommendations if pre-generation failed
+          // Only update UI if this matches the captured active fetch
+          if (isCurrentFetch) {
+            const firstWord = words[0];
+            // Clear the active fetch marker BEFORE setState calls to prevent race conditions
+            activeFetchRef.current = null;
+            // Now update UI
+            setRecommendations(words);
+            setCurrentRecIndex(0);
+            currentWordRef.current = firstWord;
+            setSecretInput(firstWord);
+            setIsLoadingRecommendations(false);
+            setSynonyms(synonymsCache.current[firstWord]);
+            setIsLoadingSynonyms(false);
+          }
+        } else if (isCurrentFetch) {
+          // Only use fallback if this was for the current fetch
           const cacheKey = `${currentCategory}-${inputType}`;
           const fallbackData = getFallbackRecommendations();
           recommendationsCache.current[cacheKey] = fallbackData;
+          activeFetchRef.current = null; // Clear before setState
           setRecommendations(fallbackData);
           setCurrentRecIndex(0);
           currentWordRef.current = fallbackData[0];
@@ -813,7 +919,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setBonusAwarded(msg.result.bonusAwarded !== false); // Default to true if not specified
           setShowSuccessModal(true);
         } else {
-          setShowSuccessModal(false);
+          // Check if error is daily limit reached
+          const errorMsg = msg.result?.error || msg.error || '';
+          if (errorMsg.includes('Daily creation limit')) {
+            // Show limit reached modal with countdown
+            setBonusAwarded(false);
+            setShowSuccessModal(true);
+            // Request updated limit info to get resetTime
+            window.parent.postMessage({
+              type: 'devvit-message',
+              data: { message: { type: 'CHECK_CREATION_LIMIT' } }
+            }, '*');
+          } else {
+            setShowSuccessModal(false);
+          }
         }
       }
     };
@@ -833,6 +952,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       // Clear all synonym timeouts
       Object.values(synonymTimeoutRef.current).forEach(timeout => clearTimeout(timeout));
       synonymTimeoutRef.current = {};
+      
+      // Clear fallback timer if it exists
+      if ((window as any).__createPageFallbackTimer) {
+        clearTimeout((window as any).__createPageFallbackTimer);
+        (window as any).__createPageFallbackTimer = null;
+      }
     };
   }, []);
 
@@ -971,7 +1096,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         
         if (msg?.type === 'CHECK_CREATION_LIMIT_RESULT') {
           window.removeEventListener('message', handleLimitCheck);
-          resolve(msg.canCreate === true);
+          if (msg.canCreate) {
+            resolve(true);
+          } else {
+            // Set countdown timer from server response
+            if (msg.resetTime) {
+              const now = Date.now();
+              const resetTime = new Date(msg.resetTime).getTime();
+              setTimeUntilReset(Math.max(0, resetTime - now));
+            }
+            resolve(false);
+          }
         }
       };
       
@@ -994,17 +1129,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
 
-    setBonusAwarded(true);
     setIsQuickCreate(true);
-    setShowSuccessModal(true);
-
-    // Small delay to ensure UI is ready
-    await new Promise(resolve => setTimeout(resolve, 150));
 
     try {
-      // Collect synonyms (first 4)
-      const synonymsToFetch = synonyms.slice(0, 4).map(group => group[0]).filter(Boolean);
-      
+      const synonymsToFetch = synonyms.slice(0, 4).map(group => group[0]).filter(Boolean);     
       if (synonymsToFetch.length < 4) {
         return;
       }
@@ -1126,7 +1254,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         
         if (msg?.type === 'CHECK_CREATION_LIMIT_RESULT') {
           window.removeEventListener('message', handleLimitCheck);
-          resolve(msg.canCreate === true);
+          if (msg.canCreate) {
+            resolve(true);
+          } else {
+            // Set countdown timer from server response
+            if (msg.resetTime) {
+              const now = Date.now();
+              const resetTime = new Date(msg.resetTime).getTime();
+              setTimeUntilReset(Math.max(0, resetTime - now));
+            }
+            resolve(false);
+          }
         }
       };
       
@@ -1195,6 +1333,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             gifDescriptions,
             searchTerms,
             inputType,
+            postToSubreddit: true,
           },
         },
         '*'
@@ -1604,7 +1743,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                  </ComicText>
                ) : (
                  <ComicText size={0.6} color={colors.textSecondary}>
-                   {isLoadingRecommendations ? 'Loading recommendations...' : 'No recommendations available'}
+                   {isLoadingRecommendations ? `Loading ${inputType}s... (${currentCategory})` : 'No recommendations available'}
                  </ComicText>
                )}
              </div>
@@ -1673,9 +1812,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       </ComicText>
                     </>
                   ) : (
-                    <ComicText size={0.6} color="white" className="mb-2 text-center">
-                      Try again tomorrow
-                    </ComicText>
+                    <>
+                      <ComicText size={0.6} color="white" className="mb-2 text-center">
+                        You've reached the daily limit of 4 puzzles
+                      </ComicText>
+                      {timeUntilReset > 0 ? (
+                        <ComicText size={0.7} color={colors.primary} className="mb-2 text-center font-bold">
+                          Try again in: {formatTimeRemaining(timeUntilReset)}
+                        </ComicText>
+                      ) : (
+                        <ComicText size={0.7} color={colors.primary} className="mb-2 text-center font-bold">
+                          You can create more puzzles now!
+                        </ComicText>
+                      )}
+                    </>
                   )}
                 </>
                 
@@ -1706,7 +1856,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <div className="mt-4 flex justify-center">
                   <button
                     onClick={() => {
-                      // Navigate immediately without closing modal or fading
+                      // Reset UI state before navigating (but keep cache refs for fast reload)
+                      setShowSuccessModal(false);
+                      setIsCreating(false);
+                      setIsQuickCreate(false);
+                      setBonusAwarded(true);
+                      setSelectedGifs([null, null, null, null]);
+                                            
+                      // Navigate to landing
                       onNavigate('landing');
                     }}
                     className="cursor-pointer rounded-xl px-4 py-2 transition-all duration-200 hover:scale-105"

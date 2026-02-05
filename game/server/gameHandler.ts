@@ -50,6 +50,37 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       username.toLowerCase() === sysUser.toLowerCase()
     );
 
+    // ENFORCE daily creation limit for non-system users (atomic check)
+    if (!isSystemUser) {
+      const now = Date.now();
+      const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+      const recentCreationsKey = `user:${username}:recentCreations`;
+      const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
+      
+      // Add this creation attempt FIRST (optimistic)
+      await context.redis.zAdd(recentCreationsKey, {
+        member: attemptId,
+        score: now,
+      });
+      
+      // Clean up old entries
+      await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
+      
+      // Now count total creations in last 24h
+      const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
+        by: 'rank',
+      });
+      
+      // If over limit, rollback the addition and reject
+      if (recentCreations.length > 4) {
+        await context.redis.zRem(recentCreationsKey, [attemptId]);
+        return {
+          success: false,
+          error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
+        };
+      }
+    }
+
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     if (gifDescriptions && gifDescriptions.length === 4) {
@@ -86,57 +117,61 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     let postId = null;
     if (postToSubreddit) {
-      const subreddit = await context.reddit.getCurrentSubreddit();
-      const subredditName = subreddit?.name || 'PlayGIFEnigma';
-      const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
-      const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
-      const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
-      await context.redis.hSet(`gamePreview:${gameId}`, {
-        maskedWord: maskedWord || '',
-        gifs: JSON.stringify(gifs),
-        creatorUsername: username,
-        isChatPost: finalIsChatPost ? 'true' : 'false',
-      });
-
-      const postOptions: any = {
-        subredditName: subredditName,
-        title: postTitle,
-        preview: Devvit.createElement(
-          'vstack',
-          {
-            alignment: 'center middle',
-            height: '100%',
-            width: '100%',
-            backgroundColor: '#0d1629',
-            gap: 'none',
-          },
-          [
-            Devvit.createElement('image', {
-              url: 'eyebrows.gif',
-              imageWidth: 180,
-              imageHeight: 180,
-              resizeMode: 'fit',
-            }),
-            Devvit.createElement('spacer', { size: 'small' }),
-          ]
-        ),
-      };
-
-      const post = await context.reddit.submitPost(postOptions);
-
-      if (post && post.id) {
-        postId = post.id;
-
-        await context.redis.hSet(`game:${gameId}`, {
-          redditPostId: postId,
+      try {
+        const subreddit = await context.reddit.getCurrentSubreddit();
+        const subredditName = subreddit?.name || 'PlayGIFEnigma';
+        const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
+        const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
+        const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
+        await context.redis.hSet(`gamePreview:${gameId}`, {
+          maskedWord: maskedWord || '',
+          gifs: JSON.stringify(gifs),
+          creatorUsername: username,
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        await context.redis.hSet(`post:${postId}`, {
-          gameId,
-          created: Date.now().toString(),
-          isChatPost: finalIsChatPost ? 'true' : 'false',
-        });
+        const postOptions: any = {
+          subredditName: subredditName,
+          title: postTitle,
+          preview: Devvit.createElement(
+            'vstack',
+            {
+              alignment: 'center middle',
+              height: '100%',
+              width: '100%',
+              backgroundColor: '#0d1629',
+              gap: 'none',
+            },
+            [
+              Devvit.createElement('image', {
+                url: 'eyebrows.gif',
+                imageWidth: 180,
+                imageHeight: 180,
+                resizeMode: 'fit',
+              }),
+              Devvit.createElement('spacer', { size: 'small' }),
+            ]
+          ),
+        };
+
+        const post = await context.reddit.submitPost(postOptions);
+
+        if (post && post.id) {
+          postId = post.id;
+
+          await context.redis.hSet(`game:${gameId}`, {
+            redditPostId: postId,
+            isChatPost: finalIsChatPost ? 'true' : 'false',
+          });
+
+          await context.redis.hSet(`post:${postId}`, {
+            gameId,
+            created: Date.now().toString(),
+            isChatPost: finalIsChatPost ? 'true' : 'false',
+          });
+        }
+      } catch (redditError) {
+        // postId remains null, indicating posting failed
       }
     }
 
@@ -146,6 +181,20 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     };
     
     if (!isSystemUser) {
+      // Clean up the attempt marker before awardCreationBonus adds the real entry
+      const recentCreationsKey = `user:${username}:recentCreations`;
+      // Remove any attempt markers for this user (they start with "attempt_")
+      const allEntries = await context.redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
+      const attemptEntries = allEntries.filter(entry => 
+        entry.member.toString().startsWith('attempt_')
+      );
+      if (attemptEntries.length > 0) {
+        await context.redis.zRem(
+          recentCreationsKey, 
+          attemptEntries.map(e => e.member.toString())
+        );
+      }
+      
       const result = await awardCreationBonus(username, context);
       bonusResult = {
         success: result.success,

@@ -837,16 +837,29 @@ Devvit.addCustomPostType({
                 by: 'rank',
               });
               
+              // Filter out attempt_ markers and only include entries from last 24h
               const creationsInLast24h = recentCreations.filter((item) => {
-                return item.score >= twentyFourHoursAgo;
+                const memberStr = item.member.toString();
+                return item.score >= twentyFourHoursAgo && !memberStr.startsWith('attempt_');
               });
               
               const canCreate = creationsInLast24h.length < 4;
+              
+              // Calculate reset time (when the oldest creation expires)
+              let resetTime: string | undefined;
+              if (!canCreate && creationsInLast24h.length > 0) {
+                // Sort by score (timestamp) to find oldest
+                const sortedCreations = [...creationsInLast24h].sort((a, b) => a.score - b.score);
+                const oldestCreationTime = sortedCreations[0].score;
+                // Reset time is 24 hours after the oldest creation
+                resetTime = new Date(oldestCreationTime + 24 * 60 * 60 * 1000).toISOString();
+              }
               
               postMessage({
                 type: 'CHECK_CREATION_LIMIT_RESULT',
                 canCreate,
                 count: creationsInLast24h.length,
+                resetTime,
               });
             } catch (error) {
               postMessage({

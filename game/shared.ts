@@ -663,6 +663,7 @@ export type BlocksToWebviewMessage =
       type: 'CHECK_CREATION_LIMIT_RESULT';
       canCreate: boolean;
       count?: number;
+      resetTime?: string;
       error?: string;
     };
 

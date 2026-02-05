@@ -96,11 +96,6 @@ type WebViewMessage =
     }
   | { type: 'INIT' }
   | { type: 'requestNavigationState' };
-// | {
-//     type: 'NAVIGATION';
-//     page: Page;
-//     gameId?: string;
-//   };
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing');
@@ -121,6 +116,13 @@ function App() {
   const [navigationReceived, setNavigationReceived] = useState<boolean>(false);
   const [_initialLoadComplete, setInitialLoadComplete] = useState<boolean>(false);
   const [isNavigating, setIsNavigating] = useState<boolean>(true);
+
+  // Reset selectedCategory when navigating to landing or category page
+  useEffect(() => {
+    if (currentPage === 'landing') {
+      setSelectedCategory('Viral Vibes');
+    }
+  }, [currentPage]);
 
   // Load game data when navigating to a game page
   useEffect(() => {
@@ -343,7 +345,6 @@ function App() {
               if (message.data.message.type === 'GET_GAME_RESULT' && message.data.message.success) {
                 if (message.data.message.game && message.data.message.game.id) {
                   setGameId(message.data.message.game.id);
-                  // setCurrentPage('game'); 
                 }
               }
 
