@@ -1,9 +1,7 @@
-import { Context } from '@devvit/public-api';
-
-// Define the GIPHY API base URL
+import type { Context } from '@devvit/web/server';
+import { redis, settings } from '@devvit/web/server';
 const GIPHY_API_BASE_URL = "https://api.giphy.com/v1/gifs";
 
-// Define types for GIPHY API responses
 export interface GiphyGifFormat {
     url: string;
     dims: number[];
@@ -80,19 +78,14 @@ export interface GiphySearchParams {
     lang?: string;
 }
 
-/**
- * Transform GIPHY raw result to our standard GiphyGifResult format
- */
 function transformGiphyResult(raw: GiphyRawGifResult, query: string): GiphyGifResult {
     const images = raw.images || {};
-
-    // Helper to create a GiphyGifFormat from a rendition
     const toFormat = (rendition: GiphyImageRendition | undefined): GiphyGifFormat | undefined => {
         if (!rendition || !rendition.url) return undefined;
         return {
             url: rendition.url,
             dims: [parseInt(rendition.width) || 0, parseInt(rendition.height) || 0],
-            duration: 0, // GIPHY doesn't provide duration in the same way
+            duration: 0,
             preview: rendition.url,
             size: parseInt(rendition.size || '0') || 0,
         };
@@ -109,7 +102,7 @@ function transformGiphyResult(raw: GiphyRawGifResult, query: string): GiphyGifRe
         },
         content_description: raw.alt_text || raw.title || `${query} gif`,
         created: new Date(raw.import_datetime).getTime() || Date.now(),
-        hasaudio: false, // GIPHY GIFs don't have audio
+        hasaudio: false,
         url: raw.url,
     };
 }
@@ -119,7 +112,6 @@ export async function searchGiphyGifs(
     context: Context
 ): Promise<GiphyGifResult[]> {
     const { query, limit = 16 } = params;
-    // Use 'g' rating for family-friendly content
     const rating = 'g';
 
     try {
@@ -128,9 +120,7 @@ export async function searchGiphyGifs(
             return cachedResults.results || [];
         }
 
-        const apiKey = await context.settings.get('giphy-api-key');
-
-        // Construct the search URL with query parameters
+        const apiKey = await settings.get('giphyApiKey');
         const searchUrl = `${GIPHY_API_BASE_URL}/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&limit=${limit}&rating=${rating}`;
         const response = await fetch(searchUrl);
         if (!response.ok) {
@@ -139,7 +129,6 @@ export async function searchGiphyGifs(
 
         const data: GiphySearchResponse = await response.json();
         if (data && data.data && Array.isArray(data.data)) {
-            // Transform and cache the results
             const results = data.data.map(gif => transformGiphyResult(gif, query));
             await cacheGiphyResults({ query, results }, context);
 
@@ -151,12 +140,9 @@ export async function searchGiphyGifs(
     }
 }
 
-/**
- * Cache the GIPHY search results for 24 hours.
- */
 export async function cacheGiphyResults(
     params: { query: string; results: GiphyGifResult[] },
-    context: Context
+    _context: Context
 ): Promise<{ success: boolean; error?: string }> {
     try {
         const { query, results } = params;
@@ -164,11 +150,10 @@ export async function cacheGiphyResults(
             return { success: false, error: 'Invalid parameters' };
         }
 
-        // Set cache expiration to 24 hours from now
         const expirationDate = new Date();
         expirationDate.setSeconds(expirationDate.getSeconds() + 86400); // 24 hours
 
-        await context.redis.set(`giphySearch:${query.toLowerCase()}`, JSON.stringify(results), {
+        await redis.set(`giphySearch:${query.toLowerCase()}`, JSON.stringify(results), {
             expiration: expirationDate,
         });
 
@@ -178,12 +163,10 @@ export async function cacheGiphyResults(
     }
 }
 
-/**
- * Retrieve cached GIPHY search results.
- */
+
 export async function getCachedGiphyResults(
     params: { query: string },
-    context: Context
+    _context: Context
 ): Promise<{ success: boolean; cached?: boolean; results?: GiphyGifResult[]; error?: string }> {
     try {
         const { query } = params;
@@ -191,7 +174,7 @@ export async function getCachedGiphyResults(
             return { success: false, error: 'Invalid query' };
         }
 
-        const cachedResults = await context.redis.get(`giphySearch:${query.toLowerCase()}`);
+        const cachedResults = await redis.get(`giphySearch:${query.toLowerCase()}`);
         if (!cachedResults) {
             return { success: false, cached: false };
         }

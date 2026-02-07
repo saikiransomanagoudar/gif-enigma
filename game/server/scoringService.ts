@@ -1,4 +1,5 @@
-import { Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { reddit, redis } from '@devvit/web/server';
 import { ScoreData, LeaderboardEntry } from '../lib/types';
 
 // Bonus XP awarded for creating a game
@@ -77,7 +78,7 @@ export function calculateScore(params: {
 // Save a user's score to Redis
 export async function saveScore(
   params: ScoreData,
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { username, gameId, score, gifPenalty, wordPenalty, timeTaken, timestamp } = params;
@@ -102,7 +103,7 @@ export async function saveScore(
     }
 
     // Store user score for this game in a hash
-    await context.redis.hSet(`score:${gameId}:${username}`, {
+    await redis.hSet(`score:${gameId}:${username}`, {
       username: username,
       gameId,
       score: score.toString(),
@@ -112,24 +113,20 @@ export async function saveScore(
       timestamp: timestamp.toString(),
     });
 
-    // Add to game's leaderboard sorted set (higher scores first)
-    // Don't add 0 scores (give-ups) to leaderboard
     if (score > 0) {
-      await context.redis.zAdd(`leaderboard:${gameId}`, {
+      await redis.zAdd(`leaderboard:${gameId}`, {
         score: score,
         member: username,
       });
 
-      // Add to global leaderboard (higher scores first)
-      await context.redis.zAdd('globalLeaderboard', {
+      await redis.zAdd('globalLeaderboard', {
         score: score,
         member: `${gameId}:${username}`,
       });
     }
-    // -------- Begin Cumulative Leaderboard Additions --------
-    // Only add to completedGames if score > 0 (not a give-up)
+
     if (score > 0) {
-      await context.redis.zAdd(`user:${username}:completedGames`, {
+      await redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: timestamp,
       });
@@ -143,30 +140,31 @@ export async function saveScore(
       bestScore?: string;
       averageScore?: string;
       lastPlayed?: string;
-    } = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
+    } = await redis.hGetAll(`userStats:${username}`).catch(() => ({}));
     if (!userStats || typeof userStats !== 'object') {
-      await context.redis.del(`userStats:${username}`);
+      await redis.del(`userStats:${username}`);
     }
     if (!userStats || Object.keys(userStats).length === 0) {
-      await context.redis.hSet(`userStats:${username}`, {
+      await redis.hSet(`userStats:${username}`, {
         gamesPlayed: '0',
         gamesCreated: '0',
         totalScore: '0',
         bestScore: '0',
         averageScore: '0',
       });
-      userStats = await context.redis.hGetAll(`userStats:${username}`);
+      userStats = await redis.hGetAll(`userStats:${username}`);
     }
 
     // Calculate new stats
     const gamesPlayed = Number(userStats.gamesPlayed || 0) + 1;
-    const gamesWon = score > 0 ? Number(userStats.gamesWon || 0) + 1 : Number(userStats.gamesWon || 0); // Only count as won if score > 0
+    const gamesWon =
+      score > 0 ? Number(userStats.gamesWon || 0) + 1 : Number(userStats.gamesWon || 0); // Only count as won if score > 0
     const totalScore = Number(userStats.totalScore || 0) + score;
     const bestScore = Math.max(Number(userStats.bestScore || 0), score);
     const averageScore = Math.round(totalScore / gamesPlayed);
 
     // Save updated stats
-    await context.redis.hSet(`userStats:${username}`, {
+    await redis.hSet(`userStats:${username}`, {
       gamesPlayed: gamesPlayed.toString(),
       gamesWon: gamesWon.toString(),
       totalScore: totalScore.toString(),
@@ -177,13 +175,17 @@ export async function saveScore(
 
     // Update cumulative leaderboard (only for scores > 0)
     if (score > 0) {
-      await context.redis.zIncrBy('cumulativeLeaderboard', username, score);
+      await redis.zIncrBy('cumulativeLeaderboard', username, score);
     }
 
     // Invalidate leaderboard cache
     try {
-      const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
-      await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
+      const cacheKeys = [
+        'leaderboard:cumulative:10',
+        'leaderboard:cumulative:50',
+        'leaderboard:cumulative:100',
+      ];
+      await Promise.all(cacheKeys.map((key) => redis.del(key).catch(() => {})));
     } catch (cacheError) {
       // Continue even if cache invalidation fails
     }
@@ -194,16 +196,14 @@ export async function saveScore(
   }
 }
 
-// Get game leaderboard from Redis
 export async function getGameLeaderboard(
   params: { gameId: string; limit?: number },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
     const { gameId, limit = 10 } = params;
 
-    // Get top scores from game's leaderboard (highest scores first)
-    const leaderboardItems = await context.redis.zRange(`leaderboard:${gameId}`, 0, limit - 1, {
+    const leaderboardItems = await redis.zRange(`leaderboard:${gameId}`, 0, limit - 1, {
       reverse: true,
       by: 'rank',
     });
@@ -220,7 +220,7 @@ export async function getGameLeaderboard(
       const username = typeof item.member === 'string' ? item.member : '';
 
       // Get score details
-      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+      const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
 
       if (!scoreData || Object.keys(scoreData).length === 0) {
         continue;
@@ -243,16 +243,13 @@ export async function getGameLeaderboard(
   }
 }
 
-// Get global leaderboard from Redis
 export async function getGlobalLeaderboard(
   params: { limit?: number },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
     const { limit = 10 } = params;
-
-    // Get top scores from global leaderboard
-    const leaderboardItems = await context.redis.zRange('globalLeaderboard', 0, limit - 1, {
+    const leaderboardItems = await redis.zRange('globalLeaderboard', 0, limit - 1, {
       reverse: true,
       by: 'rank',
     });
@@ -270,7 +267,7 @@ export async function getGlobalLeaderboard(
 
       if (!gameId || !username) continue;
 
-      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+      const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
 
       leaderboard.push({
         rank: i + 1,
@@ -289,17 +286,15 @@ export async function getGlobalLeaderboard(
   }
 }
 
-// Get user's scores from Redis
 export async function getUserScores(
   params: { username: string; limit?: number },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; scores?: ScoreData[]; error?: string }> {
   try {
     const { username, limit = 10 } = params;
 
-    // Get user's scores (highest scores first)
-    const scoreItems = await context.redis.zRange(`user:${username}:scores`, 0, limit - 1, {
-      reverse: true, // High scores first
+    const scoreItems = await redis.zRange(`user:${username}:scores`, 0, limit - 1, {
+      reverse: true,
       by: 'rank',
     });
 
@@ -307,15 +302,12 @@ export async function getUserScores(
       return { success: true, scores: [] };
     }
 
-    // Build score list
     const scores: ScoreData[] = [];
 
     for (const item of scoreItems) {
       const gameId = typeof item.member === 'string' ? item.member : '';
       const score = item.score;
-
-      // Get score details
-      const scoreData = await context.redis.hGetAll(`score:${gameId}:${username}`);
+      const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
 
       if (!scoreData || Object.keys(scoreData).length === 0) {
         continue;
@@ -340,26 +332,20 @@ export async function getUserScores(
 
 export async function getCumulativeLeaderboard(
   params: { limit?: number },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
     const { limit = 10 } = params;
     const cacheKey = `leaderboard:cumulative:${limit}`;
-    const cacheTTL = 120; // 2 minutes cache
+    const cacheTTL = 120;
 
-    // Try to get cached leaderboard
-    try {
-      const cached = await context.redis.get(cacheKey);
-      if (cached) {
-        const leaderboard = JSON.parse(cached) as LeaderboardEntry[];
-        return { success: true, leaderboard };
-      }
-    } catch (cacheError) {
-      // Cache read failed, fetching fresh data
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const leaderboard = JSON.parse(cached) as LeaderboardEntry[];
+      return { success: true, leaderboard };
     }
 
-    // Get top users from cumulative leaderboard
-    const leaderboardItems = await context.redis.zRange('cumulativeLeaderboard', 0, limit - 1, {
+    const leaderboardItems = await redis.zRange('cumulativeLeaderboard', 0, limit - 1, {
       reverse: true,
       by: 'rank',
     });
@@ -368,27 +354,22 @@ export async function getCumulativeLeaderboard(
       return { success: true, leaderboard: [] };
     }
 
-    // Filter and collect valid usernames first
-    const validUsers: Array<{ username: string; item: typeof leaderboardItems[0] }> = [];
-    
+    const validUsers: Array<{ username: string; item: (typeof leaderboardItems)[0] }> = [];
+
     for (const item of leaderboardItems) {
       const username = typeof item.member === 'string' ? item.member : '';
-      
-      // Skip anonymous users
       if (!username || username.toLowerCase() === 'anonymous') {
         continue;
       }
-      
+
       validUsers.push({ username, item });
     }
 
-    // Fetch all user stats and snoovatars in parallel
     const leaderboardPromises = validUsers.map(async ({ username, item }) => {
       try {
-        // Fetch user stats and snoovatar in parallel
         const [userStats, snoovatarUrl] = await Promise.all([
-          context.redis.hGetAll(`userStats:${username}`),
-          context.reddit.getSnoovatarUrl(username).catch(() => {
+          redis.hGetAll(`userStats:${username}`),
+          reddit.getSnoovatarUrl(username).catch(() => {
             return undefined;
           }),
         ]);
@@ -414,8 +395,7 @@ export async function getCumulativeLeaderboard(
     });
 
     const leaderboardResults = await Promise.all(leaderboardPromises);
-    
-    // Filter out null results and add ranks
+
     const leaderboard: LeaderboardEntry[] = leaderboardResults
       .filter((entry): entry is Omit<LeaderboardEntry, 'rank'> => entry !== null)
       .map((entry, index) => ({
@@ -423,12 +403,9 @@ export async function getCumulativeLeaderboard(
         rank: index + 1,
       }));
 
-    // Cache the result
-    try {
-      await context.redis.set(cacheKey, JSON.stringify(leaderboard), { expiration: new Date(Date.now() + cacheTTL * 1000) });
-    } catch (cacheError) {
-      // Continue without caching
-    }
+    await redis.set(cacheKey, JSON.stringify(leaderboard), {
+      expiration: new Date(Date.now() + cacheTTL * 1000),
+    });
 
     return { success: true, leaderboard };
   } catch (error) {
@@ -438,7 +415,7 @@ export async function getCumulativeLeaderboard(
 
 export async function awardCreationBonus(
   username: string,
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
     const systemUsernames = [
@@ -454,51 +431,41 @@ export async function awardCreationBonus(
       return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
     }
 
-    // Check how many games the user has created in the last 24 hours
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
 
-    // Track recent game creations in a sorted set with timestamp as score
     const recentCreationsKey = `user:${username}:recentCreations`;
 
-    // Get all game creations in the last 24 hours
-    const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
+    const recentCreations = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
 
-    // Filter creations to only include those in the last 24 hours
     const creationsInLast24h = recentCreations.filter((item) => {
       return item.score >= twentyFourHoursAgo;
     });
 
-    // Add current creation to the set
-    await context.redis.zAdd(recentCreationsKey, {
+    await redis.zAdd(recentCreationsKey, {
       member: `game_${now}`,
       score: now,
     });
-
-    // Clean up old entries (older than 24 hours)
-    await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
+    await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
     const shouldAwardBonus = creationsInLast24h.length < 4;
 
-    // Get or initialize user stats
-    let userStats: any = await context.redis.hGetAll(`userStats:${username}`).catch(() => ({}));
+    let userStats: any = await redis.hGetAll(`userStats:${username}`).catch(() => ({}));
 
     if (!userStats || Object.keys(userStats).length === 0) {
-      await context.redis.hSet(`userStats:${username}`, {
+      await redis.hSet(`userStats:${username}`, {
         gamesPlayed: '0',
         gamesCreated: '0',
         totalScore: '0',
         bestScore: '0',
         averageScore: '0',
       });
-      userStats = await context.redis.hGetAll(`userStats:${username}`);
+      userStats = await redis.hGetAll(`userStats:${username}`);
     }
 
-    // Update games created count (always increment this)
     const gamesCreated = Number(userStats.gamesCreated || 0) + 1;
 
-    // Only award bonus if user hasn't exceeded the 4 games limit in 24 hours
     let bonusXP = 0;
     if (shouldAwardBonus) {
       bonusXP = CREATION_BONUS_XP;
@@ -506,7 +473,7 @@ export async function awardCreationBonus(
 
     const totalScore = Number(userStats.totalScore || 0) + bonusXP;
 
-    await context.redis.hSet(`userStats:${username}`, {
+    await redis.hSet(`userStats:${username}`, {
       ...userStats,
       gamesCreated: gamesCreated.toString(),
       totalScore: totalScore.toString(),
@@ -514,15 +481,13 @@ export async function awardCreationBonus(
     });
 
     if (shouldAwardBonus) {
-      await context.redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
-      
-      // Invalidate leaderboard cache
-      try {
-        const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
-        await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
-      } catch (cacheError) {
-        // Cache invalidation failed
-      }
+      await redis.zIncrBy('cumulativeLeaderboard', username, CREATION_BONUS_XP);
+      const cacheKeys = [
+        'leaderboard:cumulative:10',
+        'leaderboard:cumulative:50',
+        'leaderboard:cumulative:100',
+      ];
+      await Promise.all(cacheKeys.map((key) => redis.del(key).catch(() => {})));
     }
 
     return { success: true, bonusAwarded: shouldAwardBonus };
@@ -535,7 +500,7 @@ export async function awardCreatorCompletionBonus(
   creatorUsername: string,
   gameId: string,
   completedByUsername: string,
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
     const systemUsernames = [
@@ -545,43 +510,53 @@ export async function awardCreatorCompletionBonus(
       'system',
       'AutoModerator',
       'reddit',
+      'Most-Client-2219',
     ];
 
-    // Don't award bonus if creator is a system user
-    if (systemUsernames.some((sysUser) => creatorUsername.toLowerCase() === sysUser.toLowerCase())) {
+    if (
+      systemUsernames.some((sysUser) => creatorUsername.toLowerCase() === sysUser.toLowerCase())
+    ) {
       return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
     }
 
-    // Don't award bonus if the creator completed their own game
     if (creatorUsername.toLowerCase() === completedByUsername.toLowerCase()) {
-      return { success: true, bonusAwarded: false, error: 'Creators cannot earn bonus from their own games' };
+      return {
+        success: true,
+        bonusAwarded: false,
+        error: 'Creators cannot earn bonus from their own games',
+      };
     }
 
-    // Don't award bonus if a system user completed the game
-    if (systemUsernames.some((sysUser) => completedByUsername.toLowerCase() === sysUser.toLowerCase())) {
-      return { success: true, bonusAwarded: false, error: 'System user completions do not award bonus' };
+    if (
+      systemUsernames.some((sysUser) => completedByUsername.toLowerCase() === sysUser.toLowerCase())
+    ) {
+      return {
+        success: true,
+        bonusAwarded: false,
+        error: 'System user completions do not award bonus',
+      };
     }
 
-    // Track creator bonus for this game in a sorted set (to prevent duplicate bonuses from same player)
     const creatorBonusKey = `creatorBonus:${gameId}`;
-    const alreadyAwarded = await context.redis.zScore(creatorBonusKey, completedByUsername);
-    
+    const alreadyAwarded = await redis.zScore(creatorBonusKey, completedByUsername);
+
     if (alreadyAwarded !== null && alreadyAwarded !== undefined) {
-      // Already awarded bonus for this player completing this game
-      return { success: true, bonusAwarded: false, error: 'Bonus already awarded for this completion' };
+      return {
+        success: true,
+        bonusAwarded: false,
+        error: 'Bonus already awarded for this completion',
+      };
     }
 
-    // Mark this completion as awarded
-    await context.redis.zAdd(creatorBonusKey, {
+    await redis.zAdd(creatorBonusKey, {
       member: completedByUsername,
       score: Date.now(),
     });
 
-    // Get or initialize creator stats
-    let creatorStats: any = await context.redis.hGetAll(`userStats:${creatorUsername}`).catch(() => ({}));
+    let creatorStats: any = await redis.hGetAll(`userStats:${creatorUsername}`).catch(() => ({}));
 
     if (!creatorStats || Object.keys(creatorStats).length === 0) {
-      await context.redis.hSet(`userStats:${creatorUsername}`, {
+      await redis.hSet(`userStats:${creatorUsername}`, {
         gamesPlayed: '0',
         gamesCreated: '0',
         totalScore: '0',
@@ -589,30 +564,29 @@ export async function awardCreatorCompletionBonus(
         averageScore: '0',
         creatorBonusEarned: '0',
       });
-      creatorStats = await context.redis.hGetAll(`userStats:${creatorUsername}`);
+      creatorStats = await redis.hGetAll(`userStats:${creatorUsername}`);
     }
 
     // Award the bonus XP
     const totalScore = Number(creatorStats.totalScore || 0) + CREATOR_COMPLETION_BONUS_XP;
-    const creatorBonusEarned = Number(creatorStats.creatorBonusEarned || 0) + CREATOR_COMPLETION_BONUS_XP;
+    const creatorBonusEarned =
+      Number(creatorStats.creatorBonusEarned || 0) + CREATOR_COMPLETION_BONUS_XP;
 
-    await context.redis.hSet(`userStats:${creatorUsername}`, {
+    await redis.hSet(`userStats:${creatorUsername}`, {
       ...creatorStats,
       totalScore: totalScore.toString(),
       creatorBonusEarned: creatorBonusEarned.toString(),
       lastPlayed: Date.now().toString(),
     });
 
-    // Update cumulative leaderboard
-    await context.redis.zIncrBy('cumulativeLeaderboard', creatorUsername, CREATOR_COMPLETION_BONUS_XP);
-    
-    // Invalidate leaderboard cache
-    try {
-      const cacheKeys = ['leaderboard:cumulative:10', 'leaderboard:cumulative:50', 'leaderboard:cumulative:100'];
-      await Promise.all(cacheKeys.map(key => context.redis.del(key).catch(() => {})));
-    } catch (cacheError) {
-      // Cache invalidation failed
-    }
+    await redis.zIncrBy('cumulativeLeaderboard', creatorUsername, CREATOR_COMPLETION_BONUS_XP);
+
+    const cacheKeys = [
+      'leaderboard:cumulative:10',
+      'leaderboard:cumulative:50',
+      'leaderboard:cumulative:100',
+    ];
+    await Promise.all(cacheKeys.map((key) => redis.del(key).catch(() => {})));
 
     return { success: true, bonusAwarded: true };
   } catch (error) {
@@ -622,11 +596,11 @@ export async function awardCreatorCompletionBonus(
 
 export async function getCreatorBonusStats(
   gameId: string,
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; totalBonus?: number; completions?: number; error?: string }> {
   try {
     const creatorBonusKey = `creatorBonus:${gameId}`;
-    const completions = await context.redis.zCard(creatorBonusKey);
+    const completions = await redis.zCard(creatorBonusKey);
     const totalBonus = completions * CREATOR_COMPLETION_BONUS_XP;
 
     return { success: true, totalBonus, completions };

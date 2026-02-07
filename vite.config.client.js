@@ -8,11 +8,12 @@ export default defineConfig({
   plugins: [react(), tailwind()],
   root: path.join(__dirname, "game"),
   build: {
-    outDir: path.join(__dirname, "dist", "client"),
+    outDir: path.join(__dirname, "dist/client"),
     emptyOutDir: true,
     copyPublicDir: true,
     sourcemap: true,
     assetsDir: "assets",
+    // Use relative paths for inline webview
     base: "./",
     rollupOptions: {
       input: {

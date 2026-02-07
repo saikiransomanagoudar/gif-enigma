@@ -152,7 +152,6 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       if (onCategorySelect) {
         onCategorySelect(category);
       }
-      onNavigate('create');
     }, 400);
   };
 
@@ -163,25 +162,25 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
     >
       <header
         ref={headerRef}
-        className="mb-5 flex w-full max-w-4xl translate-y-4 transform items-center justify-between opacity-0 transition-all duration-500"
+        className="mb-8 flex w-full max-w-4xl translate-y-4 transform items-start justify-between opacity-0 transition-all duration-500 max-sm:mb-6"
       >
         <button
           ref={backButtonRef}
           onClick={handleBackClick}
-          className={`${isDarkMode ? 'bg-[#FF4500] text-white' : `bg-[#FF4500] text-black`} left-4 flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg`}
+          className={`${isDarkMode ? 'bg-[#FF4500] text-white' : `bg-[#FF4500] text-black`} flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg max-sm:px-2 max-sm:py-1`}
           style={{ backgroundColor: colors.primary }}
         >
-          <span className="mr-1 text-sm text-white">👈</span>
-          <ComicText size={0.5} color="white">
+          <span className="mr-1 text-sm text-white max-sm:text-xs">👈</span>
+          <ComicText size={0.5} color="white" className="max-sm:text-xs">
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:mt-[-20px] max-sm:ml-[12px] md:pr-12 lg:pr-20">
+        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:pr-0">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-500"
           >
-            <ComicText size={1.2} color={colors.primary} align="center">
+            <ComicText size={1.2} color={colors.primary} align="center" className="max-sm:text-base">
               Create GIF Enigma
             </ComicText>
           </div>
@@ -192,7 +191,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
             <ComicText
               size={0.8}
               color={colors.textSecondary}
-              className="mt-2 text-sm sm:text-base md:text-lg"
+              className="mt-3 text-sm sm:text-base md:text-lg max-sm:mt-0.5 max-sm:text-xs"
             >
               Choose category for your enigma
             </ComicText>
@@ -203,7 +202,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       <main className="flex flex-1 items-center justify-center px-4">
         <div
           ref={categoryGridRef}
-          className="grid grid-cols-1 gap-4 max-sm:mt-[-20px] max-sm:gap-1 sm:grid-cols-2 lg:grid-cols-2"
+          className="grid grid-cols-2 gap-x-5 gap-y-6 max-sm:gap-x-3 max-sm:gap-y-4"
         >
           {categories.map((category) => (
             <button
@@ -211,7 +210,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
               onClick={() => handleCategorySelect(category.type)}
               onMouseEnter={() => setHoverCategory(category.type)}
               onMouseLeave={() => setHoverCategory(null)}
-              className="category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg max-sm:h-4/5"
+              className="category-card translate-y-8 transform cursor-pointer rounded-xl border-none p-0 opacity-0 transition-all duration-300 hover:-translate-y-1 hover:scale-102 hover:shadow-lg"
               style={{
                 overflow: 'hidden',
                 transform:
@@ -223,18 +222,18 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
               }}
             >
               <div
-                className="flex h-full flex-col items-center justify-center p-6"
+                className="flex h-full flex-col items-center justify-center p-6 max-sm:p-4"
                 style={{
                   backgroundColor: category.bgColor,
                   border: `3px solid ${hoverCategory === category.type ? 'white' : 'transparent'}`,
                   borderRadius: '12px',
                 }}
               >
-                <div className="mb-3 text-4xl">{category.icon}</div>
-                <ComicText size={1} color="white" className="mb-2 text-sm sm:text-base md:text-lg">
+                <div className="mb-3 text-4xl max-sm:mb-2 max-sm:text-3xl">{category.icon}</div>
+                <ComicText size={1} color="white" className="text-center text-sm sm:text-base md:text-lg">
                   {category.type}
                 </ComicText>
-                <ComicText size={0.6} color="white" className="text-center">
+                <ComicText size={0.6} color="white" className="mt-1 text-center hidden sm:block">
                   {category.description}
                 </ComicText>
               </div>

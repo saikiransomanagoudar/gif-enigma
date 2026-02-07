@@ -1,5 +1,5 @@
-// server/geminiService.ts
-import { Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { settings } from '@devvit/web/server';
 import { CategoryType } from '../pages/CategoryPage';
 
 interface GeminiResponse {
@@ -21,14 +21,15 @@ export async function getRecommendations(
     count?: number;
     excludeWords?: string[];
   },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; recommendations?: string[]; error?: string; debug?: any }> {
   try {
     const { category, inputType, count = 20, excludeWords = [] } = params;
+    console.log('[getRecommendations] Called with:', { category, inputType, count, excludeWordsCount: excludeWords.length });
 
-    const apiKey = await context.settings.get('gemini-api-key');
-
+    const apiKey = await settings.get('geminiApiKey');
     if (!apiKey) {
+      console.log('[getRecommendations] API key not configured, returning defaults');
       return {
         success: false,
         error: 'API key not configured',
@@ -117,6 +118,7 @@ export async function getRecommendations(
     };
 
     try {
+      console.log('[getRecommendations] Making API request to Gemini...');
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -125,8 +127,11 @@ export async function getRecommendations(
         body: JSON.stringify(requestBody),
       });
 
+      console.log('[getRecommendations] API response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.log('[getRecommendations] API error response:', errorText.substring(0, 500));
         return {
           success: false,
           error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
@@ -136,6 +141,13 @@ export async function getRecommendations(
       }
 
       const data = (await response.json()) as GeminiResponse;
+      console.log('[getRecommendations] Response structure:', {
+        hasCandidates: !!data.candidates,
+        candidatesLength: data.candidates?.length,
+        hasError: !!data.error,
+        error: data.error,
+        promptFeedback: data.promptFeedback
+      });
 
       // Add more detailed logging of the response structure
       const responseStructure = {
@@ -149,6 +161,8 @@ export async function getRecommendations(
 
       // Attempt to parse the text from data.candidates[0].content.parts[0].text
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      console.log('[getRecommendations] Extracted text:', text ? `${text.substring(0, 200)}...` : 'NO TEXT');
+      
       if (text) {
         let recommendations: string[] = [];
         let parseSuccessful = false;
@@ -159,8 +173,10 @@ export async function getRecommendations(
           if (Array.isArray(parsed)) {
             recommendations = parsed;
             parseSuccessful = true;
+            console.log('[getRecommendations] Strategy 1 (direct JSON) succeeded:', recommendations.length, 'items');
           }
         } catch (e) {
+          console.log('[getRecommendations] Strategy 1 failed:', e instanceof Error ? e.message : String(e));
           // JSON parse failed, try other strategies
         }
 
@@ -223,7 +239,10 @@ export async function getRecommendations(
             .filter((item: any) => typeof item === 'string' && item.trim().length > 0)
             .map((item: string) => item.trim().toUpperCase());
 
+          console.log('[getRecommendations] Valid items after filtering:', validItems.length);
+
           if (validItems.length > 0) {
+            console.log('[getRecommendations] SUCCESS - Returning', validItems.length, 'recommendations');
             return {
               success: true,
               recommendations: validItems,
@@ -234,6 +253,7 @@ export async function getRecommendations(
       }
 
       // If we reach here, fallback
+      console.log('[getRecommendations] FALLBACK - No valid recommendations extracted, returning defaults');
       return {
         success: false,
         error: 'Invalid response format',
@@ -241,6 +261,7 @@ export async function getRecommendations(
         debug: { data },
       };
     } catch (fetchError) {
+      console.log('[getRecommendations] FETCH ERROR:', fetchError);
       return {
         success: false,
         error: `Fetch error: ${String(fetchError)}`,
@@ -249,6 +270,7 @@ export async function getRecommendations(
       };
     }
   } catch (error) {
+    console.log('[getRecommendations] OUTER ERROR:', error);
     return {
       success: false,
       error: String(error),
@@ -260,14 +282,14 @@ export async function getRecommendations(
 
 export async function getSynonyms(
   params: { word: string },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; synonyms?: string[][]; error?: string; debug?: any }> {
   const { word } = params; // ensure 'word' is in scope for the catch block
 
   try {
 
     // Get the API key from Devvit settings
-    const apiKey = await context.settings.get('gemini-api-key');
+    const apiKey = await settings.get('geminiApiKey');
 
     if (!apiKey) {
       return {
@@ -709,13 +731,13 @@ function getDefaultSynonyms(word: string): string[][] {
 // NEW: Get same-length semantic synonyms for validation
 export async function getSemanticSynonyms(
   params: { word: string },
-  context: Context
+  _context: Context
 ): Promise<{ success: boolean; synonyms?: string[]; error?: string; debug?: any }> {
   const { word } = params;
 
   try {
     // Get the API key from Devvit settings
-    const apiKey = await context.settings.get('gemini-api-key');
+    const apiKey = await settings.get('geminiApiKey');
 
     if (!apiKey) {
       return {
@@ -863,7 +885,7 @@ export async function validateGifWordMatch(
     gifDescriptions: string[];
     searchTerms?: string[];
   },
-  context: Context
+  _context: Context
 ): Promise<{
   success: boolean;
   isValid: boolean;
@@ -874,7 +896,7 @@ export async function validateGifWordMatch(
   try {
     const { word, gifDescriptions, searchTerms = [] } = params;
 
-    const apiKey = await context.settings.get('gemini-api-key');
+    const apiKey = await settings.get('geminiApiKey');
 
     if (!apiKey) {
       // If no API key, allow the game (don't block)

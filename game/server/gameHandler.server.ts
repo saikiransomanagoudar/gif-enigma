@@ -1,4 +1,5 @@
-import { Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { redis } from '@devvit/web/server';
 import {
   saveGame,
   getRecentGames,
@@ -498,7 +499,7 @@ export async function fetchRequest(
   }
 }
 
-export async function removeSystemUsersFromLeaderboard(context: Context) {
+export async function removeSystemUsersFromLeaderboard(_context: Context) {
   try {
     const systemUsernames = [
       'gif-enigma',
@@ -516,25 +517,25 @@ export async function removeSystemUsersFromLeaderboard(context: Context) {
     ];
     
     for (const username of systemUsernames) {
-      await context.redis.zRem('cumulativeLeaderboard', [username]);
-      await context.redis.del(`userStats:${username}`);
+      await redis.zRem('cumulativeLeaderboard', [username]);
+      await redis.del(`userStats:${username}`);
     }
     
-    const globalLeaderboardEntries = await context.redis.zRange('globalLeaderboard', 0, -1);
+    const globalLeaderboardEntries = await redis.zRange('globalLeaderboard', 0, -1);
     
     for (const entry of globalLeaderboardEntries) {
       const id = typeof entry === 'string' ? entry : entry.member;
       
       if (systemUsernames.some(username => id.includes(`:${username}`))) {
-        await context.redis.zRem('globalLeaderboard', [id]);
+        await redis.zRem('globalLeaderboard', [id]);
       }
     }
     
-    const leaderboardKeys = await context.redis.hkeys('leaderboard:*');
+    const leaderboardKeys = await redis.hKeys('leaderboard:*');
     
     for (const leaderboardKey of leaderboardKeys) {
       for (const username of systemUsernames) {
-        await context.redis.zRem(leaderboardKey, [username]);
+        await redis.zRem(leaderboardKey, [username]);
       }
     }
     

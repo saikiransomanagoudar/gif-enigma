@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" class="dark h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' https://webview.devvit.net https://webview-dev.devvit.net;
+    style-src 'self' 'unsafe-inline';
+    connect-src 'self' https://webview.devvit.net https://webview-dev.devvit.net;
+    img-src
+      'self'
+      data:
+      blob:
+      https://media.giphy.com
+      https://*.giphy.com
+      https://webview.devvit.net
+      https://webview-dev.devvit.net
+      https://*.redditmedia.com
+      https://*.redditstatic.com
+      https://*.redd.it;
+  "
+    />
+
+    <title>GIF Enigma - Preview</title>
+  </head>
+  <body class="h-full bg-slate-900">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="../entries/preview.tsx"></script>
+  </body>
+</html>

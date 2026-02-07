@@ -2,6 +2,15 @@ import React, { useState, useEffect, useRef } from "react";
 import { NavigationProps } from "../lib/types";
 import { ComicText } from "../lib/fonts";
 import * as transitions from '../../src/utils/transitions';
+// @ts-ignore
+import { requestExpandedMode, exitExpandedMode } from '@devvit/web/client';
+
+// ✅ REFACTORED: Import API functions
+import {
+  getCurrentUser,
+  getTopScores,
+  getUserStats,
+} from '../lib/api';
 
 export interface LeaderboardPageProps extends NavigationProps {
   postMessage?: (message: any) => void;
@@ -21,10 +30,6 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   const subtitleRef = useRef<HTMLDivElement>(null);
   const userRowRef = useRef<HTMLDivElement>(null);
 
-  const fetchLeaderboard = () => {
-    window.parent.postMessage({ type: 'GET_TOP_SCORES' }, '*');
-  };
-
   useEffect(() => {
     const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
     setIsDarkMode(darkModeQuery.matches);
@@ -33,74 +38,78 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
     return () => darkModeQuery.removeEventListener("change", handleThemeChange);
   }, []);
 
-  useEffect(() => {
-    fetchLeaderboard();
-    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
-
-    const handleMessage = (event: MessageEvent) => {
-      let msg = event.data;
-
-      if (msg?.type === 'devvit-message' && msg.data?.message) {
-        msg = msg.data.message;
-      }
-
-      if (msg?.type === 'GET_TOP_SCORES_RESULT') {
-        if (msg.success && Array.isArray(msg.scores)) {
-          const top50 = msg.scores
-            .sort((a: { bestScore: number }, b: { bestScore: number }) => b.bestScore - a.bestScore)
-            .slice(0, 50);
-
-          setLeaderboard(top50);
+  // ✅ REFACTORED: Fetch all data using API functions
+    useEffect(() => {
+      async function fetchData() {
+        try {
+          // Fetch current user
+          const userData = await getCurrentUser();
+          if (userData.success && userData.user?.username) {
+            setCurrentUsername(userData.user.username);
+            
+            // Fetch user stats once we have the username
+            const statsData = await getUserStats(userData.user.username);
+            if (statsData.success) {
+              if (statsData.stats && typeof statsData.stats.score === 'number' && statsData.rank) {
+                setUserStats({
+                  totalScore: statsData.stats.score,
+                  rank: statsData.rank,
+                });
+              } else {
+                // fallback
+                setUserStats({
+                  totalScore: 0,
+                  rank: 0,
+                });
+              }
+            }
+          }
+  
+          // Fetch leaderboard
+          const leaderboardData = await getTopScores();
+          if (leaderboardData.success && Array.isArray(leaderboardData.leaderboard)) {
+            const top50 = leaderboardData.leaderboard
+              .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+              .slice(0, 50);
+            
+            setLeaderboard(top50);
+          }
+          
+          setIsLoading(false);
+        } catch (error) {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       }
-
-      if (msg?.type === 'GET_CURRENT_USER_RESULT' && msg.success && msg.user?.username) {
-        const username = msg.user.username;
-        setCurrentUsername(username);
-        window.parent.postMessage({ type: 'GET_USER_STATS', data: { username } }, '*');
-      }
-
-      if (msg?.type === 'GET_USER_STATS_RESULT' && msg.success) {
-        if (msg.stats && typeof msg.stats.score === 'number' && msg.rank) {
-          setUserStats({
-            totalScore: msg.stats.score,
-            rank: msg.rank,
-          });
-        } else {
-          // fallback
-          setUserStats({
-            totalScore: 0,
-            rank: 0,
-          });
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  
+      fetchData();
+    }, []);
 
   useEffect(() => {
-    setTimeout(() => {
-      if (headerRef.current) transitions.fadeIn(headerRef.current, { duration: 400, direction: 'up', distance: 'sm' });
-      if (titleRef.current) transitions.animateElement(titleRef.current, { duration: 500, delay: 200, direction: 'up' });
-      if (subtitleRef.current) transitions.animateElement(subtitleRef.current, { duration: 500, delay: 300, direction: 'up' });
-      if (backButtonRef.current) transitions.animateElement(backButtonRef.current, { duration: 400, delay: 100, direction: 'left' });
-    }, 0);
+    if (headerRef.current) transitions.fadeIn(headerRef.current, { duration: 400, direction: 'up', distance: 'sm' });
+    if (titleRef.current) transitions.animateElement(titleRef.current, { duration: 500, delay: 200, direction: 'up' });
+    if (subtitleRef.current) transitions.animateElement(subtitleRef.current, { duration: 500, delay: 300, direction: 'up' });
+    if (backButtonRef.current) transitions.animateElement(backButtonRef.current, { duration: 400, delay: 50, direction: 'left' });
   }, []);
 
-  const handleBackClick = () => {
+  const handleBackClick = async (event: React.MouseEvent) => {
     if (headerRef.current) transitions.fadeOut(headerRef.current, { duration: 300 });
     const categoryCards = document.querySelectorAll('.category-card');
     categoryCards.forEach((card, index) => transitions.fadeOut(card as HTMLElement, { duration: 300, delay: index * 50 }));
     
-    // If gameId exists, go back to game results page; otherwise go to landing page
-    setTimeout(() => {
+    // If gameId exists, go back to game results page (expanded mode); otherwise exit expanded mode
+    setTimeout(async () => {
       if (gameId) {
-        onNavigate('gameResults', { gameId });
+        try {
+          await requestExpandedMode(event.nativeEvent, 'gameResults');
+        } catch (error) {
+          onNavigate('gameResults', { gameId });
+        }
       } else {
-        onNavigate('landing');
+        try {
+          await exitExpandedMode(event.nativeEvent);
+        } catch (error) {
+          onNavigate('landing');
+        }
       }
     }, 450);
   };
@@ -183,7 +192,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
                     <ComicText><span className={`max-sm:text-xs ${index < 3 ? 'text-base font-semibold' : 'text-sm'} truncate`}>{entry.username}</span></ComicText>
                   </div>
                   <div className="flex justify-end pr-2">
-                    <ComicText><span className={`font-bold text-green-600 ${index < 3 ? 'text-base' : 'text-sm'}`}>{entry.bestScore.toLocaleString()}</span></ComicText>
+                    <ComicText><span className={`font-bold text-green-600 ${index < 3 ? 'text-base' : 'text-sm'}`}>{entry.score.toLocaleString()}</span></ComicText>
                   </div>
                 </div>
               );

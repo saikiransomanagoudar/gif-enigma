@@ -4,15 +4,16 @@ import { ComicText } from '../lib/fonts';
 import { NavigationProps } from '../lib/types';
 import PageTransition from '../../src/utils/PageTransition';
 import { motion } from 'framer-motion';
+// @ts-ignore
+import { navigateTo, requestExpandedMode } from '@devvit/web/client';
+import { getCurrentUser, getRandomGame } from '../lib/api';
 
 export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [redditUsername, setRedditUsername] = useState<string>('');
   const [ifhover, setHover] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isboardOpen, setboardOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const isHandlingRequest = useRef(false); // Prevent duplicate requests
 
@@ -62,145 +63,113 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'GET_CURRENT_USER_RESULT') {
-        if (event.data.success) {
-          setRedditUsername(event.data.user?.username || '');
+    async function fetchCurrentUser() {
+      try {
+        const data = await getCurrentUser();
+        if (data.success && data.username) {
+          setRedditUsername(data.username);
         } else {
           setRedditUsername('');
         }
+      } catch (error) {
+        setRedditUsername('');
       }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    }
+
+    fetchCurrentUser();
   }, []);
 
-  const handlePlayClick = () => {
+  const handlePlayClick = async () => {
     // Prevent multiple simultaneous requests
     if (isHandlingRequest.current) {
       return;
     }
-    
+
     isHandlingRequest.current = true;
     setIsLoading(true);
     setShowSuccessMessage(false);
-    let timeoutId: NodeJS.Timeout | null = null;
-    let isHandled = false;
 
-    const handleGameResponse = (event: MessageEvent) => {
-      let message = event.data;
-      if (message && message.type === 'devvit-message' && message.data?.message) {
-        message = message.data.message;
-      } else if (message && message.type === 'devvit-message' && message.data) {
-        message = message.data;
+    try {
+      // Call API directly
+      const response = await getRandomGame(
+        redditUsername || 'anonymous',
+        undefined // category is optional
+      );
+
+      if (!isMounted.current) {
+        return;
       }
 
-      if (message.type === 'GET_RANDOM_GAME_RESULT') {
-        // Prevent handling the same response multiple times
-        if (isHandled) return;
-        isHandled = true;
-        
-        window.removeEventListener('message', handleGameResponse);
-        if (timeoutId) clearTimeout(timeoutId);
+      if (response.success && response.result && response.result.game) {
+        const game = response.result.game;
+        const redditPostId = game.redditPostId;
 
-        if (message.success && message.result && message.result.game) {
-          const game = message.result.game;
-          const redditPostId = game.redditPostId;
+        if (
+          redditPostId &&
+          game.gifs &&
+          Array.isArray(game.gifs) &&
+          game.gifs.length > 0 &&
+          game.word
+        ) {
+          setShowSuccessMessage(true);
 
-          if (redditPostId && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
-            setShowSuccessMessage(true);           
-            setTimeout(() => {
-              // Reset state before navigation
-              setIsLoading(false);
-              setShowSuccessMessage(false);
-              isHandlingRequest.current = false;
-              
-              // Navigate immediately after state reset
-              window.parent.postMessage(
-                {
-                  type: 'NAVIGATE_TO_POST',
-                  data: { postId: redditPostId },
-                },
-                '*'
-              );
-            }, 150);
-          } else {
+          setTimeout(() => {
             setIsLoading(false);
             setShowSuccessMessage(false);
             isHandlingRequest.current = false;
-            alert('⚠️ Could not find a valid game to play. Please try again.');
-          }
+            // Navigate to the Reddit post
+            navigateTo(`https://reddit.com/comments/${redditPostId}`);
+          }, 150);
         } else {
           setIsLoading(false);
           setShowSuccessMessage(false);
           isHandlingRequest.current = false;
-          
-          // Show contextual error messages
-          const result = message.result || {};
-          let errorMessage = '';
-          
-          if (result.hasPlayedAll) {
-            errorMessage = '🎉 Amazing! You\'ve completed all games! Check back later for new challenges.';
-          } else if (result.error && result.error.includes('No games available yet')) {
-            errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
-          } else if (result.error) {
-            errorMessage = result.error;
-          } else if (message.error) {
-            errorMessage = message.error;
-          } else {
-            errorMessage = '😕 No games available right now. Try creating one!';
-          }
-          
-          alert(errorMessage);
         }
-      }
-    };
-
-    window.removeEventListener('message', handleGameResponse);
-    window.addEventListener('message', handleGameResponse);
-
-    // Request a game with sticky random navigation enabled
-    window.parent.postMessage(
-      {
-        type: 'GET_RANDOM_GAME',
-        data: {
-          username: redditUsername || 'anonymous',
-          preferUserCreated: true,
-          useStickyNavigation: true,
-        },
-      },
-      '*'
-    );
-
-    timeoutId = setTimeout(() => {
-      if (isMounted.current && !isHandled) {
-        window.removeEventListener('message', handleGameResponse);
+      } else {
         setIsLoading(false);
         setShowSuccessMessage(false);
         isHandlingRequest.current = false;
-        alert('Request timed out. Please try again.');
+
+        // Show contextual error messages
+        const result = response.result || {};
+        let errorMessage = '';
+
+        if (result.hasPlayedAll) {
+          errorMessage =
+            "🎉 Amazing! You've completed all games! Check back later for new challenges.";
+        } else if (result.error && result.error.includes('No games available yet')) {
+          errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+        } else if (result.error) {
+          errorMessage = result.error;
+        } else if (response.error) {
+          errorMessage = response.error;
+        } else {
+          errorMessage = '😕 No games available right now. Try creating one!';
+        }
+
+        alert(errorMessage);
       }
-    }, 10000);
+    } catch (error) {
+      setIsLoading(false);
+      setShowSuccessMessage(false);
+      isHandlingRequest.current = false;
+    }
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsInitialLoading(false);
-    }, 300);
 
-    return () => clearTimeout(timer);
-  }, []);
+
+  const handleHowToPlayClick = async (event: React.MouseEvent) => {
+    try {
+      await requestExpandedMode(event.nativeEvent, 'howToPlay');
+    } catch (error) {
+      onNavigate('howToPlay');
+    }
+  };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
   return (
     <PageTransition>
-      {isInitialLoading && (
-        <div className="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-          <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
-        </div>
-      )}
       {isLoading && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black">
           {!showSuccessMessage ? (
@@ -228,19 +197,22 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </div>
       )}
       <div
-        className={`${backgroundColor} mt-[-12px] mb-0 min-h-screen w-full p-5 pb-15 select-none`}
+        className={`${backgroundColor} mt-0 mb-0 min-h-screen w-full p-5 pb-15 select-none`}
       >
-        <div className="relative flex flex-col items-center p-4 max-sm:mt-[20px]">
+        <div className="relative flex flex-col items-center p-4 pt-6 max-sm:mt-0 md:pt-12">
           {/* Leaderboard Button */}
           <motion.button
-            className={`absolute top-2 right-2 mt-5 cursor-pointer rounded-lg px-4 py-3 text-lg select-none ${
+            className={`absolute top-4 right-2 mt-2 cursor-pointer rounded-lg px-4 py-3 text-lg select-none max-sm:top-2 max-sm:mt-2 max-sm:px-3 max-sm:py-2 md:top-4 md:px-2.5 md:py-2 md:text-base ${
               ifhover === 'btn1'
                 ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
                 : 'border-border border-1 bg-[#E8E5DA] text-black'
             }`}
-            onClick={() => {
-              onNavigate('leaderboard');
-              setboardOpen(!isboardOpen);
+            onClick={async (event) => {
+              try {
+                await requestExpandedMode(event.nativeEvent, 'leaderboard');
+              } catch (error) {
+                onNavigate('leaderboard');
+              }
             }}
             onMouseEnter={() => setHover('btn1')}
             onMouseLeave={() => setHover(null)}
@@ -249,11 +221,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             transition={{ duration: 0.4, delay: 0.1 }}
           >
             <span className={`mt-1 inline-flex items-center`}>
-              <div className={`${isboardOpen ? 'text-2xl' : ''}`}>🏆</div>
+              <div className="md:text-sm">🏆</div>
 
               <ComicText
                 size={0.8}
-                className={`hidden sm:block ${isboardOpen ? 'text-lg' : ''}`}
+                className={`hidden sm:block md:text-sm`}
                 color={ifhover === 'btn1' ? 'white' : 'black'}
               >
                 &nbsp;Leaderboard
@@ -261,19 +233,14 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             </span>
           </motion.button>
 
-          <div className="mt-5 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none">
-            <div className="mt-[-21px] mb-[21px] ml-10 flex gap-2 p-5">
-              <span className="text-3xl">🎬</span>
-              <span className="text-3xl">❓</span>
-            </div>
-
+          <div className="mt-16 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none max-sm:mt-16">
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.2 }}
-              className="mt-[-35px] mb-[15px] cursor-default select-none"
+              className="mb-[7px] cursor-default select-none"
             >
-              <ComicText size={3} color={colors.primary}>
+              <ComicText size={2.5} color={colors.primary}>
                 GIF Enigma
               </ComicText>
             </motion.h2>
@@ -282,8 +249,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.4 }}
-            >
-            </motion.h2>
+            ></motion.h2>
           </div>
         </div>
 
@@ -310,7 +276,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             onClick={() => onNavigate('category')}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.6 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
           >
             <img
               src="/landing-page/lets-build.gif"
@@ -332,7 +298,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
             <button
               className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
-              onClick={() => onNavigate('howToPlay')}
+              onClick={handleHowToPlayClick}
               onMouseEnter={() => setHover('btn2')}
               onMouseLeave={() => setHover(null)}
             >

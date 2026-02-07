@@ -1,4 +1,5 @@
-import { Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { redis } from '@devvit/web/server';
 import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server';
 import { CategoryType } from '../pages/CategoryPage';
 
@@ -11,8 +12,6 @@ export async function preWarmCache(context: Context): Promise<void> {
   let synonymsWarmed = 0;
   let gifsWarmed = 0;
 
-  // Step 1: Pre-warm all recommendation sets (8 total: 4 categories × 2 types)
-  // Use Promise.allSettled to run in parallel and avoid timeout issues
   const recommendationPromises = categories.flatMap(category =>
     inputTypes.map(async inputType => {
       const recsResult = await fetchGeminiRecommendations(context, category, inputType, 20);
@@ -41,8 +40,8 @@ export async function preWarmCache(context: Context): Promise<void> {
   const duration = Date.now() - startTime;
 
   // Store completion status in Redis
-  await context.redis.set('cache:prewarmer:last_run', new Date().toISOString());
-  await context.redis.set('cache:prewarmer:stats', JSON.stringify({
+  await redis.set('cache:prewarmer:last_run', new Date().toISOString());
+  await redis.set('cache:prewarmer:stats', JSON.stringify({
     recommendations: recommendationsWarmed,
     synonyms: synonymsWarmed,
     gifs: gifsWarmed,

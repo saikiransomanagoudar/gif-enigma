@@ -1,0 +1,157 @@
+{
+  "name": "gif-enigma",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "entry": "html/landing.html",
+        "inline": true
+      },
+      "create": {
+        "entry": "html/create.html",
+        "inline": true
+      },
+      "category": {
+        "entry": "html/category.html",
+        "inline": true
+      },
+      "preview": {
+        "entry": "html/preview.html",
+        "height": "tall",
+        "inline": true
+      },
+      "leaderboard": {
+        "entry": "html/leaderboard.html"
+      },
+      "game": {
+        "entry": "html/game.html"
+      },
+      "gameResults": {
+        "entry": "html/gameResults.html"
+      },
+      "howToPlay": {
+        "entry": "html/howToPlay.html"
+      }
+    }
+  },
+  "server": {
+    "entry": "index.cjs"
+  },
+  "settings": {
+    "global": {
+      "oauthClientId": {
+        "type": "string",
+        "label": "OAuth Client ID",
+        "isSecret": true
+      },
+      "geminiApiKey": {
+        "type": "string",
+        "label": "Gemini API Key",
+        "isSecret": true
+      },
+      "giphyApiKey": {
+        "type": "string",
+        "label": "Giphy API Key",
+        "isSecret": true
+      }
+    },
+    "subreddit": {
+      "allOriginalContent": {
+        "type": "boolean",
+        "label": "Require All Original Content",
+        "defaultValue": false
+      },
+      "allowChatPostCreation": {
+        "type": "boolean",
+        "label": "Allow Chat Post Creation",
+        "defaultValue": true
+      },
+      "enableAutoCron": {
+        "type": "boolean",
+        "label": "Enable Auto-Create Cron (Prod only)",
+        "defaultValue": false,
+        "helpText": "When enabled, schedules the hourly auto_create_post job. Leave OFF in playtests."
+      }
+    }
+  },
+  "permissions": {
+    "http": {
+      "enable": true,
+      "domains": [
+        "api.giphy.com",
+        "generativelanguage.googleapis.com"
+      ]
+    },
+    "redis": true,
+    "media": true,
+    "realtime": true,
+    "reddit": {
+      "enable": true
+    }
+  },
+  "scheduler": {
+    "tasks": {
+      "auto_create_post": {
+        "endpoint": "/internal/scheduler/auto-create-post",
+        "cron": "0 9,19 * * *"
+      },
+      "clean_leaderboards": {
+        "endpoint": "/internal/scheduler/clean-leaderboards",
+        "cron": "0 */6 * * *"
+      },
+      "cache_prewarmer": {
+        "endpoint": "/internal/scheduler/cache-prewarmer",
+        "cron": "0 2 * * *"
+      }
+    }
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Create GIF Enigma",
+        "description": "Create a new GIF Enigma main hub post",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/create-gif-enigma"
+      },
+      {
+        "label": "🔤 Trigger Word-Based Post",
+        "description": "Force-create a word-based game post",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/trigger-word-post"
+      },
+      {
+        "label": "💬 Trigger Phrase-Based Post",
+        "description": "Force-create a phrase-based game post",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/trigger-phrase-post"
+      },
+      {
+        "label": "🧹 Remove System Users from Leaderboard",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/clean-leaderboards"
+      },
+      {
+        "label": "🚀 Trigger Daily Pre-Generator",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/trigger-daily-pregen"
+      },
+      {
+        "label": "🔄 Force Regenerate (Override Cooldown)",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/force-cache-prewarm"
+      },
+      {
+        "label": "📋 Toggle Debug Mode",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/toggle-debug"
+      }
+    ]
+  }
+}

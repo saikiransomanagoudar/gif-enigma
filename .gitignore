@@ -9,6 +9,10 @@ yarn-error.log*
 .env
 .env.local
 .gitignore
+
+# Build output directories
+dist/
+webroot/
 API_DEBUGGING_GUIDE.md
 TECHNICAL_README.md
 DUPLICATE_COMMENT_PREVENTION.md
@@ -53,3 +57,17 @@ BOT_BEHAVIOR_FIX.md
 GIF_TIMEOUT_CACHE_FIX.md
 STUCK_LOADING_SCREEN_FIX.md
 DAILY_PRE_GENERATION_SYSTEM.md
+EXAMPLE_App_REFACTORED.tsx
+EXAMPLE_main_REFACTORED.tsx
+MULTIPLE_ENTRY_POINTS_GUIDE.md
+MIGRATION_STATUS.md
+INLINE_WEBVIEW_MIGRATION_GUIDE.md
+Inline_Migration.md
+Inline_Migration_Doc_Links.md
+STEP_7_NAVIGATION_GUIDE.md
+game/server/userStats.ts
+EXAMPLE_CreatePage_REFACTORED.tsx
+EXAMPLE_GamePage_REFACTORED.tsx
+EXAMPLE_GameResultsPage_REFACTORED.tsx
+EXAMPLE_LandingPage_REFACTORED.tsx
+EXAMPLE_LeaderboardPage_REFACTORED.tsx

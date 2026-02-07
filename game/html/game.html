@@ -11,12 +11,15 @@
       http-equiv="Content-Security-Policy"
       content="
     default-src 'self';
+    script-src 'self' 'unsafe-inline' https://webview.devvit.net https://webview-dev.devvit.net;
+    style-src 'self' 'unsafe-inline';
+    connect-src 'self' https://webview.devvit.net https://webview-dev.devvit.net;
     img-src
       'self'
       data:
       blob:
-      https://media.tenor.com
-      https://*.tenor.com
+      https://media.giphy.com
+      https://*.giphy.com
       https://webview.devvit.net
       https://webview-dev.devvit.net
       https://*.redditmedia.com
@@ -25,10 +28,10 @@
   "
     />
 
-    <title>GIF Enigma</title>
+    <title>GIF Enigma - Game</title>
   </head>
   <body class="h-full bg-slate-900">
     <div id="root" class="h-full"></div>
-    <script type="module" src="main.tsx"></script>
+    <script type="module" src="../entries/game.tsx"></script>
   </body>
 </html>

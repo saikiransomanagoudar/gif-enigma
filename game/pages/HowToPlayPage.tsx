@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { ComicText } from '../lib/fonts';
-import PageTransition from '../../src/utils/PageTransition';
 import { NavigationProps, Page } from '../lib/types';
 import { motion } from 'framer-motion';
 
@@ -10,16 +9,10 @@ export interface HowToPlayPageProps extends NavigationProps {
 
 export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [_isInitialLoading, setIsInitialLoading] = useState(true);
+  
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
     setIsDarkMode(darkModeQuery.matches);
-    setIsInitialLoading(true);
-    const animationTimeout = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setIsInitialLoading(false);
-      });
-    });
 
     const handleThemeChange = (e: MediaQueryListEvent) => {
       setIsDarkMode(e.matches);
@@ -27,7 +20,6 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
 
     darkModeQuery.addEventListener('change', handleThemeChange);
     return () => {
-      cancelAnimationFrame(animationTimeout);
       darkModeQuery.removeEventListener('change', handleThemeChange);
     };
   }, []);
@@ -36,13 +28,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
   const textColor = isDarkMode ? 'text-[#E8E5DA]' : 'text-gray-900';
 
   return (
-    <PageTransition>      
-      <motion.div
-        className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.25 }}
-      >
+      <div className={`${backgroundColor} min-h-screen w-full p-6 font-[ComicText]`}>
         <motion.header
           className="mb-6 flex items-center justify-between border-b-2 border-gray-400 pb-6"
           initial={{ opacity: 0, y: -20 }}
@@ -151,25 +137,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
             </div>
           </motion.section>
         </motion.div>
-
-        {/* <motion.div
-          className="mt-10 flex flex-col items-center space-y-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 1.4 }}
-        >
-          <motion.button
-            onClick={() => onNavigate('landing')}
-            className="transform cursor-pointer rounded-full bg-[#E8E5DA] px-8 py-4 text-lg text-white shadow-[0_4px_6px_2px_rgba(0,0,0,0.3)] transition duration-200 hover:scale-105"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3, delay: 1.5 }}
-          >
-            <ComicText>Get Started!</ComicText>
-          </motion.button>
-        </motion.div> */}
-      </motion.div>
-    </PageTransition>
+      </div>
   );
 };
 

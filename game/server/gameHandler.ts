@@ -1,4 +1,5 @@
-import { Devvit, Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { redis, reddit, settings } from '@devvit/web/server';
 import {
   GameData,
   GetRecentGamesResponse,
@@ -31,7 +32,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     
     let username = 'anonymous';
     try {
-      const user = await context.reddit.getCurrentUser();
+      const user = await reddit.getCurrentUser();
       username = user?.username || 'anonymous';
     } catch (error) {
       username = 'system';
@@ -50,35 +51,33 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       username.toLowerCase() === sysUser.toLowerCase()
     );
 
-    // ENFORCE daily creation limit for non-system users (atomic check)
-    if (!isSystemUser) {
-      const now = Date.now();
-      const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-      const recentCreationsKey = `user:${username}:recentCreations`;
-      const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
-      
-      // Add this creation attempt FIRST (optimistic)
-      await context.redis.zAdd(recentCreationsKey, {
-        member: attemptId,
-        score: now,
-      });
-      
-      // Clean up old entries
-      await context.redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
-      
-      // Now count total creations in last 24h
-      const recentCreations = await context.redis.zRange(recentCreationsKey, 0, -1, {
-        by: 'rank',
-      });
-      
-      // If over limit, rollback the addition and reject
-      if (recentCreations.length > 4) {
-        await context.redis.zRem(recentCreationsKey, [attemptId]);
-        return {
-          success: false,
-          error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
-        };
-      }
+    // ENFORCE daily creation limit for ALL users
+    const now = Date.now();
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
+    const recentCreationsKey = `user:${username}:recentCreations`;
+    const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
+    
+    // Add this creation attempt FIRST (optimistic)
+    await redis.zAdd(recentCreationsKey, {
+      member: attemptId,
+      score: now,
+    });
+    
+    // Clean up old entries
+    await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
+    
+    // Now count total creations in last 24h
+    const recentCreations = await redis.zRange(recentCreationsKey, 0, -1, {
+      by: 'rank',
+    });
+    
+    // If over limit, rollback the addition and reject
+    if (recentCreations.length > 4) {
+      await redis.zRem(recentCreationsKey, [attemptId]);
+      return {
+        success: false,
+        error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
+      };
     }
 
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -99,7 +98,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       acceptedSynonyms = semanticResult.synonyms;
     }
 
-    const tx = await context.redis.watch('games');
+    const tx = await redis.watch('games');
     await tx.multi();
 
     await tx.hSet(`game:${gameId}`, {
@@ -118,56 +117,47 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     let postId = null;
     if (postToSubreddit) {
       try {
-        const subreddit = await context.reddit.getCurrentSubreddit();
+        const subreddit = await reddit.getCurrentSubreddit();
         const subredditName = subreddit?.name || 'PlayGIFEnigma';
-        const allowChatPostCreation = await context.settings.get('allowChatPostCreation');
+        const allowChatPostCreation = await settings.get('allowChatPostCreation');
         const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
         const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
-        await context.redis.hSet(`gamePreview:${gameId}`, {
+        
+        // Store preview data for potential fallback
+        await redis.hSet(`gamePreview:${gameId}`, {
           maskedWord: maskedWord || '',
           gifs: JSON.stringify(gifs),
           creatorUsername: username,
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        const postOptions: any = {
+        // ✅ INLINE WEB VIEW: Create post with 'game' entry point
+        // The GamePagePreview.tsx component will render automatically based on:
+        // 1. devvit.json configuration (game entry point)
+        // 2. Redis mapping: post:${postId} → gameId
+        // 3. URL params: ?entrypoint=game&gameId=xxx
+        const post = await reddit.submitPost({
           subredditName: subredditName,
           title: postTitle,
-          preview: Devvit.createElement(
-            'vstack',
-            {
-              alignment: 'center middle',
-              height: '100%',
-              width: '100%',
-              backgroundColor: '#0d1629',
-              gap: 'none',
-            },
-            [
-              Devvit.createElement('image', {
-                url: 'eyebrows.gif',
-                imageWidth: 180,
-                imageHeight: 180,
-                resizeMode: 'fit',
-              }),
-              Devvit.createElement('spacer', { size: 'small' }),
-            ]
-          ),
-        };
-
-        const post = await context.reddit.submitPost(postOptions);
+          kind: 'image',
+          imageUrls: [gifs[0]], // Use first GIF as thumbnail
+          // The inline web view will override this and show GamePagePreview.tsx
+        });
 
         if (post && post.id) {
           postId = post.id;
 
-          await context.redis.hSet(`game:${gameId}`, {
+          await redis.hSet(`game:${gameId}`, {
             redditPostId: postId,
             isChatPost: finalIsChatPost ? 'true' : 'false',
+            postUrl: post.url || post.permalink || '',
           });
 
-          await context.redis.hSet(`post:${postId}`, {
+          await redis.hSet(`post:${postId}`, {
             gameId,
             created: Date.now().toString(),
             isChatPost: finalIsChatPost ? 'true' : 'false',
+            entryPoint: 'game', // Mark this as a game post for detection
           });
         }
       } catch (redditError) {
@@ -184,12 +174,12 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       // Clean up the attempt marker before awardCreationBonus adds the real entry
       const recentCreationsKey = `user:${username}:recentCreations`;
       // Remove any attempt markers for this user (they start with "attempt_")
-      const allEntries = await context.redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
+      const allEntries = await redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
       const attemptEntries = allEntries.filter(entry => 
         entry.member.toString().startsWith('attempt_')
       );
       if (attemptEntries.length > 0) {
-        await context.redis.zRem(
+        await redis.zRem(
           recentCreationsKey, 
           attemptEntries.map(e => e.member.toString())
         );
@@ -204,12 +194,12 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     }
 
     if (username && username !== 'anonymous' && !isSystemUser) {
-      await context.redis.zAdd(`user:${username}:completedGames`, {
+      await redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: Date.now(),
       });
 
-      await context.redis.hSet(`gameState:${username}:${gameId}`, {
+      await redis.hSet(`gameState:${username}:${gameId}`, {
         playerState: JSON.stringify({
           gifHintCount: 0,
           revealedLetters: [],
@@ -242,7 +232,7 @@ export async function postCompletionComment(
     gifHints: number;
     redditPostId?: string;
   },
-  context: Context
+  _context: Context
 ): Promise<PostCommentResponse> {
   try {
     const { gameId, username, numGuesses, gifHints, redditPostId } = params;
@@ -265,7 +255,7 @@ export async function postCompletionComment(
     }
 
     const commentKey = `comment:${gameId}:${username}`;
-    const existingComment = await context.redis.get(commentKey);
+    const existingComment = await redis.get(commentKey);
 
     if (existingComment) {
       return { success: true, alreadyPosted: true };
@@ -273,7 +263,7 @@ export async function postCompletionComment(
 
     let postId = redditPostId;
     if (!postId) {
-      const gameData = await context.redis.hGetAll(`game:${gameId}`);
+      const gameData = await redis.hGetAll(`game:${gameId}`);
       postId = gameData.redditPostId;
     }
 
@@ -370,13 +360,16 @@ export async function postCompletionComment(
 
     try {
       // Post the comment to Reddit
-      await context.reddit.submitComment({
-        id: postId,
+      // Ensure postId has the t3_ prefix for Reddit API
+      const formattedPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+      
+      await reddit.submitComment({
+        id: formattedPostId as `t3_${string}`,
         text: completionText,
       });
 
       // Mark as posted in Redis to prevent duplicates
-      await context.redis.set(commentKey, 'posted', {
+      await redis.set(commentKey, 'posted', {
         expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiry
       });
 
@@ -392,7 +385,7 @@ export async function postCompletionComment(
 // Get recent games
 export async function getRecentGames(
   params: { limit?: number },
-  context: Context
+  _context: Context
 ): Promise<GetRecentGamesResponse> {
   try {
     const { limit = 5 } = params;
@@ -400,7 +393,7 @@ export async function getRecentGames(
 
     try {
       // Use zRange with parameters to get most recent games first
-      const scoreMembers = await context.redis.zRange('activeGames', '-inf', '+inf', {
+      const scoreMembers = await redis.zRange('activeGames', '-inf', '+inf', {
         by: 'score',
         reverse: true,
         limit: { offset: 0, count: limit },
@@ -411,7 +404,7 @@ export async function getRecentGames(
       }
     } catch (scoreError) {
       // Fallback to simpler zRange if the complex one fails
-      const allMembers = await context.redis.zRange('activeGames', 0, -1);
+      const allMembers = await redis.zRange('activeGames', 0, -1);
 
       if (allMembers && allMembers.length > 0) {
         // Extract just the game IDs (members)
@@ -444,7 +437,7 @@ export async function getRecentGames(
     // Process each game ID to get the game data
     const games: GameData[] = [];
     for (const gameId of gameIds) {
-      const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
+      const rawGameData = await redis.hGetAll(`game:${gameId}`);
         if (rawGameData && Object.keys(rawGameData).length > 0) {
         // Create a properly typed game data object
         const gameData: GameData = {
@@ -496,15 +489,15 @@ export async function getRecentGames(
 
 export async function getGame(
   params: { gameId: string },
-  context: Context
+  _context: Context
 ): Promise<GetGameResponse> {
   try {
     const { gameId } = params;
 
     // 1. Check both registry and activeGames
     const [existsInRegistry, score] = await Promise.all([
-      context.redis.exists('game_registry', gameId),
-      context.redis.zScore('activeGames', gameId),
+      redis.exists('game_registry', gameId),
+      redis.zScore('activeGames', gameId),
     ]);
 
     if (!existsInRegistry && !score) {
@@ -512,7 +505,7 @@ export async function getGame(
     }
 
     // 2. Get game data
-    const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
+    const rawGameData = await redis.hGetAll(`game:${gameId}`);
     if (!rawGameData?.word) {
       return { success: false, error: 'Corrupted game data' };
     }
@@ -547,9 +540,9 @@ export async function getGame(
 
     // 5. Add username if missing
     if (gameData.username?.startsWith('t2_')) {
-      const user = await context.reddit.getUserByUsername(gameData.username);
+      const user = await reddit.getUserByUsername(gameData.username);
       if (user) {
-        await context.redis.hSet(`game:${gameId}`, {
+        await redis.hSet(`game:${gameId}`, {
           username: user.username,
         });
       }
@@ -564,7 +557,7 @@ export async function getGame(
 // Check if a user has completed a game
 export async function hasUserCompletedGame(
   params: { gameId: string; username: string },
-  context: Context
+  _context: Context
 ): Promise<{ completed: boolean }> {
   try {
     const { gameId, username } = params;
@@ -574,7 +567,7 @@ export async function hasUserCompletedGame(
 
     // Check if the game is in the user's completed games set
     const completedGamesKey = `user:${username}:completedGames`;
-    const score = await context.redis.zScore(completedGamesKey, gameId);
+    const score = await redis.zScore(completedGamesKey, gameId);
 
     const completed = score !== null && score !== undefined;
     return { completed };
@@ -586,7 +579,7 @@ export async function hasUserCompletedGame(
 // Cache GIF search results
 export async function cacheGifResults(
   params: { query: string; results: any[] },
-  context: Context
+  _context: Context
 ): Promise<GifCacheResponse> {
   try {
     const { query, results } = params;
@@ -599,7 +592,7 @@ export async function cacheGifResults(
     const expirationDate = new Date();
     expirationDate.setSeconds(expirationDate.getSeconds() + 86400);
 
-    await context.redis.set(`gifSearch:${query.toLowerCase()}`, JSON.stringify(results), {
+    await redis.set(`gifSearch:${query.toLowerCase()}`, JSON.stringify(results), {
       expiration: expirationDate,
     });
     return { success: true };
@@ -611,7 +604,7 @@ export async function cacheGifResults(
 // Get games created by a specific user
 export async function getUserGames(
   params: { username: string; limit?: number },
-  context: Context
+  _context: Context
 ): Promise<GetRecentGamesResponse> {
   try {
     const { username, limit = 10 } = params;
@@ -625,7 +618,7 @@ export async function getUserGames(
     }
 
     // Get game IDs from the user's games sorted set using username
-    const gameItems = await context.redis.zRange(`user:${username}:games`, 0, limit - 1, {
+    const gameItems = await redis.zRange(`user:${username}:games`, 0, limit - 1, {
       reverse: true, // Get most recent games first
       by: 'score',
     });
@@ -643,7 +636,7 @@ export async function getUserGames(
     // Get game data for each ID
     const games: GameData[] = [];
     for (const gameId of gameIds) {
-      const rawGameData = await context.redis.hGetAll(`game:${gameId}`);
+      const rawGameData = await redis.hGetAll(`game:${gameId}`);
 
       if (rawGameData && Object.keys(rawGameData).length > 0) {
         const gameData: GameData = {
@@ -687,7 +680,7 @@ export async function getUserGames(
 // Get cached GIF search results
 export async function getCachedGifResults(
   params: { query: string },
-  context: Context
+  _context: Context
 ): Promise<GifCacheResponse> {
   try {
     const { query } = params;
@@ -696,7 +689,7 @@ export async function getCachedGifResults(
       return { success: false, error: 'Invalid query' };
     }
 
-    const cachedResults = await context.redis.get(`gifSearch:${query.toLowerCase()}`);
+    const cachedResults = await redis.get(`gifSearch:${query.toLowerCase()}`);
 
     if (!cachedResults) {
       return { success: false, cached: false };
@@ -741,32 +734,30 @@ export async function saveGameState(
     const cleanedState = Object.fromEntries(
       Object.entries(playerState).filter(([_, v]) => v !== undefined)
     );
-    await context.redis.hSet(gameStateKey, {
+    await redis.hSet(gameStateKey, {
       playerState: JSON.stringify(cleanedState),
       lastUpdated: Date.now().toString(),
     });
 
-    await context.redis.expire(gameStateKey, 30 * 24 * 60 * 60);
+    await redis.expire(gameStateKey, 30 * 24 * 60 * 60);
 
     if (playerState.isCompleted) {
-      await context.redis.zAdd(`user:${username}:completedGames`, {
+      await redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: Date.now(),
       });
-      
-      // Also track this completion in the game's completion set (for statistics)
-      await context.redis.zAdd(`gameCompletions:${gameId}`, {
+
+      await redis.zAdd(`gameCompletions:${gameId}`, {
         member: username,
         score: Date.now(),
       });
 
       // Award creator completion bonus (5 XP to game creator)
-      // Only award if player didn't give up (hasGivenUp !== true AND gifHintCount < 999)
       const didNotGiveUp = playerState.hasGivenUp !== true && 
                            (playerState.gifHintCount === undefined || playerState.gifHintCount < 999);
       
       if (didNotGiveUp) {
-        const gameData = await context.redis.hGetAll(`game:${gameId}`);
+        const gameData = await redis.hGetAll(`game:${gameId}`);
         if (gameData && gameData.username) {
           const creatorUsername = gameData.username;
           await awardCreatorCompletionBonus(creatorUsername, gameId, username, context);
@@ -785,7 +776,7 @@ export async function getGameState(
     username: string;
     gameId: string;
   },
-  context: Context
+  _context: Context
 ) {
   try {
     const { username, gameId } = params;
@@ -795,7 +786,7 @@ export async function getGameState(
     }
 
     const gameStateKey = `gameState:${username}:${gameId}`;
-    const gameState = await context.redis.hGetAll(gameStateKey);
+    const gameState = await redis.hGetAll(gameStateKey);
 
     if (!gameState || Object.keys(gameState).length === 0) {
       // No saved state found
@@ -843,7 +834,7 @@ export async function getUnplayedGames(
     username: string;
     limit?: number;
   },
-  context: Context
+  _context: Context
 ) {
   try {
     const { username, limit = 10 } = params;
@@ -853,7 +844,7 @@ export async function getUnplayedGames(
     }
 
     // Get the user's completed games
-    const completedGames = await context.redis.zRange(`user:${username}:completedGames`, 0, -1, {
+    const completedGames = await redis.zRange(`user:${username}:completedGames`, 0, -1, {
       by: 'score',
     });
 
@@ -862,7 +853,7 @@ export async function getUnplayedGames(
     );
 
     // Get all active games
-    const allGames = await context.redis.zRange('activeGames', 0, -1, {
+    const allGames = await redis.zRange('activeGames', 0, -1, {
       by: 'score',
       reverse: true, // Get newest first
     });
@@ -873,7 +864,7 @@ export async function getUnplayedGames(
       const gameId = typeof game === 'string' ? game : game.member;
 
       if (!completedGameIds.includes(gameId)) {
-        const gameData = await context.redis.hGetAll(`game:${gameId}`);
+        const gameData = await redis.hGetAll(`game:${gameId}`);
 
         if (gameData && Object.keys(gameData).length > 0) {
           if (gameData.gifs) {
@@ -901,7 +892,7 @@ export async function trackGuess(
     username: string;
     guess: string;
   },
-  context: Context
+  _context: Context
 ) {
   try {
     const { gameId, username, guess } = params;
@@ -917,13 +908,13 @@ export async function trackGuess(
       .toUpperCase();
 
     // Increment the guess count for this specific guess
-    await context.redis.zIncrBy(`gameGuesses:${gameId}`, normalizedGuess, 1);
+    await redis.zIncrBy(`gameGuesses:${gameId}`, normalizedGuess, 1);
 
     // Track total guesses for this game
-    await context.redis.incrBy(`gameTotalGuesses:${gameId}`, 1);
+    await redis.incrBy(`gameTotalGuesses:${gameId}`, 1);
 
     // Track unique players who have made guesses (using zAdd with timestamp as score)
-    await context.redis.zAdd(`gamePlayers:${gameId}`, {
+    await redis.zAdd(`gamePlayers:${gameId}`, {
       member: username,
       score: Date.now(),
     });
@@ -937,7 +928,7 @@ export async function trackGuess(
 // Get game statistics including all guesses
 export async function getGameStatistics(
   params: { gameId: string; username?: string },
-  context: Context
+  _context: Context
 ): Promise<GetGameStatisticsResponse> {
   try {
     const { gameId, username } = params;
@@ -947,22 +938,22 @@ export async function getGameStatistics(
     }
 
     // Get the game data to get the answer
-    const gameData = await context.redis.hGetAll(`game:${gameId}`);
+    const gameData = await redis.hGetAll(`game:${gameId}`);
     
     if (!gameData || !gameData.word) {
       return { success: false, error: 'Game not found' };
     }
 
     // Get all guesses with their counts using rank-based zRange
-    const guessesWithScores = await context.redis.zRange(`gameGuesses:${gameId}`, 0, -1, {
+    const guessesWithScores = await redis.zRange(`gameGuesses:${gameId}`, 0, -1, {
       by: 'rank',
       reverse: true, // Highest scores first
     });
 
     // Get total number of guesses made
-    const totalGuessesStr = await context.redis.get(`gameTotalGuesses:${gameId}`);
+    const totalGuessesStr = await redis.get(`gameTotalGuesses:${gameId}`);
     const totalGuesses = totalGuessesStr ? parseInt(totalGuessesStr) : 0;
-    const playersCount = await context.redis.zCard(`gamePlayers:${gameId}`);
+    const playersCount = await redis.zCard(`gamePlayers:${gameId}`);
 
     const guesses: GuessData[] = [];
     
@@ -984,7 +975,7 @@ export async function getGameStatistics(
     let playerScore: number | undefined;
     if (username && username !== 'anonymous') {
       const scoreKey = `score:${gameId}:${username}`;
-      const scoreData = await context.redis.hGetAll(scoreKey);
+      const scoreData = await redis.hGetAll(scoreKey);
       if (scoreData && scoreData.score) {
         playerScore = parseInt(scoreData.score);
       }
@@ -1013,7 +1004,7 @@ export async function validateGuess(
     gameId: string;
     guess: string;
   },
-  context: Context
+  _context: Context
 ): Promise<{
   success: boolean;
   isCorrect: boolean;
@@ -1028,7 +1019,7 @@ export async function validateGuess(
     }
 
     // Get the game data to access the answer
-    const gameData = await context.redis.hGetAll(`game:${gameId}`);
+    const gameData = await redis.hGetAll(`game:${gameId}`);
     
     if (!gameData || !gameData.word) {
       return { success: false, isCorrect: false, error: 'Game not found' };

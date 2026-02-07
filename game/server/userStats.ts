@@ -1,5 +1,5 @@
-// server/userStats.ts
-import { Context } from '@devvit/public-api';
+import type { Context } from '@devvit/web/server';
+import { reddit, redis } from '@devvit/web/server';
 import { UserStats } from '../lib/types.js';
 
 interface StatsParams {
@@ -18,12 +18,9 @@ const DEFAULT_STATS: UserStats = {
   hintsUsed: 0
 };
 
-/**
- * Server-side block to manage user statistics
- */
-export async function userStats(params: StatsParams, context: Context): Promise<UserStats | null> {
+
+export async function userStats(params: StatsParams, _context: Context): Promise<UserStats | null> {
   try {
-    const { reddit, kvStore } = context;
     const currentUser = await reddit.getCurrentUser();
     
     if (!currentUser) {
@@ -33,8 +30,9 @@ export async function userStats(params: StatsParams, context: Context): Promise<
     const userId = currentUser.username;
     const userStatsKey = `stats:${userId}`;
     
-    // Get current stats
-    let stats = await kvStore.get<UserStats>(userStatsKey) || { ...DEFAULT_STATS };
+    // Get current stats from Redis
+    const statsStr = await redis.get(userStatsKey);
+    let stats: UserStats = statsStr ? JSON.parse(statsStr) : { ...DEFAULT_STATS };
     
     if (params.action === 'recordGame') {
       const { won = false, score = 0 } = params;
@@ -46,13 +44,11 @@ export async function userStats(params: StatsParams, context: Context): Promise<
         stats.gamesWon += 1;
         stats.totalScore += score;
         stats.averageScore = stats.totalScore / stats.gamesWon;
-        
-        // Update best score if this score is higher
         stats.bestScore = Math.max(stats.bestScore, score);
       }
-      
-      // Save updated stats
-      await kvStore.put(userStatsKey, stats);
+
+      // Save updated stats to Redis
+      await redis.set(userStatsKey, JSON.stringify(stats));
       
       return stats;
     } else if (params.action === 'getStats') {

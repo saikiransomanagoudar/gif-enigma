@@ -3,6 +3,19 @@ import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import { GameStatistics, NavigationProps, Page } from '../lib/types';
 import { filterGuesses } from '../lib/profanityFilter';
+// @ts-ignore
+import { navigateTo, requestExpandedMode } from '@devvit/web/client';
+
+// ✅ REFACTORED: Import API functions
+import {
+  getCurrentUser,
+  getRandomGame,
+  checkUserComment,
+  getGameState,
+  getGameStatistics,
+  getCreatorBonusStats,
+  postCompletionComment,
+} from '../lib/api';
 
 interface GameResultsPageProps extends NavigationProps {
   onNavigate: (page: Page, params?: { gameId?: string }) => void;
@@ -21,16 +34,17 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [gameState, setGameState] = useState<any>(null);
   const [isGameStateLoaded, setIsGameStateLoaded] = useState(false);
   const [acceptedSynonyms, setAcceptedSynonyms] = useState<string[]>([]);
-  const [debugMode, setDebugMode] = useState(true); // Set to true by default for debugging
-  const [creatorBonusStats, setCreatorBonusStats] = useState<{ totalBonus: number; completions: number } | null>(null);
+  const [creatorBonusStats, setCreatorBonusStats] = useState<{
+    totalBonus: number;
+    completions: number;
+  } | null>(null);
 
-  // Play Again handling (reuse landing page logic)
   const [isFindingGame, setIsFindingGame] = useState(false);
   const [gameFound, setGameFound] = useState(false);
   const isHandlingPlayAgainRequest = useRef(false);
 
-
-    const handlePlayAgainClick = () => {
+  // ✅ REFACTORED: Use getRandomGame API + navigateTo (same pattern as LandingPage)
+  const handlePlayAgainClick = async () => {
     if (isHandlingPlayAgainRequest.current) {
       return;
     }
@@ -39,136 +53,62 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     setIsFindingGame(true);
     setGameFound(false);
 
-    let timeoutId: number | undefined;
-    let isHandled = false;
+    try {
+      const response = await getRandomGame(
+        username || 'anonymous',
+        undefined
+      );
 
-    const handleGameResponse = (event: MessageEvent) => {
-      let message: any = event.data;
+      if (response.success && response.result && response.result.game) {
+        const game = response.result.game;
+        const redditPostId = game.redditPostId;
 
-      // Unwrap devvit messages like in LandingPage
-      if (message && message.type === 'devvit-message' && message.data?.message) {
-        message = message.data.message;
-      } else if (message && message.type === 'devvit-message' && message.data) {
-        message = message.data;
-      }
+        if (
+          redditPostId &&
+          game.gifs &&
+          Array.isArray(game.gifs) &&
+          game.gifs.length > 0 &&
+          game.word
+        ) {
+          setGameFound(true);
 
-      if (message?.type === 'GET_RANDOM_GAME_RESULT') {
-        if (isHandled) return;
-        isHandled = true;
-
-        window.removeEventListener('message', handleGameResponse);
-        if (timeoutId) window.clearTimeout(timeoutId);
-
-        if (message.success && message.result && message.result.game) {
-          const game = message.result.game;
-          const redditPostId = game.redditPostId;
-
-          if (
-            redditPostId &&
-            game.gifs &&
-            Array.isArray(game.gifs) &&
-            game.gifs.length > 0 &&
-            game.word
-          ) {
-            // Show game found message briefly before navigating
-            setGameFound(true);
-            setIsFindingGame(false);
-            
-            setTimeout(() => {
-              isHandlingPlayAgainRequest.current = false;
-              // Same as LandingPage: jump to the post
-              window.parent.postMessage(
-                {
-                  type: 'NAVIGATE_TO_POST',
-                  data: { postId: redditPostId },
-                },
-                '*'
-              );
-            }, 800);
-          } else {
+          setTimeout(() => {
             setIsFindingGame(false);
             isHandlingPlayAgainRequest.current = false;
-            window.parent.postMessage(
-              {
-                type: 'SHOW_TOAST',
-                data: {
-                  text: '⚠️ Could not find a valid game to play. Please try again.',
-                  appearance: 'error',
-                },
-              },
-              '*'
-            );
-          }
+            navigateTo(`https://reddit.com/comments/${redditPostId}`);
+          }, 800);
         } else {
-          const result = message.result || {};
-          let errorMessage = '';
-
-          if (result.hasPlayedAll) {
-            errorMessage =
-              "🎉 Amazing! You've completed all games! Check back later for new challenges.";
-          } else if (result.error && result.error.includes('No games available yet')) {
-            errorMessage =
-              '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
-          } else if (result.error) {
-            errorMessage = result.error;
-          } else if (message.error) {
-            errorMessage = message.error;
-          } else {
-            errorMessage = '😕 No games available right now. Try creating one!';
-          }
-
           setIsFindingGame(false);
           isHandlingPlayAgainRequest.current = false;
-          window.parent.postMessage(
-            {
-              type: 'SHOW_TOAST',
-              data: {
-                text: errorMessage,
-                appearance: 'info',
-              },
-            },
-            '*'
-          );
+          alert('⚠️ Could not find a valid game to play. Please try again.');
         }
-      }
-    };
+      } else {
+        const result = response.result || {};
+        let errorMessage = '';
 
-    // Ensure no duplicate listener
-    window.removeEventListener('message', handleGameResponse);
-    window.addEventListener('message', handleGameResponse);
+        if (result.hasPlayedAll) {
+          errorMessage =
+            "🎉 Amazing! You've completed all games! Check back later for new challenges.";
+        } else if (result.error && result.error.includes('No games available yet')) {
+          errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
+        } else if (result.error) {
+          errorMessage = result.error;
+        } else if (response.error) {
+          errorMessage = response.error;
+        } else {
+          errorMessage = '😕 No games available right now. Try creating one!';
+        }
 
-    // Same GET_RANDOM_GAME call as LandingPage
-    window.parent.postMessage(
-      {
-        type: 'GET_RANDOM_GAME',
-        data: {
-          username: username || 'anonymous',
-          preferUserCreated: true,
-          useStickyNavigation: true,
-        },
-      },
-      '*'
-    );
-
-    timeoutId = window.setTimeout(() => {
-      if (!isHandled) {
-        window.removeEventListener('message', handleGameResponse);
         setIsFindingGame(false);
         isHandlingPlayAgainRequest.current = false;
-        window.parent.postMessage(
-          {
-            type: 'SHOW_TOAST',
-            data: {
-              text: 'Request timed out. Please try again.',
-              appearance: 'error',
-            },
-          },
-          '*'
-        );
+        alert(errorMessage);
       }
-    }, 10000);
+    } catch (error) {
+      setIsFindingGame(false);
+      isHandlingPlayAgainRequest.current = false;
+      alert('Failed to find a game. Please try again.');
+    }
   };
-
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -180,58 +120,71 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
-  // Get current username
+  // ✅ REFACTORED: Get current username using API function
   useEffect(() => {
-    window.parent.postMessage({ type: 'GET_CURRENT_USER' }, '*');
+    async function fetchCurrentUser() {
+      try {
+        const data = await getCurrentUser();
+        if (data.success && data.user?.username) {
+          setUsername(data.user.username);
+        } else {
+          setUsername('anonymous');
+        }
+      } catch (error) {
+        setUsername('anonymous');
+      }
+    }
+    fetchCurrentUser();
   }, []);
 
-  // Check if user has already commented on this game
+  // ✅ REFACTORED: Check if user has already commented using API function
   useEffect(() => {
     if (username && gameId && username !== 'anonymous') {
-      window.parent.postMessage(
-        {
-          type: 'CHECK_USER_COMMENT',
-          data: {
-            username,
-            gameId,
-          },
-        },
-        '*'
-      );
+      async function checkComment() {
+        const data = await checkUserComment(username!, gameId!);
+        if (data.success && data.hasCommented) {
+          setHasAlreadyCommented(true);
+          setIsCommentPosted(true);
+        }
+      }
+      checkComment();
     }
   }, [username, gameId]);
 
-  // Fetch game state when we have both username and gameId
+  // ✅ REFACTORED: Fetch game state using API function
   useEffect(() => {
     if (username && gameId) {
       if (username !== 'anonymous') {
-        window.parent.postMessage(
-          {
-            type: 'GET_GAME_STATE',
-            data: {
-              username,
-              gameId,
-            },
-          },
-          '*'
-        );
+        async function fetchGameState() {
+          try {
+            const data = await getGameState(username!, gameId!);
+            if (data.success && data.state?.playerState) {
+              setGameState(data.state.playerState);
+              setIsGameStateLoaded(true);
+            } else {
+              setGameState(null);
+              setIsGameStateLoaded(true);
+            }
+          } catch (error) {
+            setGameState(null);
+            setIsGameStateLoaded(true);
+          }
+        }
+        fetchGameState();
       } else {
-        // Anonymous users don't have saved state - mark as loaded
         setIsGameStateLoaded(true);
         setGameState(null);
       }
     }
   }, [username, gameId]);
 
-  // Fetch synonyms for the answer word when statistics are loaded
-  // This is now retrieved from the game data (pre-computed at creation time)
   useEffect(() => {
     if (statistics?.acceptedSynonyms) {
       setAcceptedSynonyms(statistics.acceptedSynonyms);
     }
   }, [statistics]);
 
-  // Fetch statistics initially and refetch when username becomes available
+  // ✅ REFACTORED: Fetch statistics using API function
   useEffect(() => {
     if (!gameId) {
       setError('No game ID provided');
@@ -239,173 +192,90 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       return;
     }
 
-    window.parent.postMessage(
-      {
-        type: 'GET_GAME_STATISTICS',
-        data: { gameId, username: username || undefined },
-      },
-      '*'
-    );
-  }, [gameId, username]);
-
-  // Fetch creator bonus stats if user is the creator
-  useEffect(() => {
-    if (gameId && username && statistics?.creatorUsername && username === statistics.creatorUsername) {
-      window.parent.postMessage(
-        {
-          type: 'GET_CREATOR_BONUS_STATS',
-          data: { gameId },
-        },
-        '*'
-      );
-    }
-  }, [gameId, username, statistics?.creatorUsername]);
-
-  useEffect(() => {
-    if (!gameId) return;
-
-    const handleMessage = (event: MessageEvent) => {
-      let actualMessage = event.data;
-      if (actualMessage && actualMessage.type === 'devvit-message' && actualMessage.data?.message) {
-        actualMessage = actualMessage.data.message;
-      }
-
-      if (actualMessage.type === 'GET_GAME_STATISTICS_RESULT') {
+    async function fetchStatistics() {
+      try {
+        const data = await getGameStatistics(gameId!);
         setIsLoading(false);
-        if (actualMessage.success && actualMessage.statistics) {
-          setStatistics(actualMessage.statistics);
+        if (data.success && data.statistics) {
+          setStatistics(data.statistics);
         } else {
-          setError(actualMessage.error || 'Failed to load statistics');
+          setError(data.error || 'Failed to load statistics');
         }
+      } catch (error) {
+        setIsLoading(false);
+        setError('Failed to load statistics');
       }
+    }
+    fetchStatistics();
+  }, [gameId]);
 
-      if (actualMessage.type === 'GET_CREATOR_BONUS_STATS_RESULT') {
-        if (actualMessage.success && typeof actualMessage.totalBonus === 'number') {
+  // ✅ REFACTORED: Fetch creator bonus stats using API function
+  useEffect(() => {
+    if (
+      gameId &&
+      username &&
+      statistics?.creatorUsername &&
+      username === statistics.creatorUsername
+    ) {
+      async function fetchCreatorStats() {
+        const data = await getCreatorBonusStats(username!);
+        if (data.success && typeof data.totalBonus === 'number') {
           setCreatorBonusStats({
-            totalBonus: actualMessage.totalBonus,
-            completions: actualMessage.completions || 0,
+            totalBonus: data.totalBonus,
+            completions: data.completions || 0,
           });
         }
       }
-
-      if (actualMessage.type === 'GET_CURRENT_USER_RESULT') {
-        if (actualMessage.success && actualMessage.user?.username) {
-          setUsername(actualMessage.user.username);
-        } else {
-          setUsername('anonymous');
-        }
-      }
-
-      if (actualMessage.type === 'GET_GAME_STATE_RESULT') {
-        if (actualMessage.success && actualMessage.state?.playerState) {
-          setGameState(actualMessage.state.playerState);
-          setIsGameStateLoaded(true);
-        } else {
-          setGameState(null);
-          setIsGameStateLoaded(true);
-        }
-      }
-
-      if (actualMessage.type === 'POST_COMPLETION_COMMENT_RESULT') {
-        if (debugMode) console.log('[GameResultsPage] Received POST_COMPLETION_COMMENT_RESULT:', actualMessage);
-        setIsCommentPosting(false);
-        if (actualMessage.success) {
-          if (actualMessage.alreadyPosted) {
-            if (debugMode) console.log('[GameResultsPage] User already commented');
-            // User already commented before
-            setHasAlreadyCommented(true);
-            setIsCommentPosted(true);
-          } else {
-            if (debugMode) console.log('[GameResultsPage] Comment posted successfully');
-            // New comment posted successfully
-            setIsCommentPosted(true);
-          }
-        } else {
-          if (debugMode) console.error('[GameResultsPage] Failed to post comment:', actualMessage.error);
-          window.parent.postMessage(
-            {
-              type: 'SHOW_TOAST',
-              data: {
-                text: actualMessage.error || 'Failed to post comment',
-                appearance: 'error',
-              },
-            },
-            '*'
-          );
-        }
-      }
-
-      if (actualMessage.type === 'CHECK_USER_COMMENT_RESULT') {
-        if (debugMode) console.log('[GameResultsPage] Received CHECK_USER_COMMENT_RESULT:', actualMessage);
-        if (actualMessage.success && actualMessage.hasCommented) {
-          if (debugMode) console.log('[GameResultsPage] User has already commented on this game');
-          setHasAlreadyCommented(true);
-          setIsCommentPosted(true);
-        }
-      }
-
-      if (actualMessage.type === 'DEBUG_MODE_TOGGLED') {
-        setDebugMode(actualMessage.enabled);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [gameId]);
+      fetchCreatorStats();
+    }
+  }, [gameId, username, statistics?.creatorUsername]);
 
   const handleBackClick = () => {
     onNavigate('landing');
   };
 
-  // Helper function to check if a guess is correct (exact match or valid synonym)
   const isGuessCorrect = (guess: string, answer: string): boolean => {
-    const normalizeString = (str: string) => 
+    const normalizeString = (str: string) =>
       str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
-    
+
     const normalizedGuess = normalizeString(guess);
     const normalizedAnswer = normalizeString(answer);
-    
-    // Check exact match first
+
     if (normalizedGuess === normalizedAnswer) {
       return true;
     }
-    
-    // Check if lengths match (requirement for synonym validation)
+
     if (normalizedGuess.length !== normalizedAnswer.length) {
       return false;
     }
-    
-    // Check if guess is in the acceptedSynonyms list (pre-computed at game creation)
+
     if (acceptedSynonyms && acceptedSynonyms.length > 0) {
-      const normalizedSynonyms = acceptedSynonyms.map(syn => normalizeString(syn));
-      
-      // Check if the normalized guess matches any accepted synonym
-      return normalizedSynonyms.some(syn => 
-        syn === normalizedGuess && syn.length === normalizedAnswer.length
+      const normalizedSynonyms = acceptedSynonyms.map((syn) => normalizeString(syn));
+
+      return normalizedSynonyms.some(
+        (syn) => syn === normalizedGuess && syn.length === normalizedAnswer.length
       );
     }
-    
+
     return false;
   };
 
-  // Helper function to format a guess to match the answer's word structure
   const formatGuessLikeAnswer = (guess: string, answer: string): string => {
-    const normalizeString = (str: string) => 
+    const normalizeString = (str: string) =>
       str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
-    
+
     const normalizedGuess = normalizeString(guess);
     const normalizedAnswer = normalizeString(answer);
-    
-    // Only format if the normalized strings match
+
     if (normalizedGuess !== normalizedAnswer) {
-      return guess; // Return original if not a match
+      return guess;
     }
-    
+
     // Split answer into words to get the spacing pattern
     const answerWords = answer.split(/\s+/);
     const result: string[] = [];
     let guessIndex = 0;
-    
+
     // Reconstruct the guess with the same word breaks as the answer
     for (const word of answerWords) {
       const wordLength = word.replace(/[^\w]/g, '').length;
@@ -413,38 +283,47 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       result.push(guessSegment);
       guessIndex += wordLength;
     }
-    
+
     return result.join(' ');
   };
 
-  const handlePostComment = () => {
-    if (debugMode) console.log('[GameResultsPage] handlePostComment called - gameId:', gameId, 'username:', username);
+  // ✅ REFACTORED: Handle post comment using API function
+  const handlePostComment = async () => {
     if (!gameId || !username) {
-      if (debugMode) console.warn('[GameResultsPage] Cannot post comment - missing gameId or username');
       return;
     }
     if (isCommentPosting || isCommentPosted) {
-      if (debugMode) console.log('[GameResultsPage] Comment already posting or posted');
       return;
     }
+
     const gifHintCount = gameState?.gifHintCount || 1;
     const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
     const actualGuesses = gameState?.numGuesses || 1;
 
-    if (debugMode) console.log('[GameResultsPage] Sending POST_COMPLETION_COMMENT - guesses:', actualGuesses, 'gifHints:', gifHintsUsed);
     setIsCommentPosting(true);
-    window.parent.postMessage(
-      {
-        type: 'POST_COMPLETION_COMMENT',
-        data: {
-          gameId: gameId,
-          username: username,
-          numGuesses: actualGuesses,
-          gifHints: gifHintsUsed,
-        },
-      },
-      '*'
-    );
+
+    try {
+      // gameId is the Reddit post ID in this system
+      const score = Math.max(100 - (actualGuesses - 1) * 10 - gifHintsUsed * 5, 0);
+      const timeTaken = gameState?.timeTaken || 0;
+
+      const data = await postCompletionComment(gameId, score, statistics?.answer || '', timeTaken);
+      setIsCommentPosting(false);
+
+      if (data.success) {
+        if (data.alreadyPosted) {
+          setHasAlreadyCommented(true);
+          setIsCommentPosted(true);
+        } else {
+          setIsCommentPosted(true);
+        }
+      } else {
+        alert(data.error || 'Failed to post comment');
+      }
+    } catch (error) {
+      setIsCommentPosting(false);
+      alert('Failed to post comment');
+    }
   };
 
   if (isLoading) {
@@ -457,7 +336,9 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
   if (error || !statistics) {
     return (
-      <div className={`${backgroundColor} flex min-h-screen flex-col items-center justify-center p-5`}>
+      <div
+        className={`${backgroundColor} flex min-h-screen flex-col items-center justify-center p-5`}
+      >
         <div className="max-w-md text-center">
           <ComicText size={1.2} color={colors.primary}>
             Oops!
@@ -505,7 +386,15 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
       {/* Answer Highlight */}
       <div className="mb-5 text-center">
-        <div style={{ fontFamily: "Comic Sans MS, Comic Sans, cursive", fontSize: "24px", color: "#EAB308", fontWeight: "bold", letterSpacing: "1px" }}>
+        <div
+          style={{
+            fontFamily: 'Comic Sans MS, Comic Sans, cursive',
+            fontSize: '24px',
+            color: '#EAB308',
+            fontWeight: 'bold',
+            letterSpacing: '1px',
+          }}
+        >
           {statistics.answer.toUpperCase()}
         </div>
       </div>
@@ -534,27 +423,33 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
         {/* Guesses Section */}
         <div className="rounded-xl bg-white/5 p-6 backdrop-blur-sm dark:bg-gray-800/20">
-          <div className={`mb-4 flex items-center ${username && statistics?.creatorUsername && username === statistics.creatorUsername && statistics.creatorUsername !== 'gif-enigma' && creatorBonusStats && creatorBonusStats.totalBonus > 0 ? 'justify-between' : 'justify-center'}`}>
+          <div
+            className={`mb-4 flex items-center ${username && statistics?.creatorUsername && username === statistics.creatorUsername && statistics.creatorUsername !== 'gif-enigma' && creatorBonusStats && creatorBonusStats.totalBonus > 0 ? 'justify-between' : 'justify-center'}`}
+          >
             <ComicText size={0.9} color={colors.primary}>
               Decode attempts
             </ComicText>
             {/* Creator Bonus Badge - compact inline */}
-            {username && statistics?.creatorUsername && username === statistics.creatorUsername && 
-             statistics.creatorUsername !== 'gif-enigma' && creatorBonusStats && creatorBonusStats.totalBonus > 0 && (
-              <div 
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 border border-amber-500/40"
-                style={{ 
-                  background: isDarkMode 
-                    ? 'linear-gradient(135deg, rgba(217, 119, 6, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)'
-                    : 'linear-gradient(135deg, rgba(252, 211, 77, 0.4) 0%, rgba(251, 191, 36, 0.3) 100%)'
-                }}
-              >
-                <span className="text-sm">✨</span>
-                <ComicText size={0.5} color="#D97706">
-                  +{creatorBonusStats.totalBonus} XP
-                </ComicText>
-              </div>
-            )}
+            {username &&
+              statistics?.creatorUsername &&
+              username === statistics.creatorUsername &&
+              statistics.creatorUsername !== 'gif-enigma' &&
+              creatorBonusStats &&
+              creatorBonusStats.totalBonus > 0 && (
+                <div
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 px-2.5 py-1"
+                  style={{
+                    background: isDarkMode
+                      ? 'linear-gradient(135deg, rgba(217, 119, 6, 0.2) 0%, rgba(245, 158, 11, 0.15) 100%)'
+                      : 'linear-gradient(135deg, rgba(252, 211, 77, 0.4) 0%, rgba(251, 191, 36, 0.3) 100%)',
+                  }}
+                >
+                  <span className="text-sm">✨</span>
+                  <ComicText size={0.5} color="#D97706">
+                    +{creatorBonusStats.totalBonus} XP
+                  </ComicText>
+                </div>
+              )}
           </div>
 
           {statistics.guesses.length === 0 ? (
@@ -568,7 +463,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               {filterGuesses(statistics.guesses, 'mask')
                 .filter((guessData) => {
                   // Filter out attempts that don't match the answer's normalized length
-                  const normalizeLength = (str: string) => 
+                  const normalizeLength = (str: string) =>
                     str.replace(/\s+/g, '').replace(/[^\w]/g, '').length;
                   return normalizeLength(guessData.guess) === normalizeLength(statistics.answer);
                 })
@@ -576,40 +471,43 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                   // Check if each guess is exact match or close match
                   const aIsCorrect = isGuessCorrect(a.guess, statistics.answer);
                   const bIsCorrect = isGuessCorrect(b.guess, statistics.answer);
-                  
-                  const aIsExactMatch = a.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+
+                  const aIsExactMatch =
+                    a.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() ===
                     statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
-                  const bIsExactMatch = b.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                  const bIsExactMatch =
+                    b.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() ===
                     statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
-                  
+
                   // Priority 1: Exact matches first
                   if (aIsExactMatch && !bIsExactMatch) return -1;
                   if (!aIsExactMatch && bIsExactMatch) return 1;
-                  
+
                   // Priority 2: Close matches (correct but not exact) second
                   if (aIsCorrect && !aIsExactMatch && !bIsCorrect) return -1;
                   if (bIsCorrect && !bIsExactMatch && !aIsCorrect) return 1;
-                  
+
                   // Priority 3: Within same category, sort by count descending
                   return b.count - a.count;
                 })
                 .slice(0, 10) // Show top 10 to accommodate multiple correct answers
                 .map((guessData, index) => {
                   const isCorrect = isGuessCorrect(guessData.guess, statistics.answer);
-                  const isExactMatch = guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() === 
+                  const isExactMatch =
+                    guessData.guess.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase() ===
                     statistics.answer.replace(/\s+/g, '').replace(/[^\w]/g, '').toUpperCase();
-                  
+
                   // Format correct guesses to match the answer's spacing
-                  const displayGuess = isCorrect 
+                  const displayGuess = isCorrect
                     ? formatGuessLikeAnswer(guessData.guess, statistics.answer).toUpperCase()
                     : guessData.guess.toUpperCase();
-                  
+
                   return (
                     <div key={index} className="space-y-1">
                       {/* Guess text with checkmark/star indicator */}
                       <div className="flex items-center gap-2">
                         <div style={{ fontWeight: 'bold' }}>
-                          <ComicText size={0.7} color={isCorrect ? "#10B981" : "#CA8A04"}>
+                          <ComicText size={0.7} color={isCorrect ? '#10B981' : '#CA8A04'}>
                             {displayGuess}
                           </ComicText>
                         </div>
@@ -617,11 +515,13 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                           <div className="flex items-center gap-1">
                             <span className="text-lg">{isExactMatch ? '✅' : '✨'}</span>
                             {!isExactMatch && (
-                              <div 
-                                className="rounded-full px-2 py-0.5 border"
-                                style={{ 
-                                  backgroundColor: isDarkMode ? 'rgba(167, 139, 250, 0.2)' : 'rgba(124, 58, 237, 0.15)',
-                                  borderColor: isDarkMode ? '#A78BFA' : '#7C3AED'
+                              <div
+                                className="rounded-full border px-2 py-0.5"
+                                style={{
+                                  backgroundColor: isDarkMode
+                                    ? 'rgba(167, 139, 250, 0.2)'
+                                    : 'rgba(124, 58, 237, 0.15)',
+                                  borderColor: isDarkMode ? '#A78BFA' : '#7C3AED',
                                 }}
                               >
                                 <ComicText size={0.5} color={isDarkMode ? '#C4B5FD' : '#7C3AED'}>
@@ -636,7 +536,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
                       <div className="relative h-6 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${
-                            isCorrect 
+                            isCorrect
                               ? 'bg-gradient-to-r from-emerald-500 to-green-600'
                               : 'bg-gradient-to-r from-blue-500 to-purple-600'
                           }`}
@@ -658,14 +558,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         {/* Bottom Buttons */}
         <div className="mt-6 flex flex-col items-center justify-center gap-4">
           {(() => {
-            // Only show comment button if:
-            // 1. Game state has loaded (isGameStateLoaded = true)
-            // 2. User didn't give up (hasGivenUp !== true AND gifHintCount !== 999)
-            // 3. User hasn't already commented (hasAlreadyCommented = false)
-            // 4. User is not the game creator
-            // Note: If gameState is null after loading, user hasn't played yet (show button)
-            const hasGivenUp =
-              gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
+            const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
             const isCreator =
               statistics?.creatorUsername && username === statistics.creatorUsername;
             const shouldShow =
@@ -675,7 +568,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             <button
               onClick={handlePostComment}
               disabled={isCommentPosting || isCommentPosted || !username}
-              className={`flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed w-full sm:w-auto sm:min-w-[220px] ${
+              className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed sm:w-auto sm:min-w-[220px] ${
                 isCommentPosted
                   ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-lg hover:shadow-xl'
                   : isCommentPosting
@@ -693,20 +586,27 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               <span className="text-xl">
                 {isCommentPosted ? '✅' : isCommentPosting ? '⏳' : '💬'}
               </span>
-              <div
-                style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}
-              >
-                {isCommentPosted ? 'Commented!' : isCommentPosting ? 'Commenting…' : 'Comment Results'}
+              <div style={{ fontFamily: 'Comic Sans MS, cursive, sans-serif', fontSize: '16px' }}>
+                {isCommentPosted
+                  ? 'Commented!'
+                  : isCommentPosting
+                    ? 'Commenting…'
+                    : 'Comment Results'}
               </div>
             </button>
           )}
 
           {/* Leaderboard + Play Again in one row on desktop, stacked on mobile */}
           <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
-            {/* Leaderboard button */}
             <button
-              onClick={() => onNavigate('leaderboard', { gameId: statistics.gameId })}
-              className="flex cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
+              onClick={async (event) => {
+                try {
+                  await requestExpandedMode(event.nativeEvent, 'leaderboard');
+                } catch (error) {
+                  onNavigate('leaderboard', { gameId: statistics.gameId });
+                }
+              }}
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg sm:w-auto sm:min-w-[220px] sm:flex-1"
               style={{ backgroundColor: colors.primary }}
             >
               <span className="text-lg">🏆</span>
@@ -715,22 +615,21 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
               </ComicText>
             </button>
 
-            {/* Play Again button – uses GET_RANDOM_GAME flow from landing */}
             <button
               onClick={handlePlayAgainClick}
               disabled={isFindingGame || gameFound}
-              className="play-again-button flex cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white w-full sm:w-auto sm:flex-1 sm:min-w-[220px]"
-              style={{ 
-                backgroundColor: colors.secondary, 
-                opacity: isFindingGame || gameFound ? 0.8 : 1
+              className="play-again-button flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white sm:w-auto sm:min-w-[220px] sm:flex-1"
+              style={{
+                backgroundColor: colors.secondary,
+                opacity: isFindingGame || gameFound ? 0.8 : 1,
               }}
             >
               <span className="text-xl">{gameFound ? '🎮' : isFindingGame ? '⏳' : '⛹️'}</span>
               <ComicText size={0.7} color="white">
-                {gameFound 
-                  ? 'Game found!' 
-                  : isFindingGame 
-                    ? 'Finding game...' 
+                {gameFound
+                  ? 'Game found!'
+                  : isFindingGame
+                    ? 'Finding game...'
                     : statistics?.creatorUsername && username === statistics.creatorUsername
                       ? 'Try another'
                       : 'Play again'}
