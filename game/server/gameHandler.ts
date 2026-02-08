@@ -141,7 +141,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        // ✅ INLINE WEB VIEW: Create custom post with 'preview' entry point
+        // Inline web view: Create custom post with 'preview' entry point
         const post = await reddit.submitCustomPost({
           subredditName: subredditName,
           title: postTitle,
@@ -175,9 +175,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     };
 
     if (!isSystemUser) {
-      // Clean up the attempt marker before awardCreationBonus adds the real entry
       const recentCreationsKey = `user:${username}:recentCreations`;
-      // Remove any attempt markers for this user (they start with "attempt_")
       const allEntries = await redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
       const attemptEntries = allEntries.filter((entry) =>
         entry.member.toString().startsWith('attempt_')

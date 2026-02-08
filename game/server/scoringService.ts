@@ -5,10 +5,20 @@ import { ScoreData, LeaderboardEntry } from '../lib/types';
 // Bonus XP awarded for creating a game
 export const CREATION_BONUS_XP = 20;
 
-// Bonus XP awarded to creator when someone completes their game
+// Bonus XP awarded to creator
 export const CREATOR_COMPLETION_BONUS_XP = 5;
 
-//Calculate score based on the game state and user actions
+// system/bot usernames
+const systemUsernames = [
+  'gif-enigma',
+  'anonymous',
+  'GIFEnigmaBot',
+  'system',
+  'AutoModerator',
+  'reddit',
+];
+
+// Calculate score based on the game state and user actions
 export function calculateScore(params: {
   word: string;
   gifHintCount: number;
@@ -44,7 +54,7 @@ export function calculateScore(params: {
   // Word/Phrase Hint Reveal Penalties based on word length
   if (revealedLetterCount > 0 && wordLength >= 5) {
     let hintsUsed = 0;
-    let lettersPerHint = 2; // Default for most cases
+    let lettersPerHint = 2;
 
     if (wordLength >= 5 && wordLength <= 7) {
       // 5-7 characters: 1 hint available, 2 letters per reveal, 50 points penalty
@@ -87,23 +97,12 @@ export async function saveScore(
       return { success: false, error: 'Username and Game ID are required' };
     }
 
-    // List of system/bot usernames that should not get scores or leaderboard entries
-    const systemUsernames = [
-      'gif-enigma',
-      'anonymous',
-      'GIFEnigmaBot',
-      'system',
-      'AutoModerator',
-      'reddit',
-    ];
-
-    // Don't save scores for anonymous or system/bot users
     if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
       return { success: false, error: 'System users cannot save scores' };
     }
 
-    // Store user score for this game in a hash
-    await redis.hSet(`score:${gameId}:${username}`, {
+    const scoreKey = `score:${gameId}:${username}`;
+    await redis.hSet(scoreKey, {
       username: username,
       gameId,
       score: score.toString(),
@@ -114,7 +113,8 @@ export async function saveScore(
     });
 
     if (score > 0) {
-      await redis.zAdd(`leaderboard:${gameId}`, {
+      const leaderboardKey = `leaderboard:${gameId}`;
+      await redis.zAdd(leaderboardKey, {
         score: score,
         member: username,
       });
@@ -140,19 +140,20 @@ export async function saveScore(
       bestScore?: string;
       averageScore?: string;
       lastPlayed?: string;
+      gamesCreated?: string;
     } = await redis.hGetAll(`userStats:${username}`).catch(() => ({}));
-    if (!userStats || typeof userStats !== 'object') {
-      await redis.del(`userStats:${username}`);
-    }
-    if (!userStats || Object.keys(userStats).length === 0) {
-      await redis.hSet(`userStats:${username}`, {
+
+    // Ensure userStats is a valid object
+    if (!userStats || typeof userStats !== 'object' || Object.keys(userStats).length === 0) {
+      userStats = {
         gamesPlayed: '0',
-        gamesCreated: '0',
+        gamesWon: '0',
         totalScore: '0',
         bestScore: '0',
         averageScore: '0',
-      });
-      userStats = await redis.hGetAll(`userStats:${username}`);
+        gamesCreated: '0',
+        lastPlayed: '0',
+      };
     }
 
     // Calculate new stats
@@ -162,19 +163,24 @@ export async function saveScore(
     const totalScore = Number(userStats.totalScore || 0) + score;
     const bestScore = Math.max(Number(userStats.bestScore || 0), score);
     const averageScore = Math.round(totalScore / gamesPlayed);
+    const gamesCreated = Number(userStats.gamesCreated || 0);
 
-    // Save updated stats
+    // Check if user is a system/bot account
+    const isSystemUser = systemUsernames.some(
+      (sysUser) => username.toLowerCase() === sysUser.toLowerCase()
+    );
+
     await redis.hSet(`userStats:${username}`, {
       gamesPlayed: gamesPlayed.toString(),
       gamesWon: gamesWon.toString(),
       totalScore: totalScore.toString(),
       bestScore: bestScore.toString(),
       averageScore: averageScore.toString(),
+      gamesCreated: gamesCreated.toString(),
       lastPlayed: timestamp.toString(),
     });
 
-    // Update cumulative leaderboard (only for scores > 0)
-    if (score > 0) {
+    if (score > 0 && !isSystemUser) {
       await redis.zIncrBy('cumulativeLeaderboard', username, score);
     }
 
@@ -202,8 +208,8 @@ export async function getGameLeaderboard(
 ): Promise<{ success: boolean; leaderboard?: LeaderboardEntry[]; error?: string }> {
   try {
     const { gameId, limit = 10 } = params;
-
-    const leaderboardItems = await redis.zRange(`leaderboard:${gameId}`, 0, limit - 1, {
+    const redisKey = `leaderboard:${gameId}`;
+    const leaderboardItems = await redis.zRange(redisKey, 0, limit - 1, {
       reverse: true,
       by: 'rank',
     });
@@ -218,8 +224,6 @@ export async function getGameLeaderboard(
     for (let i = 0; i < leaderboardItems.length; i++) {
       const item = leaderboardItems[i];
       const username = typeof item.member === 'string' ? item.member : '';
-
-      // Get score details
       const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
 
       if (!scoreData || Object.keys(scoreData).length === 0) {
@@ -418,15 +422,6 @@ export async function awardCreationBonus(
   _context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
-    const systemUsernames = [
-      'gif-enigma',
-      'anonymous',
-      'GIFEnigmaBot',
-      'system',
-      'AutoModerator',
-      'reddit',
-    ];
-
     if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
       return { success: true, bonusAwarded: false, error: 'System users do not receive bonuses' };
     }
@@ -503,16 +498,6 @@ export async function awardCreatorCompletionBonus(
   _context: Context
 ): Promise<{ success: boolean; error?: string; bonusAwarded?: boolean }> {
   try {
-    const systemUsernames = [
-      'gif-enigma',
-      'anonymous',
-      'GIFEnigmaBot',
-      'system',
-      'AutoModerator',
-      'reddit',
-      'Most-Client-2219',
-    ];
-
     if (
       systemUsernames.some((sysUser) => creatorUsername.toLowerCase() === sysUser.toLowerCase())
     ) {

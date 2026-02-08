@@ -6,7 +6,7 @@ import { CategoryType } from './CategoryPage';
 import { NavigationProps, Page } from '../lib/types';
 import * as transitions from '../../src/utils/transitions';
 
-// ✅ REFACTORED: Import API functions instead of direct fetch() calls
+// Refactored: Import API functions instead of direct fetch() calls
 import {
   fetchPreGeneratedItems,
   fetchGeminiSynonyms,
@@ -86,9 +86,10 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [currentRecIndex, setCurrentRecIndex] = useState<number>(0);
   const [secretInput, setSecretInput] = useState<string>('');
   const [synonyms, setSynonyms] = useState<string[][]>([]);
-  // @ts-ignore
-  const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(false);
-  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(false);
+  // @ts-ignore - Used for loading display logic
+  const [isLoadingSynonyms, setIsLoadingSynonyms] = useState<boolean>(true);
+  // @ts-ignore - Used for loading display logic
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState<boolean>(true);
 
   // Cache for recommendations to avoid repeated API calls
   const recommendationsCache = useRef<{ [key: string]: string[] }>({});
@@ -137,6 +138,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
   const [bonusAwarded, setBonusAwarded] = useState<boolean>(true);
   const [isQuickCreate, setIsQuickCreate] = useState<boolean>(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
   const [isBatchPreFetching, setIsBatchPreFetching] = useState<boolean>(false);
   const [timeUntilReset, setTimeUntilReset] = useState<number>(0); // milliseconds until reset
   const [isAtLimit, setIsAtLimit] = useState<boolean>(false); // Track if user is at creation limit
@@ -152,6 +154,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const cacheCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const cacheRetryIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
   const isCacheCheckingRef = React.useRef<boolean>(false);
+  const searchStartTimeRef = React.useRef<number | null>(null);
+  const progressAnimationRef = React.useRef<number | null>(null);
   const disableSecretChange = selectedGifs.filter((g) => g !== null).length > 0;
 
   // Check creation limit on page load
@@ -281,35 +285,48 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   // Progress bar that fills smoothly and completes when GIFs load
   useEffect(() => {
     if (!isSearching) {
-      setLoadingStage(0);
+      if (progressAnimationRef.current) {
+        cancelAnimationFrame(progressAnimationRef.current);
+        progressAnimationRef.current = null;
+      }
+      if (gifs.length > 0 || searchStartTimeRef.current === null) {
+        setLoadingStage(0);
+        searchStartTimeRef.current = null;
+      }
       return;
     }
 
-    setLoadingStage(0.1);
-    let startTime: number | null = null;
-    let animationFrameId: number;
+    // Starting a new search
+    if (searchStartTimeRef.current === null) {
+      searchStartTimeRef.current = performance.now();
+      setLoadingStage(0.1);
+    }
 
     const animate = (currentTime: number) => {
-      if (!startTime) startTime = currentTime;
-      const elapsed = currentTime - startTime;
+      if (searchStartTimeRef.current === null) return;
+
+      const elapsed = currentTime - searchStartTimeRef.current;
       const timeScale = isBatchPreFetching ? 2500 : 5000;
       const progress = Math.min(
         95,
         80 * (1 - Math.exp(-elapsed / timeScale)) + 15 * (elapsed / (timeScale * 2))
       );
       setLoadingStage(Math.max(0.1, (progress / 100) * 3));
-      if (progress < 95) {
-        animationFrameId = requestAnimationFrame(animate);
+
+      if (progress < 95 && isSearching) {
+        progressAnimationRef.current = requestAnimationFrame(animate);
       }
     };
 
-    animationFrameId = requestAnimationFrame(animate);
+    progressAnimationRef.current = requestAnimationFrame(animate);
+
     return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+      if (progressAnimationRef.current) {
+        cancelAnimationFrame(progressAnimationRef.current);
+        progressAnimationRef.current = null;
       }
     };
-  }, [isSearching, isBatchPreFetching]);
+  }, [isSearching, isBatchPreFetching, gifs.length]);
 
   useEffect(() => {
     if (category && category !== lastCategoryRef.current) {
@@ -320,7 +337,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }
   }, [category, currentCategory]);
 
-  // ✅ REFACTORED: Main data fetching effect - uses fetch() instead of postMessage
+  // Refactored: Main data fetching effect - uses fetch() instead of postMessage
   useEffect(() => {
     const cacheKey = `${currentCategory}-${inputType}`;
 
@@ -328,21 +345,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       return;
     }
 
-    // Clear previous state immediately
-    setSynonyms([]);
-    setSecretInput('');
-
     // Clear any pending synonym timeouts
     Object.values(synonymTimeoutRef.current).forEach((timeout) => clearTimeout(timeout));
     synonymTimeoutRef.current = {};
 
-    // PRIORITY 1: Check in-memory cache (instant, no loading states)
+    // Priority 1: Check in-memory cache
     if (recommendationsCache.current[cacheKey]) {
       const cachedData = recommendationsCache.current[cacheKey];
       const firstWord = cachedData[0];
 
       if (synonymsCache.current[firstWord]) {
-        // Both words and synonyms cached - instant display, no loading!
+        // Both words and synonyms cached
         setRecommendations(cachedData);
         setCurrentRecIndex(0);
         currentWordRef.current = firstWord;
@@ -353,86 +366,55 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         if (activeFetchRef.current === cacheKey || activeFetchRef.current === null) {
           activeFetchRef.current = null;
         }
+        return;
       } else {
         // Words cached but synonyms need fetching
-        setIsLoadingRecommendations(true);
-        setIsLoadingSynonyms(true);
+        setRecommendations(cachedData);
+        setCurrentRecIndex(0);
         currentWordRef.current = firstWord;
         setSecretInput(firstWord);
-        setSynonyms([]);
-      }
-    } else {
-      async function loadPreGeneratedItems() {
+        setIsLoadingRecommendations(false);
         setIsLoadingSynonyms(true);
-        setIsLoadingRecommendations(true);
-        activeFetchRef.current = cacheKey;
+        setSynonyms([]);
+        return;
+      }
+    }
 
-        try {
-          const data = await fetchPreGeneratedItems({
-            category: currentCategory,
-            inputType,
-            count: 20,
+    // Priority 2: Cache miss - fetch from pre-generated data
+    // Fetch silently without showing loading states initially
+    async function loadPreGeneratedItems() {
+      activeFetchRef.current = cacheKey;
+
+      try {
+        const data = await fetchPreGeneratedItems({
+          category: currentCategory,
+          inputType,
+          count: 20,
+        });
+
+        if (data.success && Array.isArray(data.items) && data.items.length > 0) {
+          const words = data.items.map((item: PreGeneratedItem) => item.word);
+
+          recommendationsCache.current[cacheKey] = words;
+          data.items.forEach((item: PreGeneratedItem) => {
+            synonymsCache.current[item.word] = item.synonyms;
           });
 
-          if (data.success && Array.isArray(data.items) && data.items.length > 0) {
-            const words = data.items.map((item: PreGeneratedItem) => item.word);
+          const firstWord = words[0];
+          activeFetchRef.current = null;
+          setRecommendations(words);
+          setCurrentRecIndex(0);
+          currentWordRef.current = firstWord;
+          setSecretInput(firstWord);
+          setIsLoadingRecommendations(false);
+          setSynonyms(synonymsCache.current[firstWord]);
+          setIsLoadingSynonyms(false);
+        } else {
+          setIsLoadingSynonyms(true);
+          setIsLoadingRecommendations(true);
+          setSynonyms([]);
+          setSecretInput('');
 
-            recommendationsCache.current[cacheKey] = words;
-            data.items.forEach((item: PreGeneratedItem) => {
-              synonymsCache.current[item.word] = item.synonyms;
-            });
-
-            const firstWord = words[0];
-            activeFetchRef.current = null;
-            setRecommendations(words);
-            setCurrentRecIndex(0);
-            currentWordRef.current = firstWord;
-            setSecretInput(firstWord);
-            setIsLoadingRecommendations(false);
-            setSynonyms(synonymsCache.current[firstWord]);
-            setIsLoadingSynonyms(false);
-          } else {
-            try {
-              const geminiResponse = await getGeminiRecommendations(currentCategory, inputType, 20);
-              if (
-                geminiResponse.success &&
-                geminiResponse.recommendations &&
-                geminiResponse.recommendations.length > 0
-              ) {
-                const words = geminiResponse.recommendations;
-                recommendationsCache.current[cacheKey] = words;
-                const firstWord = words[0];
-                activeFetchRef.current = null;
-                setRecommendations(words);
-                setCurrentRecIndex(0);
-                currentWordRef.current = firstWord;
-                setSecretInput(firstWord);
-                setIsLoadingRecommendations(false);
-                fetchSynonyms(firstWord);
-              } else {
-                const fallbackData = getFallbackRecommendations();
-                recommendationsCache.current[cacheKey] = fallbackData;
-                activeFetchRef.current = null;
-                setRecommendations(fallbackData);
-                setCurrentRecIndex(0);
-                currentWordRef.current = fallbackData[0];
-                setSecretInput(fallbackData[0]);
-                setIsLoadingRecommendations(false);
-                fetchSynonyms(fallbackData[0]);
-              }
-            } catch (apiError) {
-              const fallbackData = getFallbackRecommendations();
-              recommendationsCache.current[cacheKey] = fallbackData;
-              activeFetchRef.current = null;
-              setRecommendations(fallbackData);
-              setCurrentRecIndex(0);
-              currentWordRef.current = fallbackData[0];
-              setSecretInput(fallbackData[0]);
-              setIsLoadingRecommendations(false);
-              fetchSynonyms(fallbackData[0]);
-            }
-          }
-        } catch (error) {
           try {
             const geminiResponse = await getGeminiRecommendations(currentCategory, inputType, 20);
             if (
@@ -473,10 +455,50 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             fetchSynonyms(fallbackData[0]);
           }
         }
+      } catch (error) {
+        try {
+          const geminiResponse = await getGeminiRecommendations(currentCategory, inputType, 20);
+          if (
+            geminiResponse.success &&
+            geminiResponse.recommendations &&
+            geminiResponse.recommendations.length > 0
+          ) {
+            const words = geminiResponse.recommendations;
+            recommendationsCache.current[cacheKey] = words;
+            const firstWord = words[0];
+            activeFetchRef.current = null;
+            setRecommendations(words);
+            setCurrentRecIndex(0);
+            currentWordRef.current = firstWord;
+            setSecretInput(firstWord);
+            setIsLoadingRecommendations(false);
+            fetchSynonyms(firstWord);
+          } else {
+            const fallbackData = getFallbackRecommendations();
+            recommendationsCache.current[cacheKey] = fallbackData;
+            activeFetchRef.current = null;
+            setRecommendations(fallbackData);
+            setCurrentRecIndex(0);
+            currentWordRef.current = fallbackData[0];
+            setSecretInput(fallbackData[0]);
+            setIsLoadingRecommendations(false);
+            fetchSynonyms(fallbackData[0]);
+          }
+        } catch (apiError) {
+          const fallbackData = getFallbackRecommendations();
+          recommendationsCache.current[cacheKey] = fallbackData;
+          activeFetchRef.current = null;
+          setRecommendations(fallbackData);
+          setCurrentRecIndex(0);
+          currentWordRef.current = fallbackData[0];
+          setSecretInput(fallbackData[0]);
+          setIsLoadingRecommendations(false);
+          fetchSynonyms(fallbackData[0]);
+        }
       }
-
-      loadPreGeneratedItems();
     }
+
+    loadPreGeneratedItems();
   }, [currentCategory, inputType]);
 
   const getFallbackRecommendations = () => {
@@ -591,7 +613,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     return categoryData[inputType] || categoryData['word'];
   };
 
-  // ✅ REFACTORED: Fetch synonyms using API function
+  // Refactored: Fetch synonyms using API function
   const fetchSynonyms = async (word: string) => {
     // Check cache first
     if (synonymsCache.current[word]) {
@@ -610,7 +632,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setSynonyms([]);
     setIsLoadingSynonyms(true);
 
-    // ✅ REFACTORED: Use API function
+    // Refactored: Use API function
     try {
       const data = await fetchGeminiSynonyms(word);
 
@@ -689,30 +711,30 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     }, 300);
   };
 
-  // ✅ REFACTORED: Initialization effect - NO postMessage event listeners
+  // Refactored: Initialization effect - NO postMessage event listeners
   useEffect(() => {
     setIsPageLoaded(true);
 
     // Apply page animations
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 300,
-        delay: 100,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 300,
-        delay: 100,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
-        duration: 250,
+        duration: 150,
         direction: 'up',
         distance: 'sm',
       });
@@ -720,32 +742,32 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (backButtonRef.current) {
       transitions.animateElement(backButtonRef.current, {
-        duration: 250,
-        delay: 50,
+        duration: 150,
+        delay: 0,
         direction: 'left',
       });
     }
 
     if (mainContentRef.current) {
       transitions.animateElement(mainContentRef.current, {
-        duration: 300,
-        delay: 150,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (gifGridRef.current) {
       transitions.animateElement(gifGridRef.current, {
-        duration: 350,
-        delay: 250,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (submitButtonRef.current) {
       transitions.animateElement(submitButtonRef.current, {
-        duration: 350,
-        delay: 350,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
@@ -760,13 +782,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       if (cacheRetryIntervalRef.current) {
         clearInterval(cacheRetryIntervalRef.current);
       }
+      if (progressAnimationRef.current) {
+        cancelAnimationFrame(progressAnimationRef.current);
+        progressAnimationRef.current = null;
+      }
       // Clear all synonym timeouts
       Object.values(synonymTimeoutRef.current).forEach((timeout) => clearTimeout(timeout));
       synonymTimeoutRef.current = {};
+      searchStartTimeRef.current = null;
     };
   }, []);
 
-  // ✅ REFACTORED: Search GIFs function - uses API function
+  // Refactored: Search GIFs function - uses API function
   const searchGifs = async (term: string) => {
     if (!term) return;
 
@@ -793,7 +820,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setIsWaitingForResults(true);
     pendingDisplaySynonym.current = term;
 
-    // ✅ REFACTORED: Batch pre-fetch if synonyms available
+    // Refactored: Batch pre-fetch if synonyms available
     if (!isBatchFetching.current && synonyms.length > 0) {
       const allSynonyms = synonyms.map((group) => group[0]).filter(Boolean);
       if (allSynonyms.length > 0) {
@@ -804,9 +831,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           batchFetchingSynonyms.current.add(synonym);
         });
 
-        // ✅ REFACTORED: Use API function for batch search
+        // Refactored: Use API function for batch search
         try {
-          const data = await batchSearchGiphyGifs(allSynonyms, 6);
+          const data = await batchSearchGiphyGifs(allSynonyms, 10);
 
           if (data.success && data.results) {
             Object.keys(data.results).forEach((query) => {
@@ -844,9 +871,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       timeoutRef.current = null;
     }
 
-    // ✅ REFACTORED: Direct search using API function (fallback if not in batch cache)
+    // Refactored: Direct search using API function (fallback if not in batch cache)
     try {
-      const data = await searchGiphyGifs(term, 6);
+      const data = await searchGiphyGifs(term, 10);
 
       if (data.success && Array.isArray(data.results)) {
         if (data.results.length > 0) {
@@ -881,7 +908,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (mainContentRef.current) {
       transitions.fadeOut(mainContentRef.current, { duration: 200, delay: 50 });
     }
-
     setTimeout(() => {
       onNavigate('category');
     }, 300);
@@ -913,7 +939,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setSelectedGifs(newSelectedGifs);
   };
 
-  // ✅ REFACTORED: Quick Create function - uses API functions
+  // Refactored: Quick Create function - uses API functions
   const handleQuickCreate = async () => {
     if (!secretInput) return;
     if (synonyms.length < 4) return;
@@ -951,15 +977,19 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         return;
       }
 
-      setIsCreating(true);
+      // Show modal immediately without loading state
       setIsQuickCreate(true);
+      setBonusAwarded(true);
+      setCreationError(null);
+      setShowSuccessModal(true);
 
       const synonymsToFetch = synonyms
         .slice(0, 4)
         .map((group) => group[0])
         .filter(Boolean);
       if (synonymsToFetch.length < 4) {
-        setIsCreating(false);
+        setBonusAwarded(false);
+        setCreationError('Not enough synonyms available. Please try a different word.');
         return;
       }
 
@@ -967,9 +997,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         (synonym) => !gifCache.current[synonym] || gifCache.current[synonym].length === 0
       );
 
-      // ✅ REFACTORED: Batch fetch missing GIFs using API function
+      // Refactored: Batch fetch missing GIFs using API function
       if (needsFetching.length > 0) {
-        const data = await batchSearchGiphyGifs(needsFetching, 6);
+        const data = await batchSearchGiphyGifs(needsFetching, 10);
 
         if (data.success && data.results) {
           Object.keys(data.results).forEach((query) => {
@@ -1002,7 +1032,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
 
       if (autoGifUrls.length < 4) {
-        setIsCreating(false);
+        setBonusAwarded(false);
+        setCreationError('Failed to fetch enough GIFs. Please try again.');
         return;
       }
 
@@ -1034,15 +1065,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         postToSubreddit: true,
       };
 
-      // ✅ REFACTORED: Save game using API function
+      // Refactored: Save game using API function
       const saveData = await saveGame(gameData);
 
-      setIsCreating(false);
       if (saveData.success) {
-        // Game created successfully
         setBonusAwarded(saveData.bonusAwarded !== false);
-        setShowSuccessModal(true);
-        // Re-check limit after successful creation to update state
         const limitCheck = await checkCreationLimit();
         if (limitCheck.success === true && limitCheck.canCreate === false) {
           setIsAtLimit(true);
@@ -1052,29 +1079,30 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setIsAtLimit(false);
         }
       } else {
-        // Handle error cases
         const errorMsg = saveData.error || '';
         if (errorMsg.includes('Daily creation limit')) {
           setIsAtLimit(true);
           setBonusAwarded(false);
-          setShowSuccessModal(true);
+          setCreationError(null);
         } else {
-          setShowSuccessModal(false);
+          setBonusAwarded(false);
+          setCreationError(errorMsg || 'Failed to create game. Please try again.');
         }
       }
     } catch (error) {
-      setIsCreating(false);
+      setBonusAwarded(false);
+      setCreationError('An unexpected error occurred. Please try again.');
     }
   };
 
-  // ✅ REFACTORED: Submit game function - uses API functions
+  // Refactored: Submit game function - uses API functions
   const submitGame = async () => {
     const validGifs = selectedGifs.filter((gif) => gif !== null);
     if (!secretInput) return;
     if (validGifs.length !== 4) return;
 
     try {
-      // ✅ REFACTORED: Check creation limit using API function
+      // Refactored: Check creation limit using API function
       let limitData;
       try {
         limitData = await checkCreationLimit();
@@ -1082,9 +1110,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         limitData = { success: false, canCreate: true };
       }
 
-      // Only block if we get a clear "cannot create" response
       if (limitData.success === true && limitData.canCreate === false) {
-        // Set countdown timer from server response
         let timeRemaining = 0;
         if (limitData.timeRemainingMs) {
           timeRemaining = limitData.timeRemainingMs;
@@ -1099,7 +1125,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         return;
       }
 
-      // Set creating state only after limit check passes
       setIsCreating(true);
 
       // Create masked word
@@ -1129,7 +1154,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       const searchTerms = synonyms.map((group) => group[0] || '');
 
-      // ✅ REFACTORED: Save game using API function
+      // Refactored: Save game using API function
       const saveData = await saveGame({
         word: secretInput,
         category: currentCategory,
@@ -1144,11 +1169,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       setIsCreating(false);
       if (saveData.success) {
-        // Game created successfully - show success modal
         setBonusAwarded(saveData.bonusAwarded !== false);
         setIsQuickCreate(false);
         setShowSuccessModal(true);
-        // Re-check limit after successful creation to update state
         const limitCheck = await checkCreationLimit();
         if (limitCheck.success === true && limitCheck.canCreate === false) {
           setIsAtLimit(true);
@@ -1223,7 +1246,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   <img
                     src={getGifUrl(gif)}
                     alt={`GIF ${index + 1}`}
-                    className="h-full w-full object-cover transition-opacity duration-500"
+                    className="h-full w-full object-cover transition-opacity duration-200"
                   />
                 </div>
               ) : (
@@ -1238,12 +1261,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                         currentCachedWord.current = secretInput;
                       }
 
-                      // Reset loading states BEFORE opening modal to prevent flash
                       setLoadingStage(0);
                       setIsSearching(false);
                       setGifs([]);
                       setSelectedGifInModal(null);
-                      setBrokenGifIds(new Set()); // Clear broken GIF tracking for new search
+                      setBrokenGifIds(new Set());
 
                       setSelectedGifIndex(index);
                       setCurrentModalSynonym(defaultSynonym);
@@ -1251,10 +1273,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       setSearchTerm(defaultSynonym);
                       setMessage('');
                       setMessageType('info');
-
-                      // Fetch clicked synonym's GIFs (will use cache if batch already loaded them)
                       searchGifs(defaultSynonym);
-                      // Note: Batch pre-fetch for all synonyms happens when synonyms load, not here
                     }
                   }}
                   className={`flex h-full w-full cursor-pointer flex-col items-center justify-center rounded-xl p-2 text-center transition-all duration-200 ${
@@ -1297,49 +1316,61 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     </div>
   );
 
-  const InputTypeToggle = React.memo(() => (
-    <div className="flex items-center justify-center">
-      <div
-        className="relative flex h-10 items-center overflow-hidden rounded-full"
-        style={{
-          backgroundColor: '#2D3748',
-          border: `2px solid ${colors.primary}`,
-          width: '160px',
-          position: 'relative',
-          minHeight: '40px',
-        }}
-      >
+  const InputTypeToggle = React.memo(
+    ({
+      type,
+      onTypeChange,
+      primaryColor,
+      textSecondaryColor,
+    }: {
+      type: 'word' | 'phrase';
+      onTypeChange: (type: 'word' | 'phrase') => void;
+      primaryColor: string;
+      textSecondaryColor: string;
+    }) => (
+      <div className="flex items-center justify-center">
         <div
-          className="absolute h-full w-1/2 rounded-full transition-all duration-300 ease-in-out"
+          className="relative flex h-10 items-center overflow-hidden rounded-full"
           style={{
-            backgroundColor: colors.primary,
-            left: inputType === 'word' ? '0' : '50%',
-            zIndex: 1,
+            backgroundColor: '#2D3748',
+            border: `2px solid ${primaryColor}`,
+            width: '160px',
+            position: 'relative',
+            minHeight: '40px',
           }}
-        />
-        <button
-          onClick={() => setInputType('word')}
-          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
         >
-          <ComicText size={0.6} color={inputType === 'word' ? 'white' : colors.textSecondary}>
-            Word
-          </ComicText>
-        </button>
-        <button
-          onClick={() => setInputType('phrase')}
-          className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center transition-all duration-200"
-        >
-          <ComicText size={0.6} color={inputType === 'phrase' ? 'white' : colors.textSecondary}>
-            Phrase
-          </ComicText>
-        </button>
+          <div
+            className="absolute h-full w-1/2 rounded-full transition-all duration-300 ease-in-out"
+            style={{
+              backgroundColor: primaryColor,
+              left: type === 'word' ? '0' : '50%',
+              zIndex: 1,
+            }}
+          />
+          <button
+            onClick={() => onTypeChange('word')}
+            className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center"
+          >
+            <ComicText size={0.6} color={type === 'word' ? 'white' : textSecondaryColor}>
+              Word
+            </ComicText>
+          </button>
+          <button
+            onClick={() => onTypeChange('phrase')}
+            className="relative z-10 flex h-full w-1/2 cursor-pointer items-center justify-center"
+          >
+            <ComicText size={0.6} color={type === 'phrase' ? 'white' : textSecondaryColor}>
+              Phrase
+            </ComicText>
+          </button>
+        </div>
       </div>
-    </div>
-  ));
+    )
+  );
 
   return (
     <div
-      className={`${backgroundColor} flex min-h-screen flex-col items-center p-2 transition-opacity duration-500 select-none`}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-2 transition-opacity duration-200 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <Modal
@@ -1361,7 +1392,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 clearTimeout(cacheCheckTimeoutRef.current);
                 cacheCheckTimeoutRef.current = null;
               }
+              if (progressAnimationRef.current) {
+                cancelAnimationFrame(progressAnimationRef.current);
+                progressAnimationRef.current = null;
+              }
               isCacheCheckingRef.current = false;
+              searchStartTimeRef.current = null;
               setShowSearchInput(false);
               setIsSearching(false);
               setIsCacheChecking(false);
@@ -1375,15 +1411,20 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             clearTimeout(cacheCheckTimeoutRef.current);
             cacheCheckTimeoutRef.current = null;
           }
+          if (progressAnimationRef.current) {
+            cancelAnimationFrame(progressAnimationRef.current);
+            progressAnimationRef.current = null;
+          }
           isCacheCheckingRef.current = false;
+          searchStartTimeRef.current = null;
           setShowSearchInput(false);
           setIsSearching(false);
           setIsCacheChecking(false);
-          setLoadingStage(0); // Reset progress bar
-          setGifs([]); // Clear GIFs
-          setBrokenGifIds(new Set()); // Clear broken GIF tracking
+          setLoadingStage(0);
+          setGifs([]);
+          setBrokenGifIds(new Set());
           setSelectedGifInModal(null);
-          setCurrentModalSynonym(''); // Clear the synonym when closing
+          setCurrentModalSynonym('');
         }}
         onConfirm={() => {
           if (selectedGifInModal) {
@@ -1420,7 +1461,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               </div>
             </div>
           )}
-          {/* Show loading spinner if still waiting for results (even after timeout) */}
+          {/* Show loading spinner */}
           {!isSearching && !isCacheChecking && isWaitingForResults && gifs.length === 0 && (
             <div className="flex flex-col items-center justify-center py-8">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500"></div>
@@ -1452,6 +1493,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               <div className="grid grid-cols-2 gap-2">
                 {gifs
                   .filter((gif) => !brokenGifIds.has(gif.id))
+                  .slice(0, 6)
                   .map((gif, idx) => {
                     const url = getGifUrl(gif);
                     if (!url) return null;
@@ -1498,7 +1540,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       <header
         ref={headerRef}
-        className="mb-8 flex w-full max-w-4xl translate-y-4 transform items-start justify-between px-3 opacity-0 transition-all duration-500 max-sm:mb-6"
+        className="mb-8 flex w-full max-w-4xl translate-y-4 transform items-start justify-between px-3 opacity-0 transition-all duration-200 max-sm:mb-6"
       >
         <button
           ref={backButtonRef}
@@ -1514,7 +1556,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:pr-0 md:pr-12 lg:pr-20">
           <div
             ref={titleRef}
-            className="translate-y-4 transform opacity-0 transition-all duration-500"
+            className="translate-y-4 transform opacity-0 transition-all duration-200"
           >
             <ComicText
               size={1.2}
@@ -1549,7 +1591,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             </div>
             <div className="group relative">
               <div className={disableSecretChange ? 'pointer-events-none opacity-60' : ''}>
-                <InputTypeToggle />
+                <InputTypeToggle
+                  type={inputType}
+                  onTypeChange={setInputType}
+                  primaryColor={colors.primary}
+                  textSecondaryColor={colors.textSecondary}
+                />
               </div>
               {disableSecretChange && (
                 <div className="absolute bottom-full left-1/2 z-10 mb-1 hidden w-max -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs text-white group-hover:block">
@@ -1562,25 +1609,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
           <div className="mb-2 flex w-full flex-wrap items-center justify-between gap-2">
             <div className="secret-word-container">
-              {secretInput ? (
-                <ComicText size={0.7} color={colors.primary}>
-                  <span className="inline-block">
-                    Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
-                  </span>{' '}
+              <ComicText size={0.7} color={colors.primary}>
+                <span className="inline-block">
+                  Secret {inputType === 'word' ? 'Word' : 'Phrase'}:
+                </span>{' '}
+                {secretInput ? (
                   <span
                     className={`secret-word-value transition-all duration-300 ${categoryColor}`}
                     style={{ fontWeight: 'bold' }}
                   >
                     {secretInput.toUpperCase()}
                   </span>
-                </ComicText>
-              ) : (
-                <ComicText size={0.6} color={colors.textSecondary}>
-                  {isLoadingRecommendations
-                    ? `Loading ${inputType}s...`
-                    : 'No recommendations available'}
-                </ComicText>
-              )}
+                ) : (
+                  <span style={{ color: colors.textSecondary }}>
+                    {isLoadingRecommendations ? 'Loading...' : 'No recommendations available'}
+                  </span>
+                )}
+              </ComicText>
             </div>
           </div>
           <div className="mb-1 flex items-center justify-center gap-2">
@@ -1641,7 +1686,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       ? isQuickCreate
                         ? 'Game Creation in Progress!'
                         : 'Game Created Successfully!'
-                      : 'Daily Creation Limit Reached'}
+                      : creationError
+                        ? 'Creation Failed'
+                        : 'Daily Creation Limit Reached'}
                   </ComicText>
                   {bonusAwarded ? (
                     <>
@@ -1652,6 +1699,12 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                       </ComicText>
                       <ComicText size={0.5} color="#94A3B8" className="mb-2 text-center">
                         Check the subreddit feed {isQuickCreate ? 'in a moment' : 'now'}
+                      </ComicText>
+                    </>
+                  ) : creationError ? (
+                    <>
+                      <ComicText size={0.6} color="white" className="mb-2 text-center">
+                        {creationError}
                       </ComicText>
                     </>
                   ) : (
@@ -1699,14 +1752,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <div className="mt-3 flex justify-center">
                   <button
                     onClick={() => {
-                      // Reset UI state before navigating (but keep cache refs for fast reload)
-                      setShowSuccessModal(false);
-                      setIsCreating(false);
-                      setIsQuickCreate(false);
-                      setBonusAwarded(true);
-                      setSelectedGifs([null, null, null, null]);
-
-                      // Navigate to landing
                       onNavigate('landing');
                     }}
                     className="cursor-pointer rounded-lg px-4 py-1.5 transition-all duration-200 hover:scale-105"
