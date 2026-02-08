@@ -78,10 +78,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   const answerBoxesContainerRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const hintButtonRef = useRef<HTMLDivElement>(null);
+  const didAnimateRef = useRef(false);
+  const [isGivingUp, setIsGivingUp] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // Client-side score calculation (same logic as server)
   const calculateScoreClientSide = (params: {
     word: string;
     gifHintCount: number;
@@ -149,9 +150,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   }, []);
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
+  const loadingBackground = isDarkMode ? 'bg-slate-900' : 'bg-[#E8E5DA]';
   const answerBoxborders = isDarkMode ? '' : 'border border-black';
 
-  // Scramble array function with displacement guarantee
   const scrambleArray = (arr: string[]) => {
     if (arr.length <= 1) return [...arr];
 
@@ -159,7 +160,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     let minInPlace = arr.length;
     const maxAttempts = 50;
 
-    // Calculate how many letters can stay in place (max 20% for arrays with 5+ items)
     const maxInPlace = arr.length >= 5 ? Math.floor(arr.length * 0.2) : arr.length >= 3 ? 1 : 0;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -171,25 +171,21 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
       }
 
-      // Count letters in original position
       let inPlace = 0;
       for (let i = 0; i < arr.length; i++) {
         if (shuffled[i] === arr[i]) inPlace++;
       }
 
-      // If this shuffle is good enough, use it
       if (inPlace <= maxInPlace) {
         return shuffled;
       }
 
-      // Track best shuffle so far
       if (inPlace < minInPlace) {
         minInPlace = inPlace;
         bestShuffle = [...shuffled];
       }
     }
 
-    // Return best shuffle found (even if not perfect)
     return bestShuffle;
   };
 
@@ -200,7 +196,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
     const letter = jumbledLetters[index];
 
-    // Find the next empty position (fill any empty slot, including revealed hint positions)
     const totalPositions = gameData.word.replace(/\s+/g, '').length;
     let targetPosition = -1;
 
@@ -213,32 +208,25 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
     if (targetPosition === -1) return;
 
-    // Insert letter at the target position
     const newSelectedLetters = [...selectedLetters];
     newSelectedLetters[targetPosition] = letter;
     setSelectedLetters(newSelectedLetters);
 
-    // Remove this letter from available pool
     const newAvailableIndices = availableIndices.filter((i) => i !== index);
     setAvailableIndices(newAvailableIndices);
 
-    // Track selection history for undo
     setSelectionHistory([...selectionHistory, index]);
 
-    // Update guess string (only non-revealed letters)
     const guessStr = newSelectedLetters.filter((l) => l).join('');
     setGuess(guessStr);
   };
 
-  // Handle undo - remove last selected letter
   const handleUndo = () => {
     if (gameFlowState === 'won' || gameFlowState === 'completed') return;
     if (selectionHistory.length === 0) return;
 
-    // Get the last selected index
     const lastIndex = selectionHistory[selectionHistory.length - 1];
 
-    // Find and remove the last selected letter (rightmost non-empty, non-revealed)
     const newSelectedLetters = [...selectedLetters];
     for (let i = newSelectedLetters.length - 1; i >= 0; i--) {
       if (newSelectedLetters[i]) {
@@ -248,37 +236,27 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
 
     setSelectedLetters(newSelectedLetters);
-
-    // Return the index to available pool
     setAvailableIndices([...availableIndices, lastIndex].sort((a, b) => a - b));
-
-    // Remove from history
     setSelectionHistory(selectionHistory.slice(0, -1));
 
-    // Update guess string
     const guessStr = newSelectedLetters.filter((l) => l).join('');
     setGuess(guessStr);
   };
 
-  // Handle clicking on answer box to remove letter
   const handleAnswerBoxClick = (position: number) => {
     if (gameFlowState === 'won' || gameFlowState === 'completed') return;
-    if (!selectedLetters[position]) return; // No letter at this position
+    if (!selectedLetters[position]) return;
 
     const newSelectedLetters = [...selectedLetters];
     newSelectedLetters[position] = '';
     setSelectedLetters(newSelectedLetters);
 
-    // Find the original index of this letter in jumbledLetters and add it back
-    // We need to find the index from selection history
     const historyIndex = selectionHistory[selectionHistory.length - 1];
-
     if (historyIndex !== undefined) {
       setAvailableIndices([...availableIndices, historyIndex].sort((a, b) => a - b));
       setSelectionHistory(selectionHistory.slice(0, -1));
     }
 
-    // Update guess string
     const guessStr = newSelectedLetters.filter((l) => l).join('');
     setGuess(guessStr);
   };
@@ -289,7 +267,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     const currentLetters = jumbledLetters.filter((_, idx) => availableIndices.includes(idx));
     const scrambled = scrambleArray(currentLetters);
 
-    // Rebuild jumbled letters array maintaining selected letters' positions
     const newJumbled = [...jumbledLetters];
     let scrambledIdx = 0;
     availableIndices.forEach((idx) => {
@@ -299,13 +276,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     setJumbledLetters(newJumbled);
   };
 
-  // ✅ REFACTORED: Main useEffect for loading game data
+  // Refactored: Main useEffect for loading game data
   useEffect(() => {
     if (!propGameId) {
       return;
     }
 
     setIsInitialLoading(true);
+    setIsPageLoaded(false);
+    didAnimateRef.current = false;
 
     const animationTimeout = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -313,11 +292,9 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       });
     });
 
-    setIsPageLoaded(true);
-    animatePageElements();
     setGameStartTime(Date.now());
 
-    // ✅ REFACTORED: Fetch game data using API instead of postMessage
+    // Refactored: Fetch game data using API instead of postMessage
     async function loadGameData() {
       try {
         // Get current user
@@ -343,16 +320,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setJumbledLetters(scrambled);
           setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
-          const savedRevealedLetters = localStorage.getItem(`revealedLetters:${loadedGameData.id}`);
-          if (savedRevealedLetters) {
-            try {
-              const parsed = JSON.parse(savedRevealedLetters);
-              setRevealedLetters(new Set(parsed));
-            } catch (e) {
-              setRevealedLetters(new Set());
-            }
-          }
-
           addToPlayedGames(loadedGameData.id);
         } else {
           setError(gameResult.error || 'Game could not be loaded');
@@ -370,6 +337,53 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       cancelAnimationFrame(animationTimeout);
     };
   }, [propGameId]);
+
+  useEffect(() => {
+    if (!gameData?.id) return;
+
+    try {
+      const savedGifHintCount = localStorage.getItem(`gifHintCount:${gameData.id}`);
+      if (savedGifHintCount) {
+        const parsed = Number(savedGifHintCount);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          setGifHintCount(parsed);
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const savedRevealedLetters = localStorage.getItem(`revealedLetters:${gameData.id}`);
+      if (savedRevealedLetters) {
+        const parsed = JSON.parse(savedRevealedLetters);
+        setRevealedLetters(new Set(parsed));
+      }
+    } catch (e) {
+      setRevealedLetters(new Set());
+    }
+  }, [gameData?.id]);
+
+  useEffect(() => {
+    if (!gameData?.id) return;
+
+    try {
+      localStorage.setItem(`gifHintCount:${gameData.id}`, String(gifHintCount));
+    } catch (e) {}
+
+    try {
+      localStorage.setItem(
+        `revealedLetters:${gameData.id}`,
+        JSON.stringify(Array.from(revealedLetters))
+      );
+    } catch (e) {}
+  }, [gameData?.id, gifHintCount, revealedLetters]);
+
+  useEffect(() => {
+    if (!isLoading && gameData && !didAnimateRef.current) {
+      didAnimateRef.current = true;
+      setIsPageLoaded(true);
+      animatePageElements();
+    }
+  }, [isLoading, gameData]);
 
   useEffect(() => {
     if (gameData?.id && username && username !== 'anonymous') {
@@ -429,7 +443,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         hasGivenUp: gifHintCount === 999 ? true : undefined,
       };
 
-      // ✅ REFACTORED: Save game state using API
+      // Refactored: Save game state using API
       saveGameState(username || 'anonymous', gameData.id, playerState);
     }
   }, [gameData, username, gifHintCount, revealedLetters, guess, gameFlowState, guessCount]);
@@ -530,14 +544,14 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       const result = await getRandomGame(username || 'anonymous');
       setIsLoading(false);
 
-      if (result.success && result.result && result.result.game) {
-        const randomGameData = result.result.game;
+      const resolvedGame = result.game || result.result?.game;
+      if (result.success && resolvedGame) {
+        const randomGameData = resolvedGame;
         if (
           !randomGameData.gifs ||
           !Array.isArray(randomGameData.gifs) ||
           randomGameData.gifs.length === 0
         ) {
-          // Try again if no valid GIFs
           requestRandomGame();
           return;
         }
@@ -556,7 +570,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         setJumbledLetters(scrambled);
         setAvailableIndices(letters.map((_: any, idx: number) => idx));
 
-        // Load revealed letter positions from localStorage
         const savedRevealedLetters = localStorage.getItem(`revealedLetters:${randomGameData.id}`);
         if (savedRevealedLetters) {
           try {
@@ -595,7 +608,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         setRevealedLetters(allIndices);
       }, 100);
 
-      // Calculate score immediately (client-side) for instant display
       const timeTakenSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
       const calculatedScore = calculateScoreClientSide({
         word: gameData.word,
@@ -604,7 +616,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         timeTaken: timeTakenSeconds,
       });
 
-      // Set score immediately for modal display
       setFinalScore({
         username: currentUsername,
         gameId: gameData.id,
@@ -624,6 +635,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       };
 
       await saveGameState(currentUsername, gameData.id, playerState);
+      
       await markGameCompleted({
         username: currentUsername,
         gameId: gameData.id,
@@ -642,13 +654,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       });
 
       if (scoreResult.success && scoreResult.result) {
-        // Save the calculated score
         await saveScore({
           ...scoreResult.result,
           username: currentUsername,
           gameId: gameData.id,
           timestamp: Date.now(),
         });
+        
+        const leaderboardResult = await getGameLeaderboard(gameData.id, 10);
+        if (leaderboardResult.success && leaderboardResult.result?.leaderboard) {
+          setLeaderboard(leaderboardResult.result.leaderboard);
+        }
       }
 
       const boxes = document.querySelectorAll('.answer-box');
@@ -673,7 +689,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       setTimeout(() => {
         const boxElement = box as HTMLElement;
 
-        // Phase 1: Shake animation - disable transitions and force animation
         boxElement.style.transition = 'none';
         boxElement.style.animation = 'none';
         boxElement.style.transform = 'none';
@@ -683,7 +698,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         boxElement.style.animationFillMode = 'both';
 
         setTimeout(() => {
-          // Phase 2: Letters vanish with fade and scale out
           const letterContent = boxElement.querySelector(
             'div[style*="position: relative"]'
           ) as HTMLElement;
@@ -691,19 +705,16 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
             letterContent.style.animation = 'letter-vanish 0.4s ease-out forwards';
           }
 
-          // Phase 3: Box flash red
           boxElement.style.backgroundColor = '#fca5a5';
           boxElement.style.transition = 'background-color 0.2s ease';
 
           setTimeout(() => {
-            // Phase 4: Reset everything
             boxElement.style.backgroundColor = '';
             boxElement.style.animation = '';
             boxElement.style.transform = '';
             boxElement.style.transition = '';
             boxElement.style.animationFillMode = '';
 
-            // Clear the letter content animation
             if (letterContent) {
               letterContent.style.animation = 'none';
             }
@@ -767,9 +778,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }, 8000);
   };
 
-  // ✅ REFACTORED: Handle give up with API calls
+  // Refactored: Handle give up with API calls
   const handleGiveUp = async () => {
     if (!gameData) return;
+
+    setIsGivingUp(true);
 
     const currentUsername = username || 'anonymous';
     const timeTakenSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
@@ -780,22 +793,20 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         allIndices.add(i);
       }
     }
-    setRevealedLetters(allIndices);
-    setGuess(gameData.word.toUpperCase());
-    setGifHintCount(999);
 
-    setGameFlowState('completed');
-    setFinalScore({
-      username: currentUsername,
-      gameId: gameData.id,
-      score: 0,
-      gifPenalty: 100,
-      wordPenalty: 0,
-      timeTaken: timeTakenSeconds,
-      timestamp: Date.now(),
-    });
+    const giveUpState = {
+      gifHintCount: 999,
+      revealedLetters: Array.from(allIndices),
+      guess: gameData.word,
+      lastPlayed: Date.now(),
+      isCompleted: true,
+      numGuesses: guessCount,
+      hasGivenUp: true,
+    };
 
-    // ✅ REFACTORED: Send completion message - server will resolve username if it's 'anonymous'
+    await saveGameState(currentUsername, gameData.id, giveUpState);
+
+    // Mark game as completed (give up)
     await markGameCompleted({
       username: currentUsername,
       gameId: gameData.id,
@@ -806,7 +817,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       timeTaken: timeTakenSeconds,
     });
 
-    // ✅ REFACTORED: Save score of 0
+    // Save score of 0 for give up
     await saveScore({
       score: 0,
       gifPenalty: 100,
@@ -817,11 +828,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       timestamp: Date.now(),
     });
 
-    // ✅ REFACTORED: Get game leaderboard for results page
+    // Fetch leaderboard for results page
     const leaderboardResult = await getGameLeaderboard(gameData.id, 10);
     if (leaderboardResult.success && leaderboardResult.result?.leaderboard) {
       setLeaderboard(leaderboardResult.result.leaderboard);
     }
+    
     onNavigate('gameResults', { gameId: gameData.id });
   };
 
@@ -912,7 +924,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }, 400);
   };
 
-  // ✅ REFACTORED: Handle guess submission with API
+  // Refactored: Handle guess submission with API
   const handleGuess = async () => {
     if (isSubmittingGuess) {
       return;
@@ -953,12 +965,12 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
 
     try {
-      // ✅ REFACTORED: Track the decode attempt - only track complete attempts
+      // Refactored: Track the decode attempt
       if (gameData.id && username) {
         await trackGuess(username || 'anonymous', gameData.id, cleanedGuess);
       }
 
-      // ✅ REFACTORED: Use server-side validation to check if attempt is correct
+      // Refactored: Use server-side validation to check if attempt is correct
       const result = await validateGuess(username || 'anonymous', gameData.id, cleanedGuess);
 
       if (result.success) {
@@ -1198,7 +1210,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                     }
                     className={`answer-box ${answerBoxborders} relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${bgColor} overflow-hidden transition-all duration-500 ${!isEmpty && !isWon && !isRevealed && selectedLetter ? 'cursor-pointer hover:bg-red-100' : ''}`}
                   >
-                    {/* Category icon watermark inside each box - only show when empty */}
                     {categoryIcon && isEmpty && (
                       <div
                         className="pointer-events-none absolute inset-0 flex items-center justify-center"
@@ -1212,7 +1223,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         {categoryIcon}
                       </div>
                     )}
-                    {/* Revealed letter (transparent background layer) */}
                     {revealedChar && (
                       <div
                         className="pointer-events-none absolute inset-0 flex items-center justify-center"
@@ -1228,7 +1238,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         {revealedChar}
                       </div>
                     )}
-                    {/* Selected letter (foreground layer) - shows on top */}
                     {selectedLetter && (
                       <div
                         style={{
@@ -1243,7 +1252,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                         {selectedLetter}
                       </div>
                     )}
-                    {/* Won state - show correct answer */}
                     {isWon && (
                       <div
                         style={{
@@ -1261,7 +1269,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                   </div>
                 );
               })}
-              {/* Add word separator - visible divider between words (only for multi-word phrases) */}
               {!isSingleWord && wordIdx < words.length - 1 && (
                 <div className="flex flex-shrink-0 items-center px-1">
                   <div className="h-8 w-0.5 rounded-full bg-gray-400 opacity-60"></div>
@@ -1280,7 +1287,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
   useEffect(() => {
     if (gameFlowState === 'won' && gameData?.id) {
-      // Wait for score modal to show, then navigate
       const navigationTimer = setTimeout(() => {
         onNavigate('gameResults', { gameId: gameData.id });
       }, 2000);
@@ -1338,6 +1344,13 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       </>
     );
   };
+
+  if (isLoading || error || !gameData || isGivingUp) {
+    return (
+      <div className={`fixed inset-0 flex items-center justify-center ${loadingBackground}`}>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1924,16 +1937,15 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
                     key={idx}
                     onClick={() => handleJumbledLetterClick(idx)}
                     disabled={!isAvailable}
-                    className={`h-9 w-9 rounded-lg text-xl font-bold uppercase shadow-md transition-all duration-200 ${
+                    className={`h-9 w-9 rounded-lg text-xl font-bold uppercase transition-all duration-200 ${
                       isAvailable
-                        ? 'animate-[pulse-click_2s_ease-in-out_infinite,button-glow_2s_ease-in-out_infinite] cursor-pointer hover:scale-110 hover:shadow-lg active:scale-95'
+                        ? 'cursor-pointer hover:scale-105 active:scale-95'
                         : 'cursor-not-allowed opacity-30'
                     }`}
                     style={{
                       backgroundColor: isAvailable ? colors.primary : '#9ca3af',
                       color: 'white',
                       fontFamily: '"Comic Sans MS", cursive, sans-serif',
-                      animationDelay: isAvailable ? `${(idx % 8) * 0.15}s` : '0s',
                     }}
                   >
                     {letter}
@@ -2122,7 +2134,6 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           </div>
         </div>
       )}
-
       {renderScoreModal()}
     </div>
   );

@@ -4,6 +4,16 @@
     "dir": "dist/client",
     "entrypoints": {
       "default": {
+        "entry": "html/preview.html",
+        "height": "tall",
+        "inline": true
+      },
+      "preview": {
+        "entry": "html/preview.html",
+        "height": "tall",
+        "inline": true
+      },
+      "landing": {
         "entry": "html/landing.html",
         "inline": true
       },
@@ -13,11 +23,6 @@
       },
       "category": {
         "entry": "html/category.html",
-        "inline": true
-      },
-      "preview": {
-        "entry": "html/preview.html",
-        "height": "tall",
         "inline": true
       },
       "leaderboard": {
