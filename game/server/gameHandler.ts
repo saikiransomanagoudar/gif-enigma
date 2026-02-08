@@ -29,13 +29,13 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       isChatPost = false,
       inputType = 'word',
     } = params;
-    
+
     let username = 'anonymous';
     try {
       const user = await reddit.getCurrentUser();
-      username = user?.username || 'anonymous';
+      username = user?.username || 'gif-enigma';
     } catch (error) {
-      username = 'system';
+      username = 'gif-enigma';
     }
 
     const systemUsernames = [
@@ -46,31 +46,31 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       'AutoModerator',
       'reddit',
     ];
-    
-    const isSystemUser = systemUsernames.some(sysUser => 
-      username.toLowerCase() === sysUser.toLowerCase()
+
+    const isSystemUser = systemUsernames.some(
+      (sysUser) => username.toLowerCase() === sysUser.toLowerCase()
     );
 
-    // ENFORCE daily creation limit for ALL users
+    // Enforce daily creation limit for all users
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentCreationsKey = `user:${username}:recentCreations`;
     const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
-    
+
     // Add this creation attempt FIRST (optimistic)
     await redis.zAdd(recentCreationsKey, {
       member: attemptId,
       score: now,
     });
-    
+
     // Clean up old entries
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
-    
+
     // Now count total creations in last 24h
     const recentCreations = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
-    
+
     // If over limit, rollback the addition and reject
     if (recentCreations.length > 4) {
       await redis.zRem(recentCreationsKey, [attemptId]);
@@ -111,19 +111,29 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       username,
       inputType: inputType || 'word',
       acceptedSynonyms: JSON.stringify(acceptedSynonyms), // Store for validation
-    });    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
-    await tx.exec();
+    });
+    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
+    const txResult = await tx.exec();
+
+    // Check if transaction succeeded (exec returns null on failure)
+    if (!txResult) {
+      await redis.zRem(recentCreationsKey, [attemptId]);
+      return {
+        success: false,
+        error: 'Failed to create game due to concurrent modification. Please try again.',
+      };
+    }
 
     let postId = null;
     if (postToSubreddit) {
       try {
         const subreddit = await reddit.getCurrentSubreddit();
         const subredditName = subreddit?.name || 'PlayGIFEnigma';
+
         const allowChatPostCreation = await settings.get('allowChatPostCreation');
         const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
         const finalIsChatPost = allowChatPostCreation === false ? false : isChatPost;
-        
-        // Store preview data for potential fallback
+
         await redis.hSet(`gamePreview:${gameId}`, {
           maskedWord: maskedWord || '',
           gifs: JSON.stringify(gifs),
@@ -131,17 +141,11 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        // ✅ INLINE WEB VIEW: Create post with 'game' entry point
-        // The GamePagePreview.tsx component will render automatically based on:
-        // 1. devvit.json configuration (game entry point)
-        // 2. Redis mapping: post:${postId} → gameId
-        // 3. URL params: ?entrypoint=game&gameId=xxx
-        const post = await reddit.submitPost({
+        // ✅ INLINE WEB VIEW: Create custom post with 'preview' entry point
+        const post = await reddit.submitCustomPost({
           subredditName: subredditName,
           title: postTitle,
-          kind: 'image',
-          imageUrls: [gifs[0]], // Use first GIF as thumbnail
-          // The inline web view will override this and show GamePagePreview.tsx
+          entry: 'preview',
         });
 
         if (post && post.id) {
@@ -157,7 +161,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
             gameId,
             created: Date.now().toString(),
             isChatPost: finalIsChatPost ? 'true' : 'false',
-            entryPoint: 'game', // Mark this as a game post for detection
+            entryPoint: 'preview', // Mark this as a preview post
           });
         }
       } catch (redditError) {
@@ -165,31 +169,31 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       }
     }
 
-    let bonusResult: { success: boolean; bonusAwarded: boolean; error?: string } = { 
-      success: true, 
-      bonusAwarded: false 
+    let bonusResult: { success: boolean; bonusAwarded: boolean; error?: string } = {
+      success: true,
+      bonusAwarded: false,
     };
-    
+
     if (!isSystemUser) {
       // Clean up the attempt marker before awardCreationBonus adds the real entry
       const recentCreationsKey = `user:${username}:recentCreations`;
       // Remove any attempt markers for this user (they start with "attempt_")
       const allEntries = await redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
-      const attemptEntries = allEntries.filter(entry => 
+      const attemptEntries = allEntries.filter((entry) =>
         entry.member.toString().startsWith('attempt_')
       );
       if (attemptEntries.length > 0) {
         await redis.zRem(
-          recentCreationsKey, 
-          attemptEntries.map(e => e.member.toString())
+          recentCreationsKey,
+          attemptEntries.map((e) => e.member.toString())
         );
       }
-      
+
       const result = await awardCreationBonus(username, context);
       bonusResult = {
         success: result.success,
         bonusAwarded: result.bonusAwarded || false,
-        error: result.error
+        error: result.error,
       };
     }
 
@@ -308,7 +312,7 @@ export async function postCompletionComment(
       const legendaryTexts = [
         `I cracked it on my **first attempt** with **just the first GIF**! ${emoji}`,
         `**First try**, **no extra hints** needed! Nailed it! ${emoji}`,
-        `Got it instantly with **only one GIF**! **First attempt**! ${emoji}`
+        `Got it instantly with **only one GIF**! **First attempt**! ${emoji}`,
       ];
       completionText = legendaryTexts[commentVariant];
     } else if (numGuesses === 1) {
@@ -316,7 +320,7 @@ export async function postCompletionComment(
       const masterTexts = [
         `I solved it on my **first attempt** ${hintsDescription}! ${emoji}`,
         `**First try!** Cracked it ${hintsDescription}! ${emoji}`,
-        `Got it right away on **attempt #1** ${hintsDescription}! ${emoji}`
+        `Got it right away on **attempt #1** ${hintsDescription}! ${emoji}`,
       ];
       completionText = masterTexts[commentVariant];
     } else if (numGuesses === 2) {
@@ -324,7 +328,7 @@ export async function postCompletionComment(
       const quickTexts = [
         `Solved it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
         `Cracked the code in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+        `Got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = quickTexts[commentVariant];
     } else if (numGuesses <= 4) {
@@ -332,7 +336,7 @@ export async function postCompletionComment(
       const goodTexts = [
         `Figured it out in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
         `Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Cracked it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+        `Cracked it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = goodTexts[commentVariant];
     } else if (numGuesses <= 7) {
@@ -340,7 +344,7 @@ export async function postCompletionComment(
       const persistentTexts = [
         `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
         `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = persistentTexts[commentVariant];
     } else {
@@ -348,7 +352,7 @@ export async function postCompletionComment(
       const veryPersistentTexts = [
         `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
         `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`
+        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = veryPersistentTexts[commentVariant];
     }
@@ -359,10 +363,8 @@ export async function postCompletionComment(
     }
 
     try {
-      // Post the comment to Reddit
-      // Ensure postId has the t3_ prefix for Reddit API
       const formattedPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
-      
+
       await reddit.submitComment({
         id: formattedPostId as `t3_${string}`,
         text: completionText,
@@ -370,15 +372,31 @@ export async function postCompletionComment(
 
       // Mark as posted in Redis to prevent duplicates
       await redis.set(commentKey, 'posted', {
-        expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days expiry
+        expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       });
-
       return { success: true };
     } catch (commentError) {
       return { success: false, error: String(commentError) };
     }
   } catch (error) {
     return { success: false, error: String(error) };
+  }
+}
+
+export async function checkUserComment(
+  gameId: string,
+  username: string,
+  _context: Context
+): Promise<{ success: boolean; hasCommented: boolean; error?: string }> {
+  try {
+    const commentKey = `comment:${gameId}:${username}`;
+    const existingComment = await redis.get(commentKey);
+
+    const hasCommented = existingComment !== null && existingComment !== undefined;
+
+    return { success: true, hasCommented };
+  } catch (error) {
+    return { success: false, hasCommented: false, error: String(error) };
   }
 }
 
@@ -392,7 +410,6 @@ export async function getRecentGames(
     let gameIds: string[] = [];
 
     try {
-      // Use zRange with parameters to get most recent games first
       const scoreMembers = await redis.zRange('activeGames', '-inf', '+inf', {
         by: 'score',
         reverse: true,
@@ -403,11 +420,9 @@ export async function getRecentGames(
         gameIds = scoreMembers.map((item) => (typeof item === 'string' ? item : item.member));
       }
     } catch (scoreError) {
-      // Fallback to simpler zRange if the complex one fails
       const allMembers = await redis.zRange('activeGames', 0, -1);
 
       if (allMembers && allMembers.length > 0) {
-        // Extract just the game IDs (members)
         gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
 
         if (allMembers[0] && typeof allMembers[0] !== 'string' && 'score' in allMembers[0]) {
@@ -417,16 +432,13 @@ export async function getRecentGames(
             return scoreB - scoreA;
           });
 
-          // Re-extract after sorting
           gameIds = allMembers.map((item) => (typeof item === 'string' ? item : item.member));
         }
 
-        // Limit the results
         gameIds = gameIds.slice(0, limit);
       }
     }
 
-    // If we still have no games, return error
     if (gameIds.length === 0) {
       return {
         success: false,
@@ -438,7 +450,7 @@ export async function getRecentGames(
     const games: GameData[] = [];
     for (const gameId of gameIds) {
       const rawGameData = await redis.hGetAll(`game:${gameId}`);
-        if (rawGameData && Object.keys(rawGameData).length > 0) {
+      if (rawGameData && Object.keys(rawGameData).length > 0) {
         // Create a properly typed game data object
         const gameData: GameData = {
           id: gameId,
@@ -452,10 +464,8 @@ export async function getRecentGames(
           redditPostId: rawGameData.redditPostId,
         };
 
-        // Parse the gifs JSON string back to an array
         if (rawGameData.gifs) {
           try {
-            // If gifs is already an array, use it; otherwise parse it
             if (Array.isArray(rawGameData.gifs)) {
               gameData.gifs = rawGameData.gifs;
             } else {
@@ -494,21 +504,18 @@ export async function getGame(
   try {
     const { gameId } = params;
 
-    // 1. Check both registry and activeGames
-    const [existsInRegistry, score] = await Promise.all([
-      redis.exists('game_registry', gameId),
-      redis.zScore('activeGames', gameId),
-    ]);
-
-    if (!existsInRegistry && !score) {
+    // 1. Get game data first; registry/activeGames can be stale
+    const rawGameData = await redis.hGetAll(`game:${gameId}`);
+    if (!rawGameData?.word) {
       return { success: false, error: 'Game not found' };
     }
 
-    // 2. Get game data
-    const rawGameData = await redis.hGetAll(`game:${gameId}`);
-    if (!rawGameData?.word) {
-      return { success: false, error: 'Corrupted game data' };
+    // 2. Ensure activeGames contains this game for future lookups
+    const score = await redis.zScore('activeGames', gameId);
+    if (!score) {
+      await redis.zAdd('activeGames', { score: Date.now(), member: gameId });
     }
+
     // 3. Parse and validate
     const gameData: GameData = {
       id: gameId,
@@ -519,6 +526,7 @@ export async function getGame(
       createdAt: rawGameData.createdAt,
       username: rawGameData.username,
       redditPostId: rawGameData.redditPostId,
+      postUrl: rawGameData.postUrl,
       category: rawGameData.category || 'Pop Culture',
     };
 
@@ -554,23 +562,37 @@ export async function getGame(
   }
 }
 
-// Check if a user has completed a game
 export async function hasUserCompletedGame(
   params: { gameId: string; username: string },
   _context: Context
 ): Promise<{ completed: boolean }> {
   try {
     const { gameId, username } = params;
+
     if (!username || !gameId) {
       return { completed: false };
     }
 
-    // Check if the game is in the user's completed games set
     const completedGamesKey = `user:${username}:completedGames`;
     const score = await redis.zScore(completedGamesKey, gameId);
 
-    const completed = score !== null && score !== undefined;
-    return { completed };
+    if (score !== null && score !== undefined) {
+      return { completed: true };
+    }
+
+    const gameState = await redis.hGetAll(`gameState:${username}:${gameId}`);
+    if (gameState && gameState.playerState) {
+      try {
+        const parsedState = JSON.parse(gameState.playerState);
+        if (parsedState?.isCompleted || parsedState?.hasGivenUp || parsedState?.isCreator) {
+          return { completed: true };
+        }
+      } catch (error) {
+        return { completed: false };
+      }
+    }
+
+    return { completed: false };
   } catch (error) {
     return { completed: false };
   }
@@ -619,7 +641,7 @@ export async function getUserGames(
 
     // Get game IDs from the user's games sorted set using username
     const gameItems = await redis.zRange(`user:${username}:games`, 0, limit - 1, {
-      reverse: true, // Get most recent games first
+      reverse: true,
       by: 'score',
     });
 
@@ -644,13 +666,12 @@ export async function getUserGames(
           word: rawGameData.word,
           maskedWord: rawGameData.maskedWord,
           questionText: rawGameData.questionText,
-          gifs: [], // Will be filled below
+          gifs: [],
           createdAt: rawGameData.createdAt,
           username: rawGameData.username,
           redditPostId: rawGameData.redditPostId,
         };
 
-        // Parse the gifs JSON string
         if (rawGameData.gifs) {
           try {
             gameData.gifs = JSON.parse(rawGameData.gifs);
@@ -662,7 +683,6 @@ export async function getUserGames(
         games.push(gameData);
       }
     }
-
     return {
       success: true,
       games,
@@ -741,7 +761,8 @@ export async function saveGameState(
 
     await redis.expire(gameStateKey, 30 * 24 * 60 * 60);
 
-    if (playerState.isCompleted) {
+    // Add to completed games if either completed or given up
+    if (playerState.isCompleted || playerState.hasGivenUp) {
       await redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
         score: Date.now(),
@@ -752,11 +773,12 @@ export async function saveGameState(
         score: Date.now(),
       });
 
-      // Award creator completion bonus (5 XP to game creator)
-      const didNotGiveUp = playerState.hasGivenUp !== true && 
-                           (playerState.gifHintCount === undefined || playerState.gifHintCount < 999);
-      
-      if (didNotGiveUp) {
+      // Award creator completion bonus
+      const didNotGiveUp =
+        playerState.hasGivenUp !== true &&
+        (playerState.gifHintCount === undefined || playerState.gifHintCount < 999);
+
+      if (didNotGiveUp && playerState.isCompleted) {
         const gameData = await redis.hGetAll(`game:${gameId}`);
         if (gameData && gameData.username) {
           const creatorUsername = gameData.username;
@@ -789,11 +811,9 @@ export async function getGameState(
     const gameState = await redis.hGetAll(gameStateKey);
 
     if (!gameState || Object.keys(gameState).length === 0) {
-      // No saved state found
       return {
         success: false,
         error: 'Game state not found',
-        // Return default initial state
         state: {
           playerState: {
             gifHintCount: 0,
@@ -807,7 +827,6 @@ export async function getGameState(
       };
     }
 
-    // Parse the player state from JSON
     try {
       if (gameState.playerState) {
         const parsedState = JSON.parse(gameState.playerState);
@@ -855,10 +874,9 @@ export async function getUnplayedGames(
     // Get all active games
     const allGames = await redis.zRange('activeGames', 0, -1, {
       by: 'score',
-      reverse: true, // Get newest first
+      reverse: true,
     });
 
-    // Filter out games the user has already completed
     const unplayedGames = [];
     for (const game of allGames) {
       const gameId = typeof game === 'string' ? game : game.member;
@@ -901,19 +919,9 @@ export async function trackGuess(
       return { success: false, error: 'Missing required parameters' };
     }
 
-    const normalizedGuess = guess
-      .replace(/\s+/g, '') 
-      .replace(/[^\w]/g, '')
-      .trim()
-      .toUpperCase();
-
-    // Increment the guess count for this specific guess
+    const normalizedGuess = guess.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
     await redis.zIncrBy(`gameGuesses:${gameId}`, normalizedGuess, 1);
-
-    // Track total guesses for this game
     await redis.incrBy(`gameTotalGuesses:${gameId}`, 1);
-
-    // Track unique players who have made guesses (using zAdd with timestamp as score)
     await redis.zAdd(`gamePlayers:${gameId}`, {
       member: username,
       score: Date.now(),
@@ -937,14 +945,21 @@ export async function getGameStatistics(
       return { success: false, error: 'Game ID is required' };
     }
 
-    // Get the game data to get the answer
-    const gameData = await redis.hGetAll(`game:${gameId}`);
-    
-    if (!gameData || !gameData.word) {
-      return { success: false, error: 'Game not found' };
+    const gameResult = await getGame({ gameId }, _context);
+    if (!gameResult.success || !gameResult.game?.word) {
+      return { success: false, error: gameResult.error || 'Game not found' };
     }
 
-    // Get all guesses with their counts using rank-based zRange
+    let acceptedSynonyms: string[] = [];
+    try {
+      const gameData = await redis.hGetAll(`game:${gameId}`);
+      if (gameData?.acceptedSynonyms) {
+        acceptedSynonyms = JSON.parse(gameData.acceptedSynonyms);
+      }
+    } catch (error) {
+      acceptedSynonyms = [];
+    }
+
     const guessesWithScores = await redis.zRange(`gameGuesses:${gameId}`, 0, -1, {
       by: 'rank',
       reverse: true, // Highest scores first
@@ -956,22 +971,20 @@ export async function getGameStatistics(
     const playersCount = await redis.zCard(`gamePlayers:${gameId}`);
 
     const guesses: GuessData[] = [];
-    
+
     for (const item of guessesWithScores) {
-      // Redis zRange with reverse returns items with {member, score} structure
       if (item && typeof item === 'object' && 'member' in item && 'score' in item) {
         const count = item.score;
         const percentage = totalGuesses > 0 ? (count / totalGuesses) * 100 : 0;
-        
+
         guesses.push({
           guess: item.member,
           count: count,
-          percentage: Math.round(percentage * 10) / 10, // Round to 1 decimal
+          percentage: Math.round(percentage * 10) / 10,
         });
       }
     }
 
-    // Fetch player's score if username is provided
     let playerScore: number | undefined;
     if (username && username !== 'anonymous') {
       const scoreKey = `score:${gameId}:${username}`;
@@ -985,12 +998,12 @@ export async function getGameStatistics(
       success: true,
       statistics: {
         gameId,
-        answer: gameData.word.toUpperCase(),
+        answer: gameResult.game.word.toUpperCase(),
         totalPlayers: playersCount,
         totalGuesses,
         guesses,
-        creatorUsername: gameData.username,
-        acceptedSynonyms: gameData.acceptedSynonyms ? JSON.parse(gameData.acceptedSynonyms) : [],
+        creatorUsername: gameResult.game.username,
+        acceptedSynonyms,
         playerScore,
       },
     };
@@ -1018,18 +1031,17 @@ export async function validateGuess(
       return { success: false, isCorrect: false, error: 'Missing required parameters' };
     }
 
-    // Get the game data to access the answer
     const gameData = await redis.hGetAll(`game:${gameId}`);
-    
+
     if (!gameData || !gameData.word) {
       return { success: false, isCorrect: false, error: 'Game not found' };
     }
 
     const answer = gameData.word;
-    
-    const normalizeString = (str: string) => 
+
+    const normalizeString = (str: string) =>
       str.replace(/\s+/g, '').replace(/[^\w]/g, '').trim().toUpperCase();
-    
+
     const normalizedGuess = normalizeString(guess);
     const normalizedAnswer = normalizeString(answer);
 
@@ -1042,7 +1054,6 @@ export async function validateGuess(
       };
     }
 
-    // Check if lengths are the same (no spaces/punctuation)
     if (normalizedGuess.length !== normalizedAnswer.length) {
       return {
         success: true,
@@ -1053,9 +1064,9 @@ export async function validateGuess(
     if (gameData.acceptedSynonyms) {
       const acceptedSynonyms: string[] = JSON.parse(gameData.acceptedSynonyms);
       const normalizedSynonyms = acceptedSynonyms.map((syn: string) => normalizeString(syn));
-      
+
       const isValidSynonym = normalizedSynonyms.includes(normalizedGuess);
-      
+
       if (isValidSynonym) {
         return {
           success: true,
@@ -1065,12 +1076,10 @@ export async function validateGuess(
       }
     }
 
-    // Not an exact match or valid synonym
     return {
       success: true,
       isCorrect: false,
     };
-
   } catch (error) {
     return {
       success: false,
