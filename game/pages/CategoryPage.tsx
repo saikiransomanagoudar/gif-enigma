@@ -69,7 +69,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
     setIsPageLoaded(true);
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
-        duration: 250,
+        duration: 150,
         direction: 'up',
         distance: 'sm',
       });
@@ -77,57 +77,55 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 300,
-        delay: 100,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (subtitleRef.current) {
       transitions.animateElement(subtitleRef.current, {
-        duration: 300,
-        delay: 150,
+        duration: 150,
+        delay: 0,
         direction: 'up',
       });
     }
 
     if (backButtonRef.current) {
       transitions.animateElement(backButtonRef.current, {
-        duration: 250,
-        delay: 50,
+        duration: 150,
+        delay: 0,
         direction: 'left',
       });
     }
 
-    setTimeout(() => {
-      const categoryCards = document.querySelectorAll('.category-card');
-      categoryCards.forEach((card, index) => {
-        transitions.animateElement(card as HTMLElement, {
-          duration: 350,
-          delay: 200 + index * 80,
-          direction: 'up',
-          distance: 'md',
-        });
+    const categoryCards = document.querySelectorAll('.category-card');
+    categoryCards.forEach((card, index) => {
+      transitions.animateElement(card as HTMLElement, {
+        duration: 150,
+        delay: index * 30,
+        direction: 'up',
+        distance: 'sm',
       });
-    }, 150);
+    });
   }, []);
 
   const handleBackClick = () => {
     if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 200 });
+      transitions.fadeOut(headerRef.current, { duration: 150 });
     }
 
     const categoryCards = document.querySelectorAll('.category-card');
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
-        duration: 200,
-        delay: index * 30,
+        duration: 150,
+        delay: index * 20,
       });
     });
 
     setTimeout(() => {
       onNavigate('landing');
-    }, 300);
+    }, 150);
   };
 
   const handleCategorySelect = (category: CategoryType) => {
@@ -136,15 +134,15 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
 
     categoryCards.forEach((card, index) => {
       transitions.fadeOut(card as HTMLElement, {
-        duration: 200,
-        delay: index * 30,
+        duration: 150,
+        delay: index * 20,
       });
     });
 
     if (header) {
       transitions.fadeOut(header, {
-        duration: 200,
-        delay: 100,
+        duration: 150,
+        delay: 50,
       });
     }
 
@@ -152,22 +150,22 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
       if (onCategorySelect) {
         onCategorySelect(category);
       }
-    }, 400);
+    }, 150);
   };
 
   return (
     <div
-      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-500 select-none`}
+      className={`${backgroundColor} flex min-h-screen flex-col items-center p-5 transition-opacity duration-200 select-none`}
       style={{ opacity: isPageLoaded ? 1 : 0 }}
     >
       <header
         ref={headerRef}
-        className="mb-8 flex w-full max-w-4xl translate-y-4 transform items-start justify-between opacity-0 transition-all duration-500 max-sm:mb-6"
+        className="mb-8 flex w-full max-w-4xl translate-y-4 transform items-start justify-between opacity-0 transition-all duration-200 max-sm:mb-6"
       >
         <button
           ref={backButtonRef}
           onClick={handleBackClick}
-          className={`${isDarkMode ? 'bg-[#FF4500] text-white' : `bg-[#FF4500] text-black`} flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg max-sm:px-2 max-sm:py-1`}
+          className={`${isDarkMode ? 'bg-[#FF4500] text-white' : `bg-[#FF4500] text-black`} flex transform cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg max-sm:px-2 max-sm:py-1`}
           style={{ backgroundColor: colors.primary }}
         >
           <span className="mr-1 text-sm text-white max-sm:text-xs">👈</span>
@@ -178,7 +176,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
         <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:pr-0">
           <div
             ref={titleRef}
-            className="translate-y-4 transform opacity-0 transition-all duration-500"
+            className="translate-y-4 transform opacity-0 transition-all duration-200"
           >
             <ComicText size={1.2} color={colors.primary} align="center" className="max-sm:text-base">
               Create GIF Enigma
@@ -186,7 +184,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
           </div>
           <div
             ref={subtitleRef}
-            className="translate-y-4 transform opacity-0 transition-all duration-500"
+            className="translate-y-4 transform opacity-0 transition-all duration-200"
           >
             <ComicText
               size={0.8}
