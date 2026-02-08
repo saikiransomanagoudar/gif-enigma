@@ -15,12 +15,27 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const isHandlingRequest = useRef(false); // Prevent duplicate requests
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const isHandlingRequest = useRef(false);
+  const normalizePostId = (id: string) => (id.startsWith('t3_') ? id.slice(3) : id);
+  const toAbsolutePostUrl = (url: string) => {
+    if (url.startsWith('http')) return url;
+    return `https://www.reddit.com${url.startsWith('/') ? url : `/${url}`}`;
+  };
+  const buildPostUrl = (game: any) => {
+    if (game?.postUrl) return toAbsolutePostUrl(game.postUrl);
+    if (game?.redditPostId) {
+      const cleanId = normalizePostId(game.redditPostId);
+      return `https://www.reddit.com/comments/${cleanId}`;
+    }
+    return null;
+  };
 
   useEffect(() => {
     setIsLoading(false);
     setShowSuccessMessage(false);
-    isHandlingRequest.current = false; // Reset on mount
+    isHandlingRequest.current = false;
     return () => {
       isMounted.current = false;
     };
@@ -80,7 +95,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
   }, []);
 
   const handlePlayClick = async () => {
-    // Prevent multiple simultaneous requests
     if (isHandlingRequest.current) {
       return;
     }
@@ -90,35 +104,27 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     setShowSuccessMessage(false);
 
     try {
-      // Call API directly
-      const response = await getRandomGame(
-        redditUsername || 'anonymous',
-        undefined // category is optional
-      );
+      const response = await getRandomGame(redditUsername || 'anonymous', {
+        useStickyNavigation: true,
+      });
 
       if (!isMounted.current) {
         return;
       }
 
-      if (response.success && response.result && response.result.game) {
-        const game = response.result.game;
-        const redditPostId = game.redditPostId;
+      const resolvedGame = response.game || response.result?.game;
+      if (response.success && resolvedGame) {
+        const game = resolvedGame;
+        const postUrl = buildPostUrl(game);
 
-        if (
-          redditPostId &&
-          game.gifs &&
-          Array.isArray(game.gifs) &&
-          game.gifs.length > 0 &&
-          game.word
-        ) {
+        if (postUrl && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
           setShowSuccessMessage(true);
 
           setTimeout(() => {
             setIsLoading(false);
             setShowSuccessMessage(false);
             isHandlingRequest.current = false;
-            // Navigate to the Reddit post
-            navigateTo(`https://reddit.com/comments/${redditPostId}`);
+            navigateTo(postUrl);
           }, 150);
         } else {
           setIsLoading(false);
@@ -130,23 +136,16 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         setShowSuccessMessage(false);
         isHandlingRequest.current = false;
 
-        // Show contextual error messages
         const result = response.result || {};
         let errorMessage = '';
 
         if (result.hasPlayedAll) {
-          errorMessage =
-            "🎉 Amazing! You've completed all games! Check back later for new challenges.";
-        } else if (result.error && result.error.includes('No games available yet')) {
-          errorMessage = '🎨 No games yet! Be the first to create one by tapping "Let\'s Build"';
-        } else if (result.error) {
-          errorMessage = result.error;
-        } else if (response.error) {
-          errorMessage = response.error;
-        } else {
-          errorMessage = '😕 No games available right now. Try creating one!';
+          errorMessage = '🎉 Amazing! you have played all games, more games to come';
+          setToastMessage(errorMessage);
+          setShowToast(true);
+          setTimeout(() => setShowToast(false), 4000);
+          return;
         }
-
         alert(errorMessage);
       }
     } catch (error) {
@@ -155,8 +154,6 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
       isHandlingRequest.current = false;
     }
   };
-
-
 
   const handleHowToPlayClick = async (event: React.MouseEvent) => {
     try {
@@ -170,6 +167,22 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
 
   return (
     <PageTransition>
+      {showToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -50 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -50 }}
+          className="fixed top-4 left-1/2 z-[10000] -translate-x-1/2 transform"
+        >
+          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#FF4500] to-[#FF6B35] px-6 py-4 shadow-2xl backdrop-blur-sm">
+            <span className="text-2xl">🎉</span>
+            <ComicText size={0.75} color="white">
+              {toastMessage}
+            </ComicText>
+          </div>
+        </motion.div>
+      )}
+
       {isLoading && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black">
           {!showSuccessMessage ? (
@@ -196,9 +209,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           )}
         </div>
       )}
-      <div
-        className={`${backgroundColor} mt-0 mb-0 min-h-screen w-full p-5 pb-15 select-none`}
-      >
+      <div className={`${backgroundColor} mt-0 mb-0 min-h-screen w-full p-5 pb-15 select-none`}>
         <div className="relative flex flex-col items-center p-4 pt-6 max-sm:mt-0 md:pt-12">
           {/* Leaderboard Button */}
           <motion.button
@@ -264,6 +275,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <img
               src="/landing-page/lets-play.gif"
               alt="Play GIF"
+              width="400"
+              height="400"
+              loading="eager"
               className={`block w-full rounded-2xl ${isLoading ? 'opacity-50' : ''}`}
             />
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
@@ -281,6 +295,9 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             <img
               src="/landing-page/lets-build.gif"
               alt="Create GIF"
+              width="400"
+              height="400"
+              loading="eager"
               className="block w-full rounded-2xl"
             />
             <div className="absolute top-[85%] left-1/2 w-[140px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
