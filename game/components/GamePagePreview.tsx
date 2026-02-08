@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import { Page } from '../lib/types';
 import { getGame, hasUserCompletedGame, getCurrentUser, getRandomGame } from '../lib/api';
+import { motion } from 'framer-motion';
 // @ts-ignore
 import { requestExpandedMode } from '@devvit/web/client';
-
+// @ts-ignore
+import { navigateTo } from '@devvit/web/client';
 interface GamePagePreviewProps {
-  gameId: string;
-  onNavigate: (page: Page, params?: { gameId?: string }) => void;
+  gameId: string | null;
+  onNavigate: (page: Page, params?: { gameId?: string }, event?: React.MouseEvent) => void;
 }
 
 interface GameData {
@@ -18,18 +20,35 @@ interface GameData {
   category: string;
   maskedWord: string;
   redditPostId?: string;
+  username?: string;
 }
 
 export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavigate }) => {
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [hasCompleted, setHasCompleted] = useState(false);
   const [username, setUsername] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isPlayingAgain, setIsPlayingAgain] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [gameState, setGameState] = useState<any>(null);
   const isMounted = useRef(true);
   const isHandlingRequest = useRef(false);
+  const normalizePostId = (id: string) => (id.startsWith('t3_') ? id.slice(3) : id);
+  const toAbsolutePostUrl = (url: string) => {
+    if (url.startsWith('http')) return url;
+    return `https://www.reddit.com${url.startsWith('/') ? url : `/${url}`}`;
+  };
+  const buildPostUrl = (game: any) => {
+    if (game?.postUrl) return toAbsolutePostUrl(game.postUrl);
+    if (game?.redditPostId) {
+      const cleanId = normalizePostId(game.redditPostId);
+      return `https://www.reddit.com/comments/${cleanId}`;
+    }
+    return null;
+  };
 
   // Detect dark mode
   useEffect(() => {
@@ -43,74 +62,120 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     };
   }, []);
 
-  // Load game data and check completion status
-  useEffect(() => {
-    async function loadGameData() {
-      setIsLoading(true);
-      
-      try {
-        // Get current user
-        const userResult = await getCurrentUser();
-        const currentUsername = userResult.success && userResult.username 
-          ? userResult.username 
-          : 'anonymous';
-        setUsername(currentUsername);
-
-        // Get game data
-        const gameResult = await getGame(gameId);
-        
-        if (gameResult.success && gameResult.result) {
-          setGameData(gameResult.result);
-
-          // Check if user has completed this game
-          if (currentUsername !== 'anonymous') {
-            const completionResult = await hasUserCompletedGame(currentUsername, gameId);
-            setHasCompleted(completionResult.completed || false);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading game preview:', error);
-      } finally {
-        setIsLoading(false);
-      }
+  const loadGameData = useCallback(async () => {
+    if (!gameId) {
+      setGameData(null);
+      return;
     }
 
-    loadGameData();
+    setIsLoading(true);
+
+    try {
+      const userResult = await getCurrentUser();
+      const currentUsername = userResult.success && userResult.username
+        ? userResult.username
+        : 'anonymous';
+      setUsername(currentUsername);
+
+      const gameResult = await getGame(gameId);
+
+      const loadedGame = gameResult.game || gameResult.result;
+      if (gameResult.success && loadedGame) {
+        setGameData(loadedGame);
+
+        if (currentUsername !== 'anonymous') {
+          const completionResult = await hasUserCompletedGame(currentUsername, gameId);
+          const completionFlag = Boolean(
+            completionResult.hasCompleted ??
+              completionResult.completed ??
+              completionResult.hasCompleted?.completed
+          );
+          setHasCompleted(completionFlag);
+
+          try {
+            const { getGameState } = await import('../lib/api');
+            const stateResult = await getGameState(currentUsername, gameId);
+            if (stateResult.success && stateResult.state?.playerState) {
+              setGameState(stateResult.state.playerState);
+            }
+          } catch (error) {
+            // error
+          }
+        }
+      }
+    } catch (error) {
+      // error
+    } finally {
+      setIsLoading(false);
+    }
   }, [gameId]);
 
-  // Handle "Decode the GIF" button - navigate to game page in expanded mode
-  const handleDecodeClick = async (event: React.MouseEvent) => {
+  useEffect(() => {
+    loadGameData();
+  }, [loadGameData]);
+
+  useEffect(() => {
+    const handleFocus = () => loadGameData();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadGameData();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadGameData]);
+
+  const handleDecodeClick = async (event: React.MouseEvent | React.TouchEvent) => {    
+    if (gameId) {
+      localStorage.setItem('pendingGameId', gameId);
+    }
+    
     try {
       await requestExpandedMode(event.nativeEvent, 'game');
     } catch (error) {
-      console.error('Failed to enter expanded mode:', error);
-      onNavigate('game', { gameId });
+      try {
+        await navigateTo('game');
+      } catch (navError) {
+        onNavigate('game', { gameId: gameId ?? undefined });
+      }
     }
   };
 
-  // Handle "How to play?" button - navigate to how to play page in expanded mode
-  const handleHowToPlayClick = async (event: React.MouseEvent) => {
+  const handleHowToPlayClick = async (event: React.MouseEvent | React.TouchEvent) => {
     try {
       await requestExpandedMode(event.nativeEvent, 'howToPlay');
     } catch (error) {
-      console.error('Failed to enter expanded mode:', error);
-      onNavigate('howToPlay');
+      try {
+        await navigateTo('howToPlay');
+      } catch (navError) {
+        onNavigate('howToPlay');
+      }
     }
   };
 
-  // Handle "View Results" button - navigate to game results page in expanded mode
-  const handleViewResultsClick = async (event: React.MouseEvent) => {
+  const handleViewResultsClick = async (event: React.MouseEvent | React.TouchEvent) => {
+    if (gameId) {
+      localStorage.setItem('pendingGameResultsId', gameId);
+    }
+    
     try {
       await requestExpandedMode(event.nativeEvent, 'gameResults');
     } catch (error) {
-      console.error('Failed to enter expanded mode:', error);
-      onNavigate('gameResults', { gameId });
+      try {
+        await navigateTo('gameResults');
+      } catch (navError) {
+        onNavigate('gameResults', { gameId: gameId ?? undefined });
+      }
     }
   };
 
-  // Handle "Play Again" button - similar to LandingPage's Let's Play logic
   const handlePlayAgainClick = async () => {
-    // Prevent multiple simultaneous requests
     if (isHandlingRequest.current) {
       return;
     }
@@ -120,22 +185,22 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     setShowSuccessMessage(false);
 
     try {
-      // Call API to get random unplayed game
       const response = await getRandomGame(
         username || 'anonymous',
-        undefined // category is optional
+        { useStickyNavigation: true }
       );
 
       if (!isMounted.current) {
         return;
       }
 
-      if (response.success && response.result && response.result.game) {
-        const game = response.result.game;
-        const redditPostId = game.redditPostId;
+      const resolvedGame = response.game || response.result?.game;
+      if (response.success && resolvedGame) {
+        const game = resolvedGame;
+        const postUrl = buildPostUrl(game);
 
         if (
-          redditPostId &&
+          postUrl &&
           game.gifs &&
           Array.isArray(game.gifs) &&
           game.gifs.length > 0 &&
@@ -147,8 +212,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
             setIsPlayingAgain(false);
             setShowSuccessMessage(false);
             isHandlingRequest.current = false;
-            // Navigate to the Reddit post using window.location
-            window.location.href = `https://reddit.com/comments/${redditPostId}`;
+            navigateTo(postUrl);
           }, 150);
         } else {
           setIsPlayingAgain(false);
@@ -160,27 +224,20 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
         setShowSuccessMessage(false);
         isHandlingRequest.current = false;
 
-        // Show contextual error messages
         const result = response.result || {};
         let errorMessage = '';
 
         if (result.hasPlayedAll) {
-          errorMessage =
-            "🎉 Amazing! You've completed all games! Check back later for new challenges.";
-        } else if (result.error && result.error.includes('No games available yet')) {
-          errorMessage = '🎨 No games yet! Be the first to create one!';
-        } else if (result.error) {
-          errorMessage = result.error;
-        } else if (response.error) {
-          errorMessage = response.error;
-        } else {
-          errorMessage = '😕 No games available right now. Try creating one!';
+          errorMessage = '🎉 Amazing! you have played all games, more games to come';
+          setToastMessage(errorMessage);
+          setShowToast(true);
+          setTimeout(() => setShowToast(false), 4000);
+          return;
         }
 
         alert(errorMessage);
       }
     } catch (error) {
-      console.error('Failed to get random game:', error);
       setIsPlayingAgain(false);
       setShowSuccessMessage(false);
       isHandlingRequest.current = false;
@@ -191,19 +248,12 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const cardBackground = isDarkMode ? 'bg-[#0a1020]' : 'bg-[#f5f5f0]';
   const borderColor = isDarkMode ? 'border-[#1a2030]' : 'border-gray-300';
 
-  // Loading state
+  if (!gameId) {
+    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
+  }
+
   if (isLoading) {
-    return (
-      <div className={`flex h-screen items-center justify-center ${backgroundColor}`}>
-        <div className="text-center">
-          <img 
-            src="/eyebrows.gif" 
-            alt="Loading game..."
-            className="h-32 w-32 object-contain"
-          />
-        </div>
-      </div>
-    );
+    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
   }
 
   // Play Again loading overlay
@@ -236,74 +286,79 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     );
   }
 
-  // Error state
   if (!gameData) {
-    return (
-      <div className={`flex h-screen items-center justify-center ${backgroundColor}`}>
-        <div className="text-center">
-          <ComicText size={1.2} color={colors.primary}>
-            Oops!
-          </ComicText>
-          <div className="mt-2">
-            <ComicText size={0.7} color={colors.textSecondary}>
-              Game not found
-            </ComicText>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
   }
 
   return (
-    <div className={`flex min-h-screen flex-col items-center p-5 ${backgroundColor}`}>
-      {/* Header */}
-      <div className="mt-6 mb-8 text-center">
-        <ComicText size={1.8} color={colors.primary}>
+    <div className={`flex min-h-screen flex-col items-center w-full px-2 py-2 ${backgroundColor}`}>
+      {/* Toast Notification */}
+      {showToast && (
+        <motion.div
+          initial={{ opacity: 0, y: -50 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -50 }}
+          className="fixed top-4 left-1/2 z-[10000] -translate-x-1/2 transform"
+        >
+          <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#FF4500] to-[#FF6B35] px-6 py-4 shadow-2xl backdrop-blur-sm">
+            <span className="text-2xl">🎉</span>
+            <ComicText size={0.75} color="white">
+              {toastMessage}
+            </ComicText>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Compact Header */}
+      <div className="mt-5 mb-2 text-center">
+        <ComicText size={2.0} color={colors.primary}>
           GIF Enigma
         </ComicText>
-        <div className="mt-2">
-          <ComicText size={0.6} color={colors.textSecondary}>
+        <div className="mt-0.5">
+          <ComicText size={1.0} color={colors.textSecondary}>
             {gameData.category}
           </ComicText>
         </div>
       </div>
 
-      {/* GIF Preview - TV Screen Style */}
-      <div className="mb-8 w-full max-w-md">
-        <div
-          className={`rounded-lg border-4 p-4 ${cardBackground} ${borderColor}`}
-        >
+      {/* Compact GIF Preview */}
+      <div className="mt-2 mb-4 w-full max-w-[270px]">
+        <div className={`aspect-square rounded-xl border p-2 ${cardBackground} ${borderColor}`}>
           {gameData.gifs && gameData.gifs[0] && (
             <img
               src={gameData.gifs[0]}
               alt="GIF clue"
-              className="h-64 w-full rounded object-cover"
+              width="300"
+              height="300"
+              decoding="async"
+              loading="lazy"
+              className="h-full w-full rounded-lg object-cover"
             />
           )}
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex w-full max-w-md flex-col gap-4">
+      {/* Compact Action Buttons */}
+      <div className="flex w-full max-w-md flex-col items-center gap-2 sm:flex-row sm:items-stretch">
         {!hasCompleted ? (
           // User hasn't completed the game
           <>
             <button
               onClick={handleDecodeClick}
-              className="flex items-center justify-center gap-2 rounded-full bg-[#FF4500] px-6 py-4 transition-all hover:scale-105 active:scale-95"
+              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
-              <span className="text-2xl">🔍</span>
-              <ComicText size={0.8} color="white">
+              <span className="text-lg">🔍</span>
+              <ComicText size={0.6} color="white">
                 Decode the GIF
               </ComicText>
             </button>
 
             <button
               onClick={handleHowToPlayClick}
-              className="flex items-center justify-center gap-2 rounded-full bg-[#4267B2] px-6 py-4 transition-all hover:scale-105 active:scale-95"
+              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#4267B2] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
-              <span className="text-2xl">🤔</span>
-              <ComicText size={0.8} color="white">
+              <span className="text-lg">🤔</span>
+              <ComicText size={0.6} color="white">
                 How to play?
               </ComicText>
             </button>
@@ -313,35 +368,29 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
           <>
             <button
               onClick={handleViewResultsClick}
-              className="flex items-center justify-center gap-2 rounded-full bg-[#FF4500] px-6 py-4 transition-all hover:scale-105 active:scale-95"
+              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
-              <span className="text-2xl">📊</span>
-              <ComicText size={0.8} color="white">
+              <span className="text-lg">📊</span>
+              <ComicText size={0.6} color="white">
                 View Results
               </ComicText>
             </button>
 
             <button
               onClick={handlePlayAgainClick}
-              className="flex items-center justify-center gap-2 rounded-full bg-[#10B981] px-6 py-4 transition-all hover:scale-105 active:scale-95"
+              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#10B981] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
-              <span className="text-2xl">🎮</span>
-              <ComicText size={0.8} color="white">
-                Play Again
+              <span className="text-lg">🎮</span>
+              <ComicText size={0.6} color="white">
+                {gameState?.hasGivenUp
+                  ? 'Try another'
+                  : gameData?.username && username === gameData.username
+                    ? 'Play a new game'
+                    : 'Play again'}
               </ComicText>
             </button>
           </>
         )}
-      </div>
-
-      {/* Footer hint */}
-      <div className="mt-8 text-center">
-        <ComicText size={0.5} color={colors.textSecondary}>
-          {hasCompleted 
-            ? '✅ You completed this game!' 
-            : `Can you guess the ${gameData.category.toLowerCase()}?`
-          }
-        </ComicText>
       </div>
     </div>
   );
