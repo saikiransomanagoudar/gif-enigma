@@ -15,6 +15,7 @@ import {
   trackGuess,
   getGameStatistics,
   validateGuess,
+  checkUserComment,
 } from './gameHandler';
 
 import {
@@ -47,6 +48,7 @@ export {
   trackGuess,
   getGameStatistics,
   validateGuess,
+  checkUserComment,
 };
 
 export { getCreatorBonusStats } from './scoringService';

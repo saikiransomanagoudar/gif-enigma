@@ -5,9 +5,9 @@ import { CategoryType } from '../pages/CategoryPage';
 
 const RECS_CACHE_PREFIX = 'gemini:recs:';
 const SYN_CACHE_PREFIX = 'gemini:syn:';
-const CACHE_TTL = 60 * 60; // Keep the 1-hour cache time
+const CACHE_TTL = 60 * 60;
 
-// Function to shuffle array (Fisher-Yates algorithm)
+// Fisher-Yates algorithm to shuffle array
 function shuffleArray<T>(array: T[]): T[] {
   const newArray = [...array];
   for (let i = newArray.length - 1; i > 0; i--) {
@@ -24,15 +24,12 @@ export async function fetchGeminiRecommendations(
   count = 20,
   excludeWords: string[] = []
 ): Promise<{ success: boolean; recommendations: string[]; error?: string; debug?: any }> {
-  console.log('[fetchGeminiRecommendations] Called with:', { category, inputType, count, excludeWords: excludeWords.length });
-  
   const dayOfWeek = new Date().getDay();
   const cacheKey = `${RECS_CACHE_PREFIX}${category}:${inputType}:${count}:day${dayOfWeek}`.toLowerCase();
 
   const cachedData = await redis.get(cacheKey);
   if (cachedData) {
     const parsed = JSON.parse(cachedData) as string[];
-    console.log('[fetchGeminiRecommendations] Returning from cache:', parsed.length, 'items');
 
     const shuffledResults = shuffleArray(parsed);
 
@@ -43,7 +40,6 @@ export async function fetchGeminiRecommendations(
     };
   }
 
-  console.log('[fetchGeminiRecommendations] No cache, calling Gemini API...');
   const requestCount = Math.min(50, count * 2);
   const result = await getRecommendations({ 
     category, 
@@ -51,8 +47,6 @@ export async function fetchGeminiRecommendations(
     count: requestCount,
     excludeWords 
   }, _context);
-  console.log('[fetchGeminiRecommendations] Gemini API result:', { success: result.success, count: result.recommendations?.length, error: result.error });
-  
 
   if (result.success && result.recommendations) {
     await redis.set(cacheKey, JSON.stringify(result.recommendations));
@@ -79,7 +73,7 @@ export async function fetchGeminiRecommendations(
   };
 }
 
-// Bulk fetch all cached recommendations for instant loading
+// Bulk fetch all cached recommendations
 export async function bulkFetchCachedRecommendations(
   _context: Context
 ): Promise<{ [key: string]: string[] }> {
@@ -117,7 +111,6 @@ export async function bulkFetchCachedSynonyms(
   const dayOfWeek = new Date().getDay();
   const result: { [word: string]: string[][] } = {};
   
-  // Fetch all words' synonyms in parallel
   const promises = words.map(async word => {
     const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
     
@@ -136,18 +129,12 @@ export async function fetchGeminiSynonyms(
   context: Context,
   word: string
 ): Promise<{ success: boolean; synonyms: string[][]; error?: string; debug?: any }> {
-  console.log('[fetchGeminiSynonyms] Called for word:', word);
-  
-  // Add variety to cache key with a daily rotation
   const dayOfWeek = new Date().getDay();
   const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
 
-  // 1) Check the cache
   const cachedData = await redis.get(cacheKey);
   if (cachedData) {
-    const parsed = JSON.parse(cachedData) as string[][];
-    console.log('[fetchGeminiSynonyms] Returning from cache:', parsed.length, 'groups');
-    
+    const parsed = JSON.parse(cachedData) as string[][];  
     return {
       success: true,
       synonyms: parsed,
@@ -155,32 +142,18 @@ export async function fetchGeminiSynonyms(
     };
   }
 
-  // 2) Not cached, call the Gemini service
-  console.log('[fetchGeminiSynonyms] No cache, calling Gemini API...');
   const result = await getSynonyms({ word }, context);
-  console.log('[fetchGeminiSynonyms] Gemini API result:', { 
-    success: result.success, 
-    groupCount: result.synonyms?.length, 
-    error: result.error,
-    synonymsPresent: !!result.synonyms,
-    synonymsType: Array.isArray(result.synonyms) ? 'array' : typeof result.synonyms,
-    firstGroup: result.synonyms?.[0],
-    fullResult: result
-  });
 
-  // 3) Cache if successful
   if (result.success && result.synonyms) {
     await redis.set(cacheKey, JSON.stringify(result.synonyms));
     await redis.expire(cacheKey, CACHE_TTL);
-    
-    // Don't shuffle synonyms as they're structured from abstract to specific
     return {
       success: true,
       synonyms: result.synonyms,
       debug: { source: 'api' }
     };
-  } 
-  // 4) Return final response
+  }
+  
   return {
     success: result.success,
     synonyms: result.synonyms ?? [],

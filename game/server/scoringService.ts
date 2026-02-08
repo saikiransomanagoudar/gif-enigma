@@ -230,6 +230,11 @@ export async function getGameLeaderboard(
         continue;
       }
 
+      // Skip system users
+      if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+        continue;
+      }
+
       leaderboard.push({
         rank: i + 1,
         username: username,
@@ -270,6 +275,11 @@ export async function getGlobalLeaderboard(
       const [gameId, username] = combinedId.split(':');
 
       if (!gameId || !username) continue;
+
+      // Skip system users
+      if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
+        continue;
+      }
 
       const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
 
@@ -363,6 +373,11 @@ export async function getCumulativeLeaderboard(
     for (const item of leaderboardItems) {
       const username = typeof item.member === 'string' ? item.member : '';
       if (!username || username.toLowerCase() === 'anonymous') {
+        continue;
+      }
+
+      // Skip system users
+      if (systemUsernames.some((sysUser) => username.toLowerCase() === sysUser.toLowerCase())) {
         continue;
       }
 

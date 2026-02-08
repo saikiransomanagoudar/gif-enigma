@@ -28,14 +28,19 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       postToSubreddit = true,
       isChatPost = false,
       inputType = 'word',
+      forceUsername,
     } = params;
-
+    
     let username = 'anonymous';
-    try {
-      const user = await reddit.getCurrentUser();
-      username = user?.username || 'gif-enigma';
-    } catch (error) {
-      username = 'gif-enigma';
+    if (forceUsername) {
+      username = forceUsername;
+    } else {
+      try {
+        const user = await reddit.getCurrentUser();
+        username = user?.username || 'gif-enigma';
+      } catch (error) {
+        username = 'gif-enigma';
+      }
     }
 
     const systemUsernames = [
@@ -46,32 +51,27 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       'AutoModerator',
       'reddit',
     ];
-
+    
     const isSystemUser = systemUsernames.some(
       (sysUser) => username.toLowerCase() === sysUser.toLowerCase()
     );
 
-    // Enforce daily creation limit for all users
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentCreationsKey = `user:${username}:recentCreations`;
     const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
 
-    // Add this creation attempt FIRST (optimistic)
     await redis.zAdd(recentCreationsKey, {
       member: attemptId,
       score: now,
     });
 
-    // Clean up old entries
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
 
-    // Now count total creations in last 24h
     const recentCreations = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
 
-    // If over limit, rollback the addition and reject
     if (recentCreations.length > 4) {
       await redis.zRem(recentCreationsKey, [attemptId]);
       return {
@@ -110,12 +110,11 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       createdAt: Date.now().toString(),
       username,
       inputType: inputType || 'word',
-      acceptedSynonyms: JSON.stringify(acceptedSynonyms), // Store for validation
+      acceptedSynonyms: JSON.stringify(acceptedSynonyms),
     });
     await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
     const txResult = await tx.exec();
 
-    // Check if transaction succeeded (exec returns null on failure)
     if (!txResult) {
       await redis.zRem(recentCreationsKey, [attemptId]);
       return {

@@ -17,6 +17,7 @@ import {
   validateGuess,
   getCreatorBonusStats,
   getGameLeaderboard,
+  checkUserComment,
 } from '../../game/server/gameHandler.server.js';
 import {
   fetchGeminiRecommendations,
@@ -304,7 +305,6 @@ app.get('/api/game/check-comment', async (req: any, res: any) => {
       return;
     }
 
-    const { checkUserComment } = await import('../../game/server/gameHandler.js');
     const result = await checkUserComment(gameId, username, createContext());
 
     res.json(result);
@@ -921,6 +921,7 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         gifs: gifUrls,
         postToSubreddit: true,
         inputType,
+        forceUsername: 'gif-enigma',
       },
       createContext()
     );
@@ -985,18 +986,145 @@ app.post(
   '/internal/menu/trigger-word-post',
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
-      await redis.zAdd('scheduler:jobs', {
-        member: JSON.stringify({
-          id: `manual-word-${Date.now()}`,
-          name: 'auto_create_post',
-          data: { force: true, inputType: 'word' },
-          runAt: new Date().toISOString(),
-        }),
-        score: Date.now(),
-      });
-      res.json({ showToast: '✅ Triggered word-based game post!' });
+      // Force-create a word-based post (bypasses time/subreddit checks)
+      const categories: CategoryType[] = [
+        'Cinematic Feels',
+        'Gaming Moments',
+        'Story Experiences',
+        'Viral Vibes',
+      ];
+      const fallbackData: Record<CategoryType, { word: string[]; phrase: string[] }> = {
+        'Cinematic Feels': {
+          word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN'],
+          phrase: ['MAY THE FORCE BE WITH YOU', 'TO INFINITY AND BEYOND'],
+        },
+        'Gaming Moments': {
+          word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE'],
+          phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE'],
+        },
+        'Story Experiences': {
+          word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA'],
+          phrase: ['ONCE UPON A TIME', 'THE END', 'TO BE CONTINUED'],
+        },
+        'Viral Vibes': {
+          word: ['RICKROLL', 'CRINGE', 'AWKWARD', 'HYPE', 'SHOCKED'],
+          phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP'],
+        },
+      };
+      const fallbackSynonyms: Record<string, string[][]> = {
+        STARWARS: [
+          ['space', 'lightsaber', 'force', 'jedi'],
+          ['galaxy', 'darth', 'vader', 'rebel'],
+          ['yoda', 'luke', 'princess', 'leia'],
+          ['death', 'star', 'empire', 'hope'],
+        ],
+        POKEMON: [
+          ['pikachu', 'catch', 'trainer', 'battle'],
+          ['ash', 'gym', 'evolution', 'pokeball'],
+          ['gotta', 'catch', 'em', 'all'],
+          ['monster', 'creature', 'adventure', 'friend'],
+        ],
+      };
+
+      const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+      const category = pickRandom(categories);
+      const inputType: 'word' | 'phrase' = 'word';
+      let recommendations: string[] = [];
+      let synonyms: string[][] = [];
+
+      try {
+        const recResult = await fetchGeminiRecommendations(
+          createContext(),
+          category,
+          inputType,
+          10
+        );
+        if (recResult.success && recResult.recommendations?.length) {
+          recommendations = recResult.recommendations;
+        } else {
+          throw new Error('API failed');
+        }
+      } catch {
+        const categoryData = fallbackData[category] || fallbackData['Viral Vibes'];
+        recommendations = categoryData.word;
+      }
+
+      const word = recommendations[0];
+
+      try {
+        const synResult = await fetchGeminiSynonyms(createContext(), word);
+        if (synResult.success && synResult.synonyms?.length) {
+          synonyms = synResult.synonyms;
+        } else {
+          throw new Error('API failed');
+        }
+      } catch {
+        synonyms = (fallbackSynonyms as any)[word.toUpperCase()] || [
+          ['think', 'guess', 'solve', 'answer'],
+          ['brain', 'mind', 'logic', 'reason'],
+          ['puzzle', 'mystery', 'riddle', 'challenge'],
+          ['find', 'discover', 'reveal', 'uncover'],
+        ];
+      }
+
+      const gifUrls: string[] = [];
+      const gifDescriptions: string[] = [];
+      const gifSearchTerms: string[] = [];
+
+      for (const synonymGroup of synonyms) {
+        if (gifUrls.length >= 4) break;
+        const term = synonymGroup[0];
+        const gifs = await searchGiphyGifs(createContext(), term, 1);
+        if (gifs[0]) {
+          const gifUrl = gifs[0].media_formats?.tinygif?.url;
+          const gifDescription = gifs[0].content_description || gifs[0].title || term;
+          if (gifUrl) {
+            gifUrls.push(gifUrl);
+            gifDescriptions.push(gifDescription);
+            gifSearchTerms.push(term);
+          }
+        }
+      }
+
+      if (gifUrls.length !== 4) {
+        res.json({ showToast: '❌ Insufficient GIFs found' });
+        return;
+      }
+
+      const validation = await validateGifWordMatch(
+        { word, gifDescriptions, searchTerms: gifSearchTerms },
+        createContext()
+      );
+
+      if (!validation.isValid || validation.matchScore < 0.5) {
+        res.json({ showToast: '❌ Validation failed' });
+        return;
+      }
+
+      const maskedWord = word
+        .split('')
+        .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
+        .join('');
+
+      const questionText = 'Can you decode the word from this GIF?';
+
+      await saveGame(
+        {
+          word,
+          maskedWord,
+          category,
+          questionText,
+          gifs: gifUrls,
+          postToSubreddit: true,
+          inputType,
+          forceUsername: 'gif-enigma',
+        },
+        createContext()
+      );
+
+      res.json({ showToast: '✅ Word-based game post created!' });
     } catch (error) {
-      res.json({ showToast: '❌ Failed to trigger game post' });
+      res.json({ showToast: `❌ Failed: ${String(error)}` });
     }
   }
 );
@@ -1005,18 +1133,145 @@ app.post(
   '/internal/menu/trigger-phrase-post',
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
-      await redis.zAdd('scheduler:jobs', {
-        member: JSON.stringify({
-          id: `manual-phrase-${Date.now()}`,
-          name: 'auto_create_post',
-          data: { force: true, inputType: 'phrase' },
-          runAt: new Date().toISOString(),
-        }),
-        score: Date.now(),
-      });
-      res.json({ showToast: '✅ Triggered phrase-based game post!' });
+      // Force-create a phrase-based post (bypasses time/subreddit checks)
+      const categories: CategoryType[] = [
+        'Cinematic Feels',
+        'Gaming Moments',
+        'Story Experiences',
+        'Viral Vibes',
+      ];
+      const fallbackData: Record<CategoryType, { word: string[]; phrase: string[] }> = {
+        'Cinematic Feels': {
+          word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN'],
+          phrase: ['MAY THE FORCE BE WITH YOU', 'TO INFINITY AND BEYOND'],
+        },
+        'Gaming Moments': {
+          word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE'],
+          phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE'],
+        },
+        'Story Experiences': {
+          word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA'],
+          phrase: ['ONCE UPON A TIME', 'THE END', 'TO BE CONTINUED'],
+        },
+        'Viral Vibes': {
+          word: ['RICKROLL', 'CRINGE', 'AWKWARD', 'HYPE', 'SHOCKED'],
+          phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP'],
+        },
+      };
+      const fallbackSynonyms: Record<string, string[][]> = {
+        STARWARS: [
+          ['space', 'lightsaber', 'force', 'jedi'],
+          ['galaxy', 'darth', 'vader', 'rebel'],
+          ['yoda', 'luke', 'princess', 'leia'],
+          ['death', 'star', 'empire', 'hope'],
+        ],
+        POKEMON: [
+          ['pikachu', 'catch', 'trainer', 'battle'],
+          ['ash', 'gym', 'evolution', 'pokeball'],
+          ['gotta', 'catch', 'em', 'all'],
+          ['monster', 'creature', 'adventure', 'friend'],
+        ],
+      };
+
+      const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+      const category = pickRandom(categories);
+      const inputType: 'word' | 'phrase' = 'phrase';
+      let recommendations: string[] = [];
+      let synonyms: string[][] = [];
+
+      try {
+        const recResult = await fetchGeminiRecommendations(
+          createContext(),
+          category,
+          inputType,
+          10
+        );
+        if (recResult.success && recResult.recommendations?.length) {
+          recommendations = recResult.recommendations;
+        } else {
+          throw new Error('API failed');
+        }
+      } catch {
+        const categoryData = fallbackData[category] || fallbackData['Viral Vibes'];
+        recommendations = categoryData.phrase;
+      }
+
+      const word = recommendations[0];
+
+      try {
+        const synResult = await fetchGeminiSynonyms(createContext(), word);
+        if (synResult.success && synResult.synonyms?.length) {
+          synonyms = synResult.synonyms;
+        } else {
+          throw new Error('API failed');
+        }
+      } catch {
+        synonyms = (fallbackSynonyms as any)[word.toUpperCase()] || [
+          ['think', 'guess', 'solve', 'answer'],
+          ['brain', 'mind', 'logic', 'reason'],
+          ['puzzle', 'mystery', 'riddle', 'challenge'],
+          ['find', 'discover', 'reveal', 'uncover'],
+        ];
+      }
+
+      const gifUrls: string[] = [];
+      const gifDescriptions: string[] = [];
+      const gifSearchTerms: string[] = [];
+
+      for (const synonymGroup of synonyms) {
+        if (gifUrls.length >= 4) break;
+        const term = synonymGroup[0];
+        const gifs = await searchGiphyGifs(createContext(), term, 1);
+        if (gifs[0]) {
+          const gifUrl = gifs[0].media_formats?.tinygif?.url;
+          const gifDescription = gifs[0].content_description || gifs[0].title || term;
+          if (gifUrl) {
+            gifUrls.push(gifUrl);
+            gifDescriptions.push(gifDescription);
+            gifSearchTerms.push(term);
+          }
+        }
+      }
+
+      if (gifUrls.length !== 4) {
+        res.json({ showToast: '❌ Insufficient GIFs found' });
+        return;
+      }
+
+      const validation = await validateGifWordMatch(
+        { word, gifDescriptions, searchTerms: gifSearchTerms },
+        createContext()
+      );
+
+      if (!validation.isValid || validation.matchScore < 0.5) {
+        res.json({ showToast: '❌ Validation failed' });
+        return;
+      }
+
+      const maskedWord = word
+        .split('')
+        .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
+        .join('');
+
+      const questionText = 'Can you decode the phrase from this GIF?';
+
+      await saveGame(
+        {
+          word,
+          maskedWord,
+          category,
+          questionText,
+          gifs: gifUrls,
+          postToSubreddit: true,
+          inputType,
+          forceUsername: 'gif-enigma',
+        },
+        createContext()
+      );
+
+      res.json({ showToast: '✅ Phrase-based game post created!' });
     } catch (error) {
-      res.json({ showToast: '❌ Failed to trigger game post' });
+      res.json({ showToast: `❌ Failed: ${String(error)}` });
     }
   }
 );

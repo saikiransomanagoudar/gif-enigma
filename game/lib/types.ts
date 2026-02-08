@@ -121,6 +121,7 @@ export interface CreatorData {
   previewStyle?: 'basic' | 'enhanced';
   isChatPost?: boolean;
   inputType?: 'word' | 'phrase';
+  forceUsername?: string;
 }
 
 export interface SubredditSettings {
