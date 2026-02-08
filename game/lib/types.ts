@@ -1,5 +1,12 @@
 export type GameFlowState = 'loading' | 'playing' | 'won' | 'lost' | 'completed' | 'error';
-export type Page = 'landing' | 'category' | 'create' | 'game' | 'howToPlay' | 'leaderboard' | 'gameResults';
+export type Page =
+  | 'landing'
+  | 'category'
+  | 'create'
+  | 'game'
+  | 'howToPlay'
+  | 'leaderboard'
+  | 'gameResults';
 export type DifficultyLevel = 'Easy' | 'Medium' | 'Hard' | 'Expert';
 
 export interface GameRedisData {
@@ -22,7 +29,7 @@ export interface PlayerGameState {
   lastPlayed: number;
   isCompleted: boolean;
   hasGivenUp?: boolean;
-  isCreator?: boolean; // Flag to indicate this user created the game
+  isCreator?: boolean;
 }
 
 export interface GameData {
@@ -36,9 +43,10 @@ export interface GameData {
   createdAt?: string;
   username?: string;
   redditPostId?: string;
+  postUrl?: string;
   preview?: GamePreviewData;
   isChatPost?: boolean;
-  acceptedSynonyms?: string[]; // Same-length semantic synonyms for validation
+  acceptedSynonyms?: string[];
 }
 
 export interface GamePreviewData {
@@ -107,8 +115,8 @@ export interface CreatorData {
   category?: string | null;
   questionText?: string | null;
   gifs: string[];
-  gifDescriptions?: string[]; // GIF content descriptions for validation
-  searchTerms?: string[]; // Search terms used for each GIF
+  gifDescriptions?: string[];
+  searchTerms?: string[];
   postToSubreddit?: boolean;
   previewStyle?: 'basic' | 'enhanced';
   isChatPost?: boolean;
@@ -210,9 +218,7 @@ export interface ErrorResponse {
   timestamp?: number;
 }
 
-export type APIResponse<T = any> = 
-  | { success: true; data: T }
-  | ErrorResponse;
+export type APIResponse<T = any> = { success: true; data: T } | ErrorResponse;
 
 export function isGameData(obj: any): obj is GameData {
   return obj && typeof obj === 'object' && 'word' in obj && 'gifs' in obj;
@@ -241,6 +247,7 @@ export interface GameStatistics {
   creatorUsername?: string;
   acceptedSynonyms?: string[];
   playerScore?: number;
+  redditPostId?: string;
 }
 
 export interface GetGameStatisticsResponse {

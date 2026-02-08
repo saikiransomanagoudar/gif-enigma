@@ -30,7 +30,8 @@ import {
 } from '../../game/server/scoringService.js';
 import { fetchMultiplePreGenerated } from '../../game/server/dailyPreGenerator.js';
 import { validateGifWordMatch } from '../../game/server/geminiService.js';
-import type { CategoryType } from '../../game/shared.js';
+
+type CategoryType = 'Viral Vibes' | 'Cinematic Feels' | 'Gaming Moments' | 'Story Experiences';
 
 const app = express();
 
@@ -38,7 +39,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
-const createContext = () => ({ reddit, redis } as any);
+const createContext = () => ({ reddit, redis }) as any;
 
 app.get('/api/user/current', async (_req: any, res: any) => {
   try {
@@ -56,19 +57,19 @@ app.get('/api/user/current', async (_req: any, res: any) => {
 app.get('/api/user/stats', async (req: any, res: any) => {
   try {
     const username = req.query.username as string | undefined;
-    
+
     if (!username) {
       res.json({ success: false, error: 'username required' });
       return;
     }
-    
+
     const statsData = await redis.hGetAll(`userStats:${username}`);
-    
+
     if (!statsData || Object.keys(statsData).length === 0) {
       res.json({ success: true, stats: null, rank: 0 });
       return;
     }
-    
+
     const stats = {
       username,
       gamesPlayed: Number(statsData.gamesPlayed ?? 0),
@@ -78,11 +79,12 @@ app.get('/api/user/stats', async (req: any, res: any) => {
       score: Number(statsData.totalScore ?? 0),
       averageScore: Number(statsData.averageScore ?? 0),
       gamesCreated: Number(statsData.gamesCreated ?? 0),
+      creatorBonusEarned: Number(statsData.creatorBonusEarned ?? 0),
       lastPlayed: Number(statsData.lastPlayed ?? 0),
     };
-    
+
     const allUsers = await redis.zRange('cumulativeLeaderboard', 0, -1, { by: 'rank' });
-    
+
     let usersToCheck = allUsers;
     if (allUsers.length === 0) {
       const globalEntries = await redis.zRange('globalLeaderboard', 0, -1, { by: 'rank' });
@@ -95,11 +97,11 @@ app.get('/api/user/stats', async (req: any, res: any) => {
           uniqueUsers.add(user);
         }
       }
-      usersToCheck = Array.from(uniqueUsers).map(u => ({ member: u, score: 0 }));
+      usersToCheck = Array.from(uniqueUsers).map((u) => ({ member: u, score: 0 }));
     }
-    
+
     const allScores = [];
-    
+
     for (const item of usersToCheck) {
       const user = typeof item.member === 'string' ? item.member : String(item.member);
       const userData = await redis.hGetAll(`userStats:${user}`);
@@ -110,10 +112,10 @@ app.get('/api/user/stats', async (req: any, res: any) => {
         }
       }
     }
-    
+
     allScores.sort((a, b) => b - a);
     const rank = stats.totalScore > 0 ? allScores.indexOf(stats.totalScore) + 1 : 0;
-    
+
     res.json({ success: true, stats, rank });
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -123,30 +125,30 @@ app.get('/api/user/stats', async (req: any, res: any) => {
 app.get('/api/game/check-limit', async (_req: any, res: any) => {
   try {
     const username = await reddit.getCurrentUsername();
-    
+
     if (!username) {
-      return res.json({ 
-        success: false, 
-        canCreate: false, 
-        error: 'User not authenticated' 
+      return res.json({
+        success: false,
+        canCreate: false,
+        error: 'User not authenticated',
       });
     }
 
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentCreationsKey = `user:${username}:recentCreations`;
-    
+
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
-    
+
     const allEntries = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
-    
-    const recentCreations = allEntries.filter(entry => {
+
+    const recentCreations = allEntries.filter((entry) => {
       const member = entry.member.toString();
       return member.startsWith('game_');
     });
-    
+
     const creationCount = recentCreations.length;
     const canCreate = creationCount < 4;
 
@@ -160,24 +162,157 @@ app.get('/api/game/check-limit', async (_req: any, res: any) => {
       }
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       canCreate,
       creationCount,
       maxCreations: 4,
       resetTime: resetTime ? new Date(resetTime).toISOString() : null,
-      timeRemainingMs
+      timeRemainingMs,
     });
   } catch (error) {
-    res.json({ 
-      success: false, 
-      canCreate: false, 
-      error: String(error) 
+    res.json({
+      success: false,
+      canCreate: false,
+      error: String(error),
     });
   }
 });
 
-// Get game by ID
+app.get('/api/post/current/game', async (req: any, res: any) => {
+  try {
+    const rawPostId =
+      req.headers['x-reddit-post-id'] || req.query.postId || req.query.post_id || req.query.post;
+
+    if (!rawPostId) {
+      res.json({ success: false, error: 'No post context available' });
+      return;
+    }
+
+    const postId = typeof rawPostId === 'string' ? rawPostId : String(rawPostId);
+    const normalizedPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+    let gameData = await redis.hGetAll(`post:${normalizedPostId}`);
+
+    if (!gameData || !gameData.gameId) {
+      gameData = await redis.hGetAll(`post:${postId}`);
+    }
+
+    if (!gameData || !gameData.gameId) {
+      res.json({ success: false, error: 'Game not found for this post' });
+      return;
+    }
+
+    res.json({ success: true, gameId: gameData.gameId });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+// Get gameId by post ID
+app.get('/api/post/:postId/game', async (req: any, res: any) => {
+  try {
+    const postId = req.params.postId as string;
+    const normalizedPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+    let gameData = await redis.hGetAll(`post:${normalizedPostId}`);
+    if (!gameData || !gameData.gameId) {
+      gameData = await redis.hGetAll(`post:${postId}`);
+    }
+
+    if (!gameData || !gameData.gameId) {
+      res.json({ success: false, error: 'Game not found for this post' });
+      return;
+    }
+
+    res.json({ success: true, gameId: gameData.gameId });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+app.get('/api/game/completed', async (req: any, res: any) => {
+  try {
+    const { username, gameId } = req.query;
+    const result = await hasUserCompletedGame(
+      { username: username as string, gameId: gameId as string },
+      createContext()
+    );
+    res.json({ success: true, hasCompleted: result.completed });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+app.get('/api/game/completed', async (req: any, res: any) => {
+  try {
+    const { username, gameId } = req.query;
+    const result = await hasUserCompletedGame(
+      { username: username as string, gameId: gameId as string },
+      createContext()
+    );
+    res.json({ success: true, hasCompleted: result.completed });
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+app.get('/api/game/statistics', async (req: any, res: any) => {
+  try {
+    const { gameId } = req.query;
+    let resolvedGameId = gameId as string;
+
+    if (resolvedGameId && !resolvedGameId.startsWith('game_')) {
+      const normalizedPostId = resolvedGameId.startsWith('t3_')
+        ? resolvedGameId
+        : `t3_${resolvedGameId}`;
+      let postData = await redis.hGetAll(`post:${normalizedPostId}`);
+      if (!postData || !postData.gameId) {
+        postData = await redis.hGetAll(`post:${resolvedGameId}`);
+      }
+      if (postData && postData.gameId) {
+        resolvedGameId = postData.gameId as string;
+      }
+    }
+
+    const result = await getGameStatistics({ gameId: resolvedGameId }, createContext());
+    res.json(result);
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+// Get game state (MUST be before catch-all route)
+app.get('/api/game/state', async (req: any, res: any) => {
+  try {
+    const { username, userId, gameId } = req.query;
+    const resolvedUsername = (username as string) || (userId as string);
+    const result = await getGameState(
+      { username: resolvedUsername, gameId: gameId as string },
+      createContext()
+    );
+    res.json(result);
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+app.get('/api/game/check-comment', async (req: any, res: any) => {
+  try {
+    const { gameId, username } = req.query;
+
+    if (!gameId || !username) {
+      res.json({ success: false, error: 'Missing gameId or username' });
+      return;
+    }
+
+    const { checkUserComment } = await import('../../game/server/gameHandler.js');
+    const result = await checkUserComment(gameId, username, createContext());
+
+    res.json(result);
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
 app.get('/api/game/:gameId', async (req: any, res: any) => {
   try {
     const gameId = req.params.gameId as string;
@@ -191,8 +326,11 @@ app.get('/api/game/:gameId', async (req: any, res: any) => {
 // Get random game
 app.post('/api/game/random', async (req: any, res: any) => {
   try {
-    const { username } = req.body;
-    const result = await getRandomGame({ username }, createContext());
+    const { username, excludeIds, preferUserCreated, useStickyNavigation } = req.body;
+    const result = await getRandomGame(
+      { username, excludeIds, preferUserCreated, useStickyNavigation },
+      createContext()
+    );
     res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -209,25 +347,12 @@ app.post('/api/game/save', async (req: any, res: any) => {
   }
 });
 
-// Get game state
-app.get('/api/game/state', async (req: any, res: any) => {
-  try {
-    const { userId, gameId } = req.query;
-    const result = await getGameState(
-      { userId: userId as string, gameId: gameId as string },
-      createContext()
-    );
-    res.json(result);
-  } catch (error) {
-    res.json({ success: false, error: String(error) });
-  }
-});
-
 // Save game state
 app.post('/api/game/state', async (req: any, res: any) => {
   try {
-    const { userId, gameId, playerState } = req.body;
-    await saveGameState({ userId, gameId, playerState }, createContext());
+    const { username, userId, gameId, playerState } = req.body;
+    const resolvedUsername = username || userId;
+    await saveGameState({ username: resolvedUsername, gameId, playerState }, createContext());
     res.json({ success: true });
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -256,27 +381,22 @@ app.post('/api/game/track-guess', async (req: any, res: any) => {
   }
 });
 
-// Check completion
-app.get('/api/game/completed', async (req: any, res: any) => {
-  try {
-    const { username, gameId } = req.query;
-    const hasCompleted = await hasUserCompletedGame(
-      username as string,
-      gameId as string,
-      createContext()
-    );
-    res.json({ success: true, hasCompleted });
-  } catch (error) {
-    res.json({ success: false, error: String(error) });
-  }
-});
-
 // Post completion comment
 app.post('/api/game/completion-comment', async (req: any, res: any) => {
   try {
-    const { postId, score, guess, timeTaken } = req.body;
-    await postCompletionComment({ postId, score, guess, timeTaken }, createContext());
-    res.json({ success: true });
+    const { gameId, username, numGuesses, gifHints, redditPostId } = req.body;
+
+    if (!gameId || !username) {
+      res.json({ success: false, error: 'Missing gameId or username' });
+      return;
+    }
+
+    const result = await postCompletionComment(
+      { gameId, username, numGuesses, gifHints, redditPostId },
+      createContext()
+    );
+
+    res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
   }
@@ -295,6 +415,11 @@ app.post('/api/giphy/search', async (req: any, res: any) => {
 app.post('/api/giphy/search-multiple', async (req: any, res: any) => {
   try {
     const { queries, limit } = req.body;
+
+    if (!queries || !Array.isArray(queries)) {
+      return res.json({ success: false, error: 'Invalid queries parameter' });
+    }
+
     const results = await searchMultipleGiphyGifs(createContext(), queries, limit);
     res.json({ success: true, results });
   } catch (error) {
@@ -368,50 +493,37 @@ app.get('/api/leaderboard/cumulative', async (req: any, res: any) => {
 
 app.get('/api/debug/leaderboard-data', async (_req: any, res: any) => {
   try {
-    const cumulativeUsers = await redis.zRange('cumulativeLeaderboard', 0, -1, { by: 'rank', reverse: true });
-    const globalEntries = await redis.zRange('globalLeaderboard', 0, 20, { by: 'rank', reverse: true });
-    
-    const uniqueUsers = new Set<string>();
-    for (const item of globalEntries) {
-      const member = typeof item.member === 'string' ? item.member : String(item.member);
-      const parts = member.split(':');
-      if (parts.length >= 2) {
-        const username = parts.slice(1).join(':');
-        uniqueUsers.add(username);
-      }
+    const cumulativeUsers = await redis.zRange('cumulativeLeaderboard', 0, -1, {
+      by: 'rank',
+      reverse: true,
+    });
+    const globalEntries = await redis.zRange('globalLeaderboard', 0, -1, {
+      by: 'rank',
+      reverse: true,
+    });
+
+    // Get sample user stats for debugging
+    const sampleUserStats: any = {};
+    for (let i = 0; i < Math.min(5, cumulativeUsers.length); i++) {
+      const username =
+        typeof cumulativeUsers[i].member === 'string'
+          ? cumulativeUsers[i].member
+          : String(cumulativeUsers[i].member);
+      sampleUserStats[username] = await redis.hGetAll(`userStats:${username}`);
     }
-    
-    const sampleStats: Record<string, any> = {};
-    const usersToCheck = Array.from(uniqueUsers).slice(0, 5);
-    for (const username of usersToCheck) {
-      const stats = await redis.hGetAll(`userStats:${username}`);
-      sampleStats[username] = stats;
-    }
-    
+
     res.json({
       success: true,
       cumulativeLeaderboard: {
-        count: cumulativeUsers.length,
-        top5: cumulativeUsers.slice(0, 5),
+        total: cumulativeUsers.length,
+        entries: cumulativeUsers.slice(0, 10),
       },
       globalLeaderboard: {
-        count: globalEntries.length,
-        top5: globalEntries.slice(0, 5),
-        uniqueUsers: Array.from(uniqueUsers).slice(0, 10),
+        total: globalEntries.length,
       },
-      sampleUserStats: sampleStats,
+      sampleUserStats,
+      redisInfo: 'Data persists in installed apps but is ephemeral in playtest mode',
     });
-  } catch (error) {
-    res.json({ success: false, error: String(error) });
-  }
-});
-
-// Game statistics
-app.get('/api/game/statistics', async (req: any, res: any) => {
-  try {
-    const { gameId } = req.query;
-    const result = await getGameStatistics(gameId as string, createContext());
-    res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
   }
@@ -420,8 +532,8 @@ app.get('/api/game/statistics', async (req: any, res: any) => {
 // Creator bonus stats
 app.get('/api/creator/bonus-stats', async (req: any, res: any) => {
   try {
-    const { username } = req.query;
-    const result = await getCreatorBonusStats(username as string, createContext());
+    const { gameId } = req.query;
+    const result = await getCreatorBonusStats(gameId as string, createContext());
     res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -443,14 +555,14 @@ app.post('/api/admin/trigger-pregeneration', async (req: any, res: any) => {
     const force = req.body?.force || false;
     const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
     await preGenerateItems(createContext(), force);
-    res.json({ 
-      success: true, 
-      message: 'Pre-generation completed successfully' 
+    res.json({
+      success: true,
+      message: 'Pre-generation completed successfully',
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: String(error) 
+    res.status(500).json({
+      success: false,
+      error: String(error),
     });
   }
 });
@@ -459,11 +571,16 @@ app.get('/api/admin/pregeneration-status', async (_req: any, res: any) => {
   try {
     const stats = await redis.get('pregenerated:stats');
     const lastRun = await redis.get('pregenerated:last_run');
-    
+
     const categoryCounts: Record<string, any> = {};
-    const categories: CategoryType[] = ['Viral Vibes', 'Cinematic Feels', 'Gaming Moments', 'Story Experiences'];
+    const categories: CategoryType[] = [
+      'Viral Vibes',
+      'Cinematic Feels',
+      'Gaming Moments',
+      'Story Experiences',
+    ];
     const inputTypes: ('word' | 'phrase')[] = ['word', 'phrase'];
-    
+
     for (const category of categories) {
       categoryCounts[category] = {};
       for (const inputType of inputTypes) {
@@ -472,30 +589,36 @@ app.get('/api/admin/pregeneration-status', async (_req: any, res: any) => {
         categoryCounts[category][inputType] = countStr ? parseInt(countStr) : 0;
       }
     }
-    
+
     res.json({
       hasRun: !!lastRun,
       lastRun: lastRun || null,
       stats: stats ? JSON.parse(stats) : null,
-      categoryCounts
+      categoryCounts,
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: String(error) 
+    res.status(500).json({
+      success: false,
+      error: String(error),
     });
   }
 });
 
 app.post('/api/game/mark-completed', async (req: any, res: any) => {
   try {
-    const { username, gameId, gifHintCount, revealedLetters, finalGuess, hasGivenUp, timeTaken } = req.body;
+    const { username, gameId, gifHintCount, revealedLetters, finalGuess, hasGivenUp, timeTaken } =
+      req.body;
     const ctx = createContext();
 
     let resolvedUsername = username;
     if (!username || username.toLowerCase() === 'anonymous') {
       const fetched = await reddit.getCurrentUsername();
       if (fetched) resolvedUsername = fetched;
+    }
+
+    if (!resolvedUsername) {
+      res.json({ success: false, error: 'Username is required to mark completion' });
+      return;
     }
 
     const playerState = {
@@ -507,7 +630,18 @@ app.post('/api/game/mark-completed', async (req: any, res: any) => {
       hasGivenUp: hasGivenUp || false,
     };
 
-    await saveGameState({ gameId, username: resolvedUsername, playerState }, ctx);
+    const saveResult = await saveGameState(
+      { gameId, username: resolvedUsername, playerState },
+      ctx
+    );
+    if (!saveResult?.success) {
+      res.json({ success: false, error: saveResult?.error || 'Failed to save game state' });
+      return;
+    }
+
+    // Add game to user's completed games set
+    const completedGamesKey = `user:${resolvedUsername}:completedGames`;
+    await redis.zAdd(completedGamesKey, { score: Date.now(), member: gameId });
 
     const gameResult = await getGame({ gameId }, ctx);
     if (gameResult.success && gameResult.game && gameResult.game.word) {
@@ -518,15 +652,18 @@ app.post('/api/game/mark-completed', async (req: any, res: any) => {
         timeTaken: timeTaken || 0,
       });
 
-      await saveScore({
-        username: resolvedUsername,
-        gameId,
-        score: scoreData.score,
-        gifPenalty: scoreData.gifPenalty,
-        wordPenalty: scoreData.wordPenalty,
-        timeTaken: scoreData.timeTaken,
-        timestamp: Date.now(),
-      }, ctx);
+      await saveScore(
+        {
+          username: resolvedUsername,
+          gameId,
+          score: scoreData.score,
+          gifPenalty: scoreData.gifPenalty,
+          wordPenalty: scoreData.wordPenalty,
+          timeTaken: scoreData.timeTaken,
+          timestamp: Date.now(),
+        },
+        ctx
+      );
 
       await redis.del(`user:${resolvedUsername}:assignedGame`);
     }
@@ -568,7 +705,7 @@ app.get('/api/game/unplayed', async (req: any, res: any) => {
 // Remove system users from leaderboard
 app.post('/api/leaderboard/clean', async (req: any, res: any) => {
   try {
-    const result = await removeSystemUsersFromLeaderboard(createContext());
+    const result = await removeSystemUsersFromLeaderboard(createContext(), true);
     res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -578,7 +715,7 @@ app.post('/api/leaderboard/clean', async (req: any, res: any) => {
 app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
   try {
     const force = Boolean(req.body?.data?.force);
-    
+
     if (!force) {
       try {
         const subreddit = await reddit.getCurrentSubreddit();
@@ -592,7 +729,7 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         return;
       }
     }
-    
+
     if (!force) {
       try {
         const now = new Date();
@@ -605,12 +742,12 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         const [hhStr, mmStr] = timeStr.split(':');
         const hour = Number(hhStr);
         const minute = Number(mmStr);
-        
+
         if (!((hour === 9 || hour === 19) && minute === 0)) {
           res.json({ status: 'skipped: outside posting window' });
           return;
         }
-        
+
         const dateParts = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'America/Chicago',
           year: 'numeric',
@@ -624,18 +761,18 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
             if (p.type !== 'literal') acc[p.type] = p.value;
             return acc;
           }, {} as any);
-        
+
         const yyyy = dateParts.year;
         const mm = dateParts.month;
         const dd = dateParts.day;
         const hh = dateParts.hour;
         const lockKey = `autoPostLock:${yyyy}-${mm}-${dd}:${hh}`;
-        
+
         const setResult = await redis.set(lockKey, '1', {
           nx: true,
           ex: 7200,
         } as any);
-        
+
         if (!setResult) {
           res.json({ status: 'skipped: lock exists' });
           return;
@@ -645,39 +782,54 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         return;
       }
     }
-    
-    const categories: CategoryType[] = ['Cinematic Feels', 'Gaming Moments', 'Story Experiences', 'Viral Vibes'];
+
+    const categories: CategoryType[] = [
+      'Cinematic Feels',
+      'Gaming Moments',
+      'Story Experiences',
+      'Viral Vibes',
+    ];
     const fallbackData: Record<CategoryType, { word: string[]; phrase: string[] }> = {
       'Cinematic Feels': {
         word: ['STARWARS', 'TITANIC', 'AVENGERS', 'BATMAN', 'SPIDERMAN'],
-        phrase: ['MAY THE FORCE BE WITH YOU', 'TO INFINITY AND BEYOND']
+        phrase: ['MAY THE FORCE BE WITH YOU', 'TO INFINITY AND BEYOND'],
       },
       'Gaming Moments': {
         word: ['POKEMON', 'MARIO', 'SONIC', 'ZELDA', 'FORTNITE'],
-        phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE']
+        phrase: ['GAME OVER', 'LEVEL UP', 'NEW HIGH SCORE'],
       },
       'Story Experiences': {
         word: ['HARRY', 'POTTER', 'SHERLOCK', 'HOLMES', 'DRACULA'],
-        phrase: ['ONCE UPON A TIME', 'THE END', 'TO BE CONTINUED']
+        phrase: ['ONCE UPON A TIME', 'THE END', 'TO BE CONTINUED'],
       },
       'Viral Vibes': {
         word: ['RICKROLL', 'CRINGE', 'AWKWARD', 'HYPE', 'SHOCKED'],
-        phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP']
-      }
+        phrase: ['MIC DROP', 'SIDE EYE', 'PLOT TWIST', 'GLOW UP'],
+      },
     };
     const fallbackSynonyms: Record<string, string[][]> = {
-      'STARWARS': [['space', 'lightsaber', 'force', 'jedi'], ['galaxy', 'darth', 'vader', 'rebel'], ['yoda', 'luke', 'princess', 'leia'], ['death', 'star', 'empire', 'hope']],
-      'POKEMON': [['pikachu', 'catch', 'trainer', 'battle'], ['ash', 'gym', 'evolution', 'pokeball'], ['gotta', 'catch', 'em', 'all'], ['monster', 'creature', 'adventure', 'friend']],
+      'STARWARS': [
+        ['space', 'lightsaber', 'force', 'jedi'],
+        ['galaxy', 'darth', 'vader', 'rebel'],
+        ['yoda', 'luke', 'princess', 'leia'],
+        ['death', 'star', 'empire', 'hope'],
+      ],
+      'POKEMON': [
+        ['pikachu', 'catch', 'trainer', 'battle'],
+        ['ash', 'gym', 'evolution', 'pokeball'],
+        ['gotta', 'catch', 'em', 'all'],
+        ['monster', 'creature', 'adventure', 'friend'],
+      ],
     };
-    
+
     const pickRandom = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-    const pickInputType = (): 'word' | 'phrase' => Math.random() < 0.5 ? 'word' : 'phrase';
-    
+    const pickInputType = (): 'word' | 'phrase' => (Math.random() < 0.5 ? 'word' : 'phrase');
+
     const category = pickRandom(categories);
     let inputType: 'word' | 'phrase' = req.body?.data?.inputType || pickInputType();
     let recommendations: string[] = [];
     let synonyms: string[][] = [];
-    
+
     try {
       const recResult = await fetchGeminiRecommendations(createContext(), category, inputType, 10);
       if (recResult.success && recResult.recommendations?.length) {
@@ -695,11 +847,11 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         inputType = 'word';
       }
     }
-    
+
     const word = recommendations[0];
     const actualInputType = word.includes(' ') ? 'phrase' : 'word';
     inputType = actualInputType;
-    
+
     try {
       const synResult = await fetchGeminiSynonyms(createContext(), word);
       if (synResult.success && synResult.synonyms?.length) {
@@ -712,14 +864,14 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         ['think', 'guess', 'solve', 'answer'],
         ['brain', 'mind', 'logic', 'reason'],
         ['puzzle', 'mystery', 'riddle', 'challenge'],
-        ['find', 'discover', 'reveal', 'uncover']
+        ['find', 'discover', 'reveal', 'uncover'],
       ];
     }
-    
+
     const gifUrls: string[] = [];
     const gifDescriptions: string[] = [];
     const gifSearchTerms: string[] = [];
-    
+
     for (const synonymGroup of synonyms) {
       if (gifUrls.length >= 4) break;
       const term = synonymGroup[0];
@@ -734,31 +886,32 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         }
       }
     }
-    
+
     if (gifUrls.length !== 4) {
       res.json({ status: 'error: insufficient gifs' });
       return;
     }
-    
+
     const validation = await validateGifWordMatch(
       { word, gifDescriptions, searchTerms: gifSearchTerms },
       createContext()
     );
-    
+
     if (!validation.isValid || validation.matchScore < 0.5) {
       res.json({ status: 'error: validation failed' });
       return;
     }
-    
+
     const maskedWord = word
       .split('')
       .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
       .join('');
-    
-    const questionText = inputType === 'phrase'
-      ? 'Can you decode the phrase from this GIF?'
-      : 'Can you decode the word from this GIF?';
-    
+
+    const questionText =
+      inputType === 'phrase'
+        ? 'Can you decode the phrase from this GIF?'
+        : 'Can you decode the word from this GIF?';
+
     await saveGame(
       {
         word,
@@ -771,7 +924,7 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
       },
       createContext()
     );
-    
+
     res.json({ status: 'ok' });
   } catch (error) {
     res.status(500).json({ status: 'error', error: String(error) });
@@ -780,7 +933,8 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
 
 app.post('/internal/scheduler/clean-leaderboards', async (_req: any, res: any) => {
   try {
-    await removeSystemUsersFromLeaderboard(createContext());
+    // Auto-scheduler - do NOT include test accounts
+    await removeSystemUsersFromLeaderboard(createContext(), false);
     res.json({ status: 'ok' });
   } catch (error) {
     res.status(500).json({ status: 'error', error: String(error) });
@@ -791,7 +945,7 @@ app.post('/internal/scheduler/cache-prewarmer', async (req: any, res: any) => {
   try {
     const runPreGen = req.body?.data?.runPreGen !== false;
     const force = req.body?.data?.force || false;
-    
+
     if (runPreGen) {
       const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
       await preGenerateItems(createContext(), force);
@@ -799,7 +953,7 @@ app.post('/internal/scheduler/cache-prewarmer', async (req: any, res: any) => {
       const { preWarmCache } = await import('../../game/server/cachePreWarmer.js');
       await preWarmCache(createContext());
     }
-    
+
     res.json({ status: 'ok' });
   } catch (error) {
     res.status(500).json({ status: 'error', error: String(error) });
@@ -811,16 +965,15 @@ app.post(
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
       const subreddit = await reddit.getCurrentSubreddit();
-      const post = await reddit.submitPost({
+      const post = await reddit.submitCustomPost({
         subredditName: subreddit.name,
         title: '🎮 GIF Enigma',
-        kind: 'image',
-        imageUrls: ['eyebrows.gif'],
+        entry: 'landing',
       });
-      
-      res.json({ 
+
+      res.json({
         showToast: 'Created new GIF Enigma post!',
-        navigateTo: post.url 
+        navigateTo: post.url,
       });
     } catch (error) {
       res.json({ showToast: '❌ Failed to create GIF Enigma post' });
@@ -872,7 +1025,8 @@ app.post(
   '/internal/menu/clean-leaderboards',
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
-      await removeSystemUsersFromLeaderboard(createContext());
+      // Manual menu action - include test accounts
+      await removeSystemUsersFromLeaderboard(createContext(), true);
       res.json({ showToast: 'Leaderboards cleaned of system users!' });
     } catch (error) {
       res.json({ showToast: '❌ Error cleaning leaderboards' });
@@ -886,23 +1040,26 @@ app.post(
     try {
       const lastRunKey = 'dailyPreGen:lastRun';
       const lastRunTimestamp = await redis.get(lastRunKey);
-      
+
       if (lastRunTimestamp) {
         const lastRun = parseInt(lastRunTimestamp);
         const hoursSinceLastRun = (Date.now() - lastRun) / (1000 * 60 * 60);
-        
+
         if (hoursSinceLastRun < 23) {
-          res.json({ 
-            showToast: '⏱️ Pre-generator already ran in the last 23 hours. Use Force Regenerate to override!' 
+          res.json({
+            showToast:
+              '⏱️ Pre-generator already ran in the last 23 hours. Use Force Regenerate to override!',
           });
           return;
         }
       }
-      
+
       const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
-      preGenerateItems(createContext(), false).then(() => {}).catch(() => {});
-      
-      res.json({ showToast: '✅ Pre-generation started! Check logs for progress (takes ~2-5 min)...' });
+      await preGenerateItems(createContext(), false);
+
+      res.json({
+        showToast: '✅ Pre-generation completed successfully! Fresh data is now cached.',
+      });
     } catch (error) {
       res.json({ showToast: '❌ Failed to trigger pre-generation' });
     }
@@ -914,10 +1071,10 @@ app.post(
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
       const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
-      preGenerateItems(createContext(), true).then(() => {}).catch(() => {});
-      
-      res.json({ 
-        showToast: '✅ Pre-generation started! Check logs for progress (takes ~2-5 min)...' 
+      await preGenerateItems(createContext(), true);
+
+      res.json({
+        showToast: '✅ Pre-generation completed successfully! Fresh data is now cached.',
       });
     } catch (error) {
       res.json({ showToast: '❌ Failed to trigger pre-generation' });
@@ -925,22 +1082,30 @@ app.post(
   }
 );
 
-app.post(
-  '/internal/menu/toggle-debug',
-  async (_req: any, res: express.Response<UiResponse>) => {
-    try {
-      const currentState = await redis.get('debugMode');
-      const newState = currentState === 'true' ? 'false' : 'true';
-      await redis.set('debugMode', newState);
-      
-      res.json({ 
-        showToast: `Debug mode ${newState === 'true' ? 'enabled ✅' : 'disabled ❌'}` 
-      });
-    } catch (error) {
-      res.json({ showToast: '❌ Failed to toggle debug mode' });
-    }
+app.post('/internal/menu/toggle-debug', async (_req: any, res: express.Response<UiResponse>) => {
+  try {
+    const currentState = await redis.get('debugMode');
+    const newState = currentState === 'true' ? 'false' : 'true';
+    await redis.set('debugMode', newState);
+
+    res.json({
+      showToast: `Debug mode ${newState === 'true' ? 'enabled ✅' : 'disabled ❌'}`,
+    });
+  } catch (error) {
+    res.json({ showToast: '❌ Failed to toggle debug mode' });
   }
-);
+});
+
+// Global error handler - ensure all responses are JSON
+app.use((err: any, req: any, res: any, next: any) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || String(err),
+  });
+});
 
 const server = createServer(app);
 server.listen(getServerPort());
