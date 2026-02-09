@@ -7,6 +7,12 @@ import tailwind from '@tailwindcss/vite';
 export default defineConfig({
   plugins: [react(), tailwind()],
   root: path.join(__dirname, 'game'),
+  server: {
+    watch: {
+      usePolling: false,
+      interval: 1000,
+    },
+  },
   build: {
     outDir: path.join(__dirname, 'dist/client'),
     emptyOutDir: true,
@@ -18,10 +24,16 @@ export default defineConfig({
       compress: {
         drop_console: true,
         drop_debugger: true,
+        pure_funcs: ['console.log', 'console.info'],
+        passes: 2,
+      },
+      mangle: {
+        safari10: true,
       },
     },
     base: './',
     chunkSizeWarningLimit: 500,
+    cssCodeSplit: true,
     rollupOptions: {
       onwarn(warning, warn) {
         if (warning.code === 'EVAL' && warning.id?.includes('@protobufjs/inquire')) {
@@ -30,10 +42,28 @@ export default defineConfig({
         warn(warning);
       },
       output: {
-        manualChunks: {
-          'framer-motion': ['framer-motion'],
-          'react-vendor': ['react', 'react-dom'],
+        manualChunks: (id) => {
+          if (id.includes('node_modules')) {
+            if (id.includes('framer-motion')) {
+              return 'framer-motion';
+            }
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'react-vendor';
+            }
+            return 'vendor';
+          }
+          // Split by entry point
+          if (id.includes('/game/pages/')) {
+            const match = id.match(/\/pages\/(\w+)Page/);
+            if (match) return `page-${match[1].toLowerCase()}`;
+          }
+          if (id.includes('/game/components/')) {
+            return 'components';
+          }
         },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
       },
       input: {
         landing: resolve(__dirname, 'game', 'html', 'landing.html'),

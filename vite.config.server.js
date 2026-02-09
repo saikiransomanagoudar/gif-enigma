@@ -6,6 +6,12 @@ export default defineConfig({
   ssr: {
     noExternal: true,
   },
+  server: {
+    watch: {
+      usePolling: false,
+      interval: 1000,
+    },
+  },
   build: {
     ssr: path.join(__dirname, 'src/server/index.ts'),
     outDir: path.join(__dirname, 'dist/server'),

@@ -2,18 +2,18 @@ import '../index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { LeaderboardPage } from '../pages/LeaderboardPage';
+// @ts-ignore
 import { requestExpandedMode } from '@devvit/web/client';
 
 function LeaderboardEntry() {
-  const handleNavigate = async (page: string, params?: { gameId?: string }, event?: React.MouseEvent) => {
+  const handleNavigate = (page: string, params?: { gameId?: string }, event?: React.MouseEvent) => {
     const expandedPages = ['gameResults'];
     
     if (expandedPages.includes(page) && event) {
-      try {
-        await requestExpandedMode(event.nativeEvent, page);
-      } catch (error) {
-        console.error('Failed to enter expanded mode:', error);
-      }
+      requestExpandedMode(event.nativeEvent, page)
+        .catch(() => {
+          console.error('Failed to enter expanded mode');
+        });
     } else {
       const url = params?.gameId ? `${page}.html?gameId=${params.gameId}` : `${page}.html`;
       window.location.href = url;

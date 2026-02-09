@@ -6,17 +6,14 @@ import { LandingPage } from '../pages/LandingPage';
 import { requestExpandedMode } from '@devvit/web/client';
 
 function LandingEntry() {
-  const handleNavigate = async (page: string, event?: React.MouseEvent) => {
+  const handleNavigate = (page: string, event?: React.MouseEvent) => {
     const expandedPages = ['game', 'gameResults', 'howToPlay'];
-    
+
     if (expandedPages.includes(page) && event) {
-      try {
-        await requestExpandedMode(event.nativeEvent, page);
-      } catch (error) {
-        console.error('Failed to enter expanded mode:', error);
-      }
+      requestExpandedMode(event.nativeEvent, page).catch(() => {
+        console.error('Failed to enter expanded mode');
+      });
     } else {
-      // Navigate to other inline pages using window.location
       window.location.href = `${page}.html`;
     }
   };

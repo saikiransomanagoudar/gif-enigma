@@ -5,6 +5,7 @@
   src: url('/fonts/ComicSansMS.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
 @layer utilities {
@@ -62,6 +63,17 @@
 
 .pulse-highlight {
   animation: pulse-highlight-animation 1s ease-in-out 1;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-50px) translateX(-50%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(-50%);
+  }
 }
 
 /* Custom scrollbar styling */

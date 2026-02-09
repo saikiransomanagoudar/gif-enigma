@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Resource hints for performance -->
+    <link rel="preconnect" href="https://webview.devvit.net" crossorigin>
+    <link rel="preconnect" href="https://i.redd.it" crossorigin>
+    <link rel="dns-prefetch" href="https://media.giphy.com">
+    <link rel="dns-prefetch" href="https://webview-dev.devvit.net">
+    
+    <!-- Preload critical font -->
+    <link rel="preload" href="/fonts/ComicSansMS.ttf" as="font" type="font/ttf" crossorigin>
+    
     <meta
       http-equiv="Content-Security-Policy"
       content="
@@ -21,6 +31,7 @@
       https://*.redditmedia.com
       https://*.redditstatic.com
       https://*.redd.it;
+    font-src 'self' data:;
   "
     />
     <title>GIF Enigma</title>

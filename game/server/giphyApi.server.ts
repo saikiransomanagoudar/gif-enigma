@@ -74,13 +74,15 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
     };
   };
 
-  const tinygifSource = images.fixed_height || images.downsized || images.fixed_height_small;
+  const tinygifSource = images.fixed_height_small || images.fixed_width_small || images.downsized_small || images.fixed_height || images.downsized;
+  
+  const optimizedGifSource = images.downsized_small || images.fixed_width || images.downsized || images.original;
 
   return {
     id: raw.id,
     title: raw.title || '',
     media_formats: {
-      gif: toFormat(images.original),
+      gif: toFormat(optimizedGifSource),
       tinygif: toFormat(tinygifSource),
       mp4: images.original?.mp4
         ? {

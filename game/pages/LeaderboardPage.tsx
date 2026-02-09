@@ -155,28 +155,33 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       });
   }, []);
 
-  const handleBackClick = async (event: React.MouseEvent) => {
-    if (headerRef.current) transitions.fadeOut(headerRef.current, { duration: 300 });
-    const categoryCards = document.querySelectorAll('.category-card');
-    categoryCards.forEach((card, index) =>
-      transitions.fadeOut(card as HTMLElement, { duration: 300, delay: index * 50 })
-    );
-
-    setTimeout(async () => {
-      if (gameId) {
-        try {
-          await requestExpandedMode(event.nativeEvent, 'gameResults');
-        } catch (error) {
+  const handleBackClick = (event: React.MouseEvent) => {
+    if (gameId) {
+      requestExpandedMode(event.nativeEvent, 'gameResults')
+        .then(() => {
+          if (headerRef.current) transitions.fadeOut(headerRef.current, { duration: 300 });
+          const categoryCards = document.querySelectorAll('.category-card');
+          categoryCards.forEach((card, index) =>
+            transitions.fadeOut(card as HTMLElement, { duration: 300, delay: index * 50 })
+          );
+        })
+        .catch(() => {
           onNavigate('gameResults', { gameId });
-        }
-      } else {
-        try {
-          await exitExpandedMode(event.nativeEvent);
-        } catch (error) {
+        });
+    } else {
+      exitExpandedMode(event.nativeEvent)
+        .then(() => {
+          // Animations can happen after successful exit
+          if (headerRef.current) transitions.fadeOut(headerRef.current, { duration: 300 });
+          const categoryCards = document.querySelectorAll('.category-card');
+          categoryCards.forEach((card, index) =>
+            transitions.fadeOut(card as HTMLElement, { duration: 300, delay: index * 50 })
+          );
+        })
+        .catch(() => {
           onNavigate('landing');
-        }
-      }
-    }, 450);
+        });
+    }
   };
 
   const handleScrollToUser = () => {
@@ -194,6 +199,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       className={`relative flex h-screen w-full flex-col gap-3 pb-20 ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-[#E8E5DA] text-black'}`}
     >
       <button
+        type="button"
         ref={backButtonRef}
         onClick={handleBackClick}
         className={`absolute top-4 left-4 z-10 flex transform cursor-pointer items-center rounded-full border-none bg-[#FF4500] px-3 py-1.5 text-white opacity-0 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg md:left-6`}

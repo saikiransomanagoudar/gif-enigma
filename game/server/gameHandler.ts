@@ -59,24 +59,34 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
     const recentCreationsKey = `user:${username}:recentCreations`;
-    const attemptId = `attempt_${now}_${Math.random().toString(36).substring(2)}`;
-
-    await redis.zAdd(recentCreationsKey, {
-      member: attemptId,
-      score: now,
-    });
 
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
 
-    const recentCreations = await redis.zRange(recentCreationsKey, 0, -1, {
+    const allEntries = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
 
-    if (recentCreations.length > 4) {
-      await redis.zRem(recentCreationsKey, [attemptId]);
+    const actualGameCreations = allEntries.filter((entry) =>
+      entry.member.toString().startsWith('game_')
+    );
+
+    if (actualGameCreations.length >= 4) {
+      // Calculate when the user can create again (24 hours from oldest creation)
+      let resetTime = null;
+      let timeRemainingMs = 0;
+      if (actualGameCreations.length > 0) {
+        const oldestCreation = actualGameCreations[0];
+        if (oldestCreation && oldestCreation.score !== undefined) {
+          resetTime = oldestCreation.score + 24 * 60 * 60 * 1000;
+          timeRemainingMs = Math.max(0, resetTime - now);
+        }
+      }
+
       return {
         success: false,
         error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
+        resetTime: resetTime ? new Date(resetTime).toISOString() : undefined,
+        timeRemainingMs,
       };
     }
 
@@ -116,7 +126,6 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     const txResult = await tx.exec();
 
     if (!txResult) {
-      await redis.zRem(recentCreationsKey, [attemptId]);
       return {
         success: false,
         error: 'Failed to create game due to concurrent modification. Please try again.',
@@ -140,11 +149,13 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        // Inline web view: Create custom post with 'preview' entry point
         const post = await reddit.submitCustomPost({
           subredditName: subredditName,
           title: postTitle,
           entry: 'preview',
+          postData: {
+            gameId: gameId,
+          },
         });
 
         if (post && post.id) {
@@ -162,9 +173,10 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
             isChatPost: finalIsChatPost ? 'true' : 'false',
             entryPoint: 'preview', // Mark this as a preview post
           });
+          
         }
       } catch (redditError) {
-        // postId remains null, indicating posting failed
+       // error
       }
     }
 
@@ -175,16 +187,10 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     if (!isSystemUser) {
       const recentCreationsKey = `user:${username}:recentCreations`;
-      const allEntries = await redis.zRange(recentCreationsKey, 0, -1, { by: 'rank' });
-      const attemptEntries = allEntries.filter((entry) =>
-        entry.member.toString().startsWith('attempt_')
-      );
-      if (attemptEntries.length > 0) {
-        await redis.zRem(
-          recentCreationsKey,
-          attemptEntries.map((e) => e.member.toString())
-        );
-      }
+      await redis.zAdd(recentCreationsKey, {
+        member: gameId,
+        score: Date.now(),
+      });
 
       const result = await awardCreationBonus(username, context);
       bonusResult = {

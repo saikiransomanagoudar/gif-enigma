@@ -8,7 +8,7 @@
     "vite": "vite",
     "dev:client": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build --config vite.config.client.js --watch",
     "dev:server": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build --config vite.config.server.js --watch",
-    "dev:devvit": "devvit playtest r/gif_enigma_dev7",
+    "dev:devvit": "devvit playtest r/PlayGIFEnigma",
     "dev": "concurrently -p \"[{name}]\" -n \"DEVVIT,CLIENT,SERVER\" -c \"bgBlue.bold,bgMagenta.bold,bgGreen.bold\" \"npm run dev:devvit\" \"npm run dev:client\" \"npm run dev:server\" --restart-tries 30",
     "build:client": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build --config vite.config.client.js",
     "build:server": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build --config vite.config.server.js",

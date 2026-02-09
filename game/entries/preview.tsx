@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { GamePagePreview } from '../components/GamePagePreview';
 // @ts-ignore
-import { requestExpandedMode, context } from '@devvit/web/client';
+import { requestExpandedMode, context, getWebViewMode } from '@devvit/web/client';
 
 function PreviewEntry() {
   const [gameId, setGameId] = useState<string | null>(null);
@@ -84,17 +84,24 @@ function PreviewEntry() {
     const expandedPages = ['game', 'gameResults', 'howToPlay'];
     
     if (expandedPages.includes(page) && event) {
-      try {
-        if (page === 'game' && params?.gameId) {
-          localStorage.setItem('pendingGameId', params.gameId);
-        } else if (page === 'gameResults' && params?.gameId) {
-          localStorage.setItem('pendingGameResultsId', params.gameId);
-        }
-        requestExpandedMode(event.nativeEvent, page);
-      } catch (error) {
-        const url = params?.gameId ? `${page}.html?gameId=${params.gameId}` : `${page}.html`;
-        window.location.href = url;
-      }
+      
+      requestExpandedMode(event.nativeEvent, page)
+        .then(() => {
+          if (page === 'game' && params?.gameId) {
+            localStorage.setItem('pendingGameId', params.gameId);
+          } else if (page === 'gameResults' && params?.gameId) {
+            localStorage.setItem('pendingGameResultsId', params.gameId);
+          }
+        })
+        .catch((_error: unknown) => {
+          if (page === 'game' && params?.gameId) {
+            localStorage.setItem('pendingGameId', params.gameId);
+          } else if (page === 'gameResults' && params?.gameId) {
+            localStorage.setItem('pendingGameResultsId', params.gameId);
+          }
+          const url = params?.gameId ? `${page}.html?gameId=${params.gameId}` : `${page}.html`;
+          window.location.href = url;
+        });
     } else {
       const url = params?.gameId ? `${page}.html?gameId=${params.gameId}` : `${page}.html`;
       window.location.href = url;

@@ -48,21 +48,23 @@ function GameEntry() {
   useEffect(() => {
     async function loadGameId() {
       try {
+        const contextGameId = (context as any)?.postData?.gameId as string | undefined;
+        if (contextGameId) {
+          setGameId(contextGameId);
+          setLoading(false);
+          return;
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const urlGameId = urlParams.get('gameId');
         if (urlGameId) {
           setGameId(urlGameId);
+          setLoading(false);
           return;
         }
 
-        const pendingGameId = localStorage.getItem('pendingGameId');
-        if (pendingGameId) {
-          localStorage.removeItem('pendingGameId');
-          setGameId(pendingGameId);
-          return;
-        }
-
-        const urlPostId = urlParams.get('postId') || urlParams.get('post_id') || urlParams.get('post');
+        const urlPostId =
+          urlParams.get('postId') || urlParams.get('post_id') || urlParams.get('post');
         const pathPostId = extractPostId(window.location.pathname);
         const referrerPostId = extractPostId(document.referrer);
         const contextPostId = getPostIdFromContext();

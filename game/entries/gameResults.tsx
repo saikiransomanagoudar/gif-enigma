@@ -43,10 +43,9 @@ function GameResultsEntry() {
   useEffect(() => {
     async function loadGameId() {
       try {
-        const pendingGameId = localStorage.getItem('pendingGameResultsId');
-        if (pendingGameId) {
-          localStorage.removeItem('pendingGameResultsId');
-          setGameId(pendingGameId);
+        const contextGameId = (context as any)?.postData?.gameId as string | undefined;
+        if (contextGameId) {
+          setGameId(contextGameId);
           return;
         }
 
@@ -59,7 +58,9 @@ function GameResultsEntry() {
           }
 
           const normalizedFromGameId = normalizePostId(urlGameId);
-          const response = await fetch(`/api/post/${encodeURIComponent(normalizedFromGameId)}/game`);
+          const response = await fetch(
+            `/api/post/${encodeURIComponent(normalizedFromGameId)}/game`
+          );
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.json();
 
@@ -69,7 +70,8 @@ function GameResultsEntry() {
           }
         }
 
-        const urlPostId = urlParams.get('postId') || urlParams.get('post_id') || urlParams.get('post');
+        const urlPostId =
+          urlParams.get('postId') || urlParams.get('post_id') || urlParams.get('post');
         const pathPostId = extractPostId(window.location.pathname);
         const referrerPostId = extractPostId(document.referrer);
         const contextPostId = getPostIdFromContext();

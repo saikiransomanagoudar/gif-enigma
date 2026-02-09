@@ -2,8 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ComicText } from '../lib/fonts';
 import { colors } from '../lib/styles';
 import { Page } from '../lib/types';
-import { getGame, hasUserCompletedGame, getCurrentUser, getRandomGame } from '../lib/api';
-import { motion } from 'framer-motion';
+import {
+  getGame,
+  hasUserCompletedGame,
+  getCurrentUser,
+  getRandomGame,
+  getGameState,
+} from '../lib/api';
 // @ts-ignore
 import { requestExpandedMode } from '@devvit/web/client';
 // @ts-ignore
@@ -34,8 +39,10 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [gameState, setGameState] = useState<any>(null);
+
   const isMounted = useRef(true);
   const isHandlingRequest = useRef(false);
+
   const normalizePostId = (id: string) => (id.startsWith('t3_') ? id.slice(3) : id);
   const toAbsolutePostUrl = (url: string) => {
     if (url.startsWith('http')) return url;
@@ -56,6 +63,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     setIsDarkMode(darkModeQuery.matches);
     const handleThemeChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
     darkModeQuery.addEventListener('change', handleThemeChange);
+
     return () => {
       darkModeQuery.removeEventListener('change', handleThemeChange);
       isMounted.current = false;
@@ -72,9 +80,8 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
 
     try {
       const userResult = await getCurrentUser();
-      const currentUsername = userResult.success && userResult.username
-        ? userResult.username
-        : 'anonymous';
+      const currentUsername =
+        userResult.success && userResult.username ? userResult.username : 'anonymous';
       setUsername(currentUsername);
 
       const gameResult = await getGame(gameId);
@@ -93,7 +100,6 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
           setHasCompleted(completionFlag);
 
           try {
-            const { getGameState } = await import('../lib/api');
             const stateResult = await getGameState(currentUsername, gameId);
             if (stateResult.success && stateResult.state?.playerState) {
               setGameState(stateResult.state.playerState);
@@ -115,11 +121,16 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   }, [loadGameData]);
 
   useEffect(() => {
-    const handleFocus = () => loadGameData();
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        loadGameData();
+        setIsLoading(false);
+        setShowSuccessMessage(false);
       }
+    };
+
+    const handleFocus = () => {
+      setIsLoading(false);
+      setShowSuccessMessage(false);
     };
 
     window.addEventListener('focus', handleFocus);
@@ -129,53 +140,31 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [loadGameData]);
+  }, []);
 
-  const handleDecodeClick = async (event: React.MouseEvent | React.TouchEvent) => {    
-    if (gameId) {
-      localStorage.setItem('pendingGameId', gameId);
-    }
-    
-    try {
-      await requestExpandedMode(event.nativeEvent, 'game');
-    } catch (error) {
-      try {
-        await navigateTo('game');
-      } catch (navError) {
-        onNavigate('game', { gameId: gameId ?? undefined });
-      }
-    }
+  const handleDecodeClick = (event: React.MouseEvent) => {
+    requestExpandedMode(event.nativeEvent, 'game').catch(() => {
+      onNavigate('game', { gameId: gameId ?? undefined });
+    });
   };
 
-  const handleHowToPlayClick = async (event: React.MouseEvent | React.TouchEvent) => {
-    try {
-      await requestExpandedMode(event.nativeEvent, 'howToPlay');
-    } catch (error) {
-      try {
-        await navigateTo('howToPlay');
-      } catch (navError) {
-        onNavigate('howToPlay');
-      }
-    }
+  const handleHowToPlayClick = (event: React.MouseEvent) => {
+    requestExpandedMode(event.nativeEvent, 'howToPlay').catch(() => {
+      onNavigate('howToPlay');
+    });
   };
 
-  const handleViewResultsClick = async (event: React.MouseEvent | React.TouchEvent) => {
-    if (gameId) {
-      localStorage.setItem('pendingGameResultsId', gameId);
-    }
-    
-    try {
-      await requestExpandedMode(event.nativeEvent, 'gameResults');
-    } catch (error) {
-      try {
-        await navigateTo('gameResults');
-      } catch (navError) {
-        onNavigate('gameResults', { gameId: gameId ?? undefined });
-      }
-    }
+  const handleViewResultsClick = (event: React.MouseEvent) => {
+    requestExpandedMode(event.nativeEvent, 'gameResults').catch(() => {
+      onNavigate('gameResults', { gameId: gameId ?? undefined });
+    });
   };
 
-  const handlePlayAgainClick = async () => {
+  const handlePlayAgainClick = async (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (isHandlingRequest.current) {
       return;
     }
@@ -185,10 +174,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     setShowSuccessMessage(false);
 
     try {
-      const response = await getRandomGame(
-        username || 'anonymous',
-        { useStickyNavigation: true }
-      );
+      const response = await getRandomGame(username || 'anonymous', { useStickyNavigation: true });
 
       if (!isMounted.current) {
         return;
@@ -199,13 +185,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
         const game = resolvedGame;
         const postUrl = buildPostUrl(game);
 
-        if (
-          postUrl &&
-          game.gifs &&
-          Array.isArray(game.gifs) &&
-          game.gifs.length > 0 &&
-          game.word
-        ) {
+        if (postUrl && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
           setShowSuccessMessage(true);
 
           setTimeout(() => {
@@ -291,14 +271,14 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   }
 
   return (
-    <div className={`flex min-h-screen flex-col items-center w-full px-2 py-2 ${backgroundColor}`}>
+    <div className={`flex min-h-screen w-full flex-col items-center px-2 py-2 ${backgroundColor}`}>
       {/* Toast Notification */}
       {showToast && (
-        <motion.div
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -50 }}
-          className="fixed top-4 left-1/2 z-[10000] -translate-x-1/2 transform"
+        <div
+          className="fixed top-4 left-1/2 z-[10000] -translate-x-1/2 transform animate-[slideDown_0.3s_ease-out]"
+          style={{
+            animation: 'slideDown 0.3s ease-out',
+          }}
         >
           <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#FF4500] to-[#FF6B35] px-6 py-4 shadow-2xl backdrop-blur-sm">
             <span className="text-2xl">🎉</span>
@@ -306,7 +286,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
               {toastMessage}
             </ComicText>
           </div>
-        </motion.div>
+        </div>
       )}
 
       {/* Compact Header */}
@@ -331,7 +311,8 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
               width="300"
               height="300"
               decoding="async"
-              loading="lazy"
+              loading="eager"
+              fetchPriority="high"
               className="h-full w-full rounded-lg object-cover"
             />
           )}
@@ -344,8 +325,9 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
           // User hasn't completed the game
           <>
             <button
+              type="button"
               onClick={handleDecodeClick}
-              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
+              className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">🔍</span>
               <ComicText size={0.6} color="white">
@@ -354,8 +336,9 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
             </button>
 
             <button
+              type="button"
               onClick={handleHowToPlayClick}
-              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#4267B2] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
+              className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#4267B2] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">🤔</span>
               <ComicText size={0.6} color="white">
@@ -367,8 +350,9 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
           // User has completed the game
           <>
             <button
+              type="button"
               onClick={handleViewResultsClick}
-              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
+              className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">📊</span>
               <ComicText size={0.6} color="white">
@@ -377,8 +361,9 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
             </button>
 
             <button
+              type="button"
               onClick={handlePlayAgainClick}
-              className="cursor-pointer flex w-full max-w-[260px] items-center justify-center gap-2 rounded-full bg-[#10B981] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
+              className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#10B981] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">🎮</span>
               <ComicText size={0.6} color="white">

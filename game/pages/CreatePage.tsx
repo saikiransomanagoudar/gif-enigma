@@ -707,26 +707,18 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             (element as HTMLElement).classList.remove('opacity-0', 'translate-y-2');
           }, index * 50);
         });
-      }, 50);
-    }, 300);
+      }, 30);
+    }, 180);
   };
 
   // Refactored: Initialization effect - NO postMessage event listeners
   useEffect(() => {
     setIsPageLoaded(true);
 
-    // Apply page animations
+    // Apply page animations (fast and snappy)
     if (titleRef.current) {
       transitions.animateElement(titleRef.current, {
-        duration: 150,
-        delay: 0,
-        direction: 'up',
-      });
-    }
-
-    if (titleRef.current) {
-      transitions.animateElement(titleRef.current, {
-        duration: 150,
+        duration: 80,
         delay: 0,
         direction: 'up',
       });
@@ -734,7 +726,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (headerRef.current) {
       transitions.fadeIn(headerRef.current, {
-        duration: 150,
+        duration: 80,
         direction: 'up',
         distance: 'sm',
       });
@@ -742,7 +734,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (backButtonRef.current) {
       transitions.animateElement(backButtonRef.current, {
-        duration: 150,
+        duration: 80,
         delay: 0,
         direction: 'left',
       });
@@ -750,7 +742,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (mainContentRef.current) {
       transitions.animateElement(mainContentRef.current, {
-        duration: 150,
+        duration: 80,
         delay: 0,
         direction: 'up',
       });
@@ -758,7 +750,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (gifGridRef.current) {
       transitions.animateElement(gifGridRef.current, {
-        duration: 150,
+        duration: 80,
         delay: 0,
         direction: 'up',
       });
@@ -766,7 +758,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     if (submitButtonRef.current) {
       transitions.animateElement(submitButtonRef.current, {
-        duration: 150,
+        duration: 80,
         delay: 0,
         direction: 'up',
       });
@@ -844,7 +836,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               batchFetchingSynonyms.current.delete(query);
             });
 
-            // ✅ Check if the requested term is now in cache
+            // Check if the requested term is now in cache
             if (gifCache.current[term] && gifCache.current[term].length > 0) {
               setGifs(gifCache.current[term]);
               setIsSearching(false);
@@ -902,15 +894,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const handleBackClick = () => {
-    if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 200 });
-    }
-    if (mainContentRef.current) {
-      transitions.fadeOut(mainContentRef.current, { duration: 200, delay: 50 });
-    }
-    setTimeout(() => {
-      onNavigate('category');
-    }, 300);
+    // Navigate instantly without fade-out transitions
+    onNavigate('category');
   };
 
   const selectGifForSlot = (gif: GiphyGifResult) => {
@@ -1070,6 +1055,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       if (saveData.success) {
         setBonusAwarded(saveData.bonusAwarded !== false);
+
+        // Check if game was posted to Reddit
+        if (saveData.postedToReddit === false) {
+          setCreationError(
+            'Game created successfully, but failed to post to Reddit. You can still play it!'
+          );
+        }
+
         const limitCheck = await checkCreationLimit();
         if (limitCheck.success === true && limitCheck.canCreate === false) {
           setIsAtLimit(true);
@@ -1084,6 +1077,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setIsAtLimit(true);
           setBonusAwarded(false);
           setCreationError(null);
+          // Use timing info from error response if available
+          const timeRemaining = saveData.timeRemainingMs || 0;
+          setTimeUntilReset(timeRemaining);
         } else {
           setBonusAwarded(false);
           setCreationError(errorMsg || 'Failed to create game. Please try again.');
@@ -1100,6 +1096,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     const validGifs = selectedGifs.filter((gif) => gif !== null);
     if (!secretInput) return;
     if (validGifs.length !== 4) return;
+
+    setIsCreating(true);
 
     try {
       // Refactored: Check creation limit using API function
@@ -1122,10 +1120,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setIsAtLimit(true);
         setTimeUntilReset(timeRemaining);
         setShowSuccessModal(true);
+        setIsCreating(false);
         return;
       }
-
-      setIsCreating(true);
 
       // Create masked word
       const wordArray = secretInput.split('');
@@ -1172,6 +1169,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         setBonusAwarded(saveData.bonusAwarded !== false);
         setIsQuickCreate(false);
         setShowSuccessModal(true);
+
         const limitCheck = await checkCreationLimit();
         if (limitCheck.success === true && limitCheck.canCreate === false) {
           setIsAtLimit(true);
@@ -1188,6 +1186,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setBonusAwarded(false);
           setIsQuickCreate(false);
           setShowSuccessModal(true);
+          const timeRemaining = saveData.timeRemainingMs || 0;
+          setTimeUntilReset(timeRemaining);
         }
       }
     } catch (error) {
@@ -1196,6 +1196,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   };
 
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [animatedDots, setAnimatedDots] = useState('.');
 
   useEffect(() => {
     const darkModeQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1204,6 +1205,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     darkModeQuery.addEventListener('change', handleThemeChange);
     return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
+
+  // Animated dots for loading state
+  useEffect(() => {
+    if (isSearching && loadingStage >= 2) {
+      const interval = setInterval(() => {
+        setAnimatedDots((prev) => {
+          if (prev === '.') return '..';
+          if (prev === '..') return '...';
+          return '.';
+        });
+      }, 400);
+      return () => clearInterval(interval);
+    } else {
+      setAnimatedDots('.');
+    }
+  }, [isSearching, loadingStage]);
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
   const categoryColor = isDarkMode ? 'text-yellow-400' : 'text-black';
@@ -1382,7 +1399,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         isOpen={showSearchInput}
         onClose={() => {
           transitions.fadeOut(document.querySelector('.modal-content'), {
-            duration: 200,
+            duration: 120,
             onComplete: () => {
               if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
@@ -1456,7 +1473,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                 <ComicText size={0.7} color="#60A5FA" className="text-center">
                   {loadingStage < 1 && `🔍 Analyzing your ${inputType}...`}
                   {loadingStage >= 1 && loadingStage < 2 && '🎬 Searching GIF library...'}
-                  {loadingStage >= 2 && '✨ Selecting best matches...'}
+                  {loadingStage >= 2 && `✨ Selecting best matches${animatedDots}`}
                 </ComicText>
               </div>
             </div>
@@ -1507,7 +1524,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                             : 'border-gray-700 hover:border-gray-500'
                         }`}
                       >
-                        <div className="relative h-20 w-full bg-black">
+                        <div className="relative h-22 w-full bg-black">
                           <img
                             src={url}
                             alt={gif.content_description || `GIF ${idx + 1}`}

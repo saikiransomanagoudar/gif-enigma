@@ -155,12 +155,11 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleHowToPlayClick = async (event: React.MouseEvent) => {
-    try {
-      await requestExpandedMode(event.nativeEvent, 'howToPlay');
-    } catch (error) {
-      onNavigate('howToPlay');
-    }
+  const handleHowToPlayClick = (event: React.MouseEvent) => {
+    requestExpandedMode(event.nativeEvent, 'howToPlay')
+      .catch(() => {
+        onNavigate('howToPlay');
+      });
   };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
@@ -213,17 +212,17 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         <div className="relative flex flex-col items-center p-4 pt-6 max-sm:mt-0 md:pt-12">
           {/* Leaderboard Button */}
           <motion.button
+            type="button"
             className={`absolute top-4 right-2 mt-2 cursor-pointer rounded-lg px-4 py-3 text-lg select-none max-sm:top-2 max-sm:mt-2 max-sm:px-3 max-sm:py-2 md:top-4 md:px-2.5 md:py-2 md:text-base ${
               ifhover === 'btn1'
                 ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
                 : 'border-border border-1 bg-[#E8E5DA] text-black'
             }`}
-            onClick={async (event) => {
-              try {
-                await requestExpandedMode(event.nativeEvent, 'leaderboard');
-              } catch (error) {
-                onNavigate('leaderboard');
-              }
+            onClick={(event) => {
+              requestExpandedMode(event.nativeEvent, 'leaderboard')
+                .catch(() => {
+                  onNavigate('leaderboard');
+                });
             }}
             onMouseEnter={() => setHover('btn1')}
             onMouseLeave={() => setHover(null)}
@@ -314,6 +313,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         >
           <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
             <button
+              type="button"
               className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}
               onClick={handleHowToPlayClick}
               onMouseEnter={() => setHover('btn2')}

@@ -64,7 +64,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   };
 
   // Refactored: Use getRandomGame API + navigateTo (same pattern as LandingPage)
-  const handlePlayAgainClick = async () => {
+  const handlePlayAgainClick = async (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (isHandlingPlayAgainRequest.current) {
       return;
     }
@@ -272,7 +276,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     }
   }, [gameId, username, statistics?.creatorUsername]);
 
-  const handleBackClick = () => {
+  const handleBackClick = (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     onNavigate('landing');
   };
 
@@ -329,7 +337,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   };
 
   // Refactored: Handle post comment using API function
-  const handlePostComment = async () => {
+  const handlePostComment = async (event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (!gameId || !username) {
       return;
     }
@@ -372,36 +384,10 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     }
   };
 
-  if (isLoading) {
+  if (isLoading || error || !statistics) {
     return (
       <div className={`${backgroundColor} flex min-h-screen items-center justify-center`}>
         <div className="h-16 w-16 animate-spin rounded-full border-t-4 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error || !statistics) {
-    return (
-      <div
-        className={`${backgroundColor} flex min-h-screen flex-col items-center justify-center p-5`}
-      >
-        <div className="max-w-md text-center">
-          <ComicText size={1.2} color={colors.primary}>
-            Oops!
-          </ComicText>
-          <ComicText size={0.7} color={colors.textSecondary}>
-            {error || 'Failed to load statistics'}
-          </ComicText>
-          <button
-            onClick={handleBackClick}
-            className="mt-6 cursor-pointer rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
-            style={{ backgroundColor: colors.primary }}
-          >
-            <ComicText size={0.6} color="white">
-              Back to Home
-            </ComicText>
-          </button>
-        </div>
       </div>
     );
   }
@@ -426,6 +412,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
       <header className="relative mb-3 flex w-full items-center justify-between">
         <button
+          type="button"
           onClick={handleBackClick}
           className="flex cursor-pointer items-center rounded-full border-none px-3 py-1.5 transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg"
           style={{ backgroundColor: colors.primary }}
@@ -629,6 +616,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             return shouldShow;
           })() && (
             <button
+              type="button"
               onClick={handlePostComment}
               disabled={isCommentPosting || isCommentPosted || !username}
               className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-300 disabled:cursor-not-allowed sm:w-auto sm:min-w-[220px] ${
@@ -661,12 +649,12 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
 
           <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
             <button
-              onClick={async (event) => {
-                try {
-                  await requestExpandedMode(event.nativeEvent, 'leaderboard');
-                } catch (error) {
-                  onNavigate('leaderboard', { gameId: statistics.gameId });
-                }
+              type="button"
+              onClick={(event) => {
+                requestExpandedMode(event.nativeEvent, 'leaderboard')
+                  .catch(() => {
+                    onNavigate('leaderboard', { gameId: statistics.gameId });
+                  });
               }}
               className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg sm:w-auto sm:min-w-[220px] sm:flex-1"
               style={{ backgroundColor: colors.primary }}
@@ -678,6 +666,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             </button>
 
             <button
+              type="button"
               onClick={handlePlayAgainClick}
               disabled={isFindingGame || gameFound}
               className="play-again-button flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-3 text-white sm:w-auto sm:min-w-[220px] sm:flex-1"

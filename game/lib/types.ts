@@ -153,6 +153,8 @@ export interface SaveGameResponse {
   redditPostId?: string;
   bonusAwarded?: boolean;
   error?: string;
+  resetTime?: string;
+  timeRemainingMs?: number;
   settings?: {
     isOriginalContent: boolean;
     isChatPost: boolean;

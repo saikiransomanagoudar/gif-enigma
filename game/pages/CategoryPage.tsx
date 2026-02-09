@@ -3,7 +3,11 @@ import { colors } from '../lib/styles';
 import { ComicText } from '../lib/fonts';
 import * as transitions from '../../src/utils/transitions';
 import { NavigationProps, Page } from '../lib/types';
-export type CategoryType = 'Cinematic Feels' | 'Gaming Moments' | 'Story Experiences' | 'Viral Vibes';
+export type CategoryType =
+  | 'Cinematic Feels'
+  | 'Gaming Moments'
+  | 'Story Experiences'
+  | 'Viral Vibes';
 
 export interface CategoryNavigationProps extends NavigationProps {
   onNavigate: (page: Page) => void;
@@ -15,6 +19,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   onCategorySelect,
 }) => {
   const [hoverCategory, setHoverCategory] = useState<CategoryType | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryType | null>(null);
   const [isPageLoaded, setIsPageLoaded] = useState(false);
 
   const headerRef = useRef<HTMLDivElement>(null);
@@ -111,46 +116,16 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
   }, []);
 
   const handleBackClick = () => {
-    if (headerRef.current) {
-      transitions.fadeOut(headerRef.current, { duration: 150 });
-    }
-
-    const categoryCards = document.querySelectorAll('.category-card');
-    categoryCards.forEach((card, index) => {
-      transitions.fadeOut(card as HTMLElement, {
-        duration: 150,
-        delay: index * 20,
-      });
-    });
-
-    setTimeout(() => {
-      onNavigate('landing');
-    }, 150);
+    // Navigate instantly without fade-out transitions
+    onNavigate('landing');
   };
 
   const handleCategorySelect = (category: CategoryType) => {
-    const categoryCards = document.querySelectorAll('.category-card');
-    const header = headerRef.current;
-
-    categoryCards.forEach((card, index) => {
-      transitions.fadeOut(card as HTMLElement, {
-        duration: 150,
-        delay: index * 20,
-      });
-    });
-
-    if (header) {
-      transitions.fadeOut(header, {
-        duration: 150,
-        delay: 50,
-      });
+    setSelectedCategory(category);
+    // Navigate instantly without fade-out transitions
+    if (onCategorySelect) {
+      onCategorySelect(category);
     }
-
-    setTimeout(() => {
-      if (onCategorySelect) {
-        onCategorySelect(category);
-      }
-    }, 150);
   };
 
   return (
@@ -173,12 +148,17 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
             Back
           </ComicText>
         </button>
-        <div className="flex w-full flex-col items-center justify-center pr-8 md:pr-12 lg:pr-20 max-sm:pr-0">
+        <div className="flex w-full flex-col items-center justify-center pr-8 max-sm:pr-0 md:pr-12 lg:pr-20">
           <div
             ref={titleRef}
             className="translate-y-4 transform opacity-0 transition-all duration-200"
           >
-            <ComicText size={1.2} color={colors.primary} align="center" className="max-sm:text-base">
+            <ComicText
+              size={1.2}
+              color={colors.primary}
+              align="center"
+              className="max-sm:text-base"
+            >
               Create GIF Enigma
             </ComicText>
           </div>
@@ -189,7 +169,7 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
             <ComicText
               size={0.8}
               color={colors.textSecondary}
-              className="mt-3 text-sm sm:text-base md:text-lg max-sm:mt-0.5 max-sm:text-xs"
+              className="mt-3 text-sm max-sm:mt-0.5 max-sm:text-xs sm:text-base md:text-lg"
             >
               Choose category for your enigma
             </ComicText>
@@ -223,15 +203,19 @@ export const CategoryPage: React.FC<CategoryNavigationProps> = ({
                 className="flex h-full flex-col items-center justify-center p-6 max-sm:p-4"
                 style={{
                   backgroundColor: category.bgColor,
-                  border: `3px solid ${hoverCategory === category.type ? 'white' : 'transparent'}`,
+                  border: `3px solid ${hoverCategory === category.type || selectedCategory === category.type ? 'white' : 'transparent'}`,
                   borderRadius: '12px',
                 }}
               >
                 <div className="mb-3 text-4xl max-sm:mb-2 max-sm:text-3xl">{category.icon}</div>
-                <ComicText size={1} color="white" className="text-center text-sm sm:text-base md:text-lg">
+                <ComicText
+                  size={1}
+                  color="white"
+                  className="text-center text-sm sm:text-base md:text-lg"
+                >
                   {category.type}
                 </ComicText>
-                <ComicText size={0.6} color="white" className="mt-1 text-center hidden sm:block">
+                <ComicText size={0.6} color="white" className="mt-1 hidden text-center sm:block">
                   {category.description}
                 </ComicText>
               </div>

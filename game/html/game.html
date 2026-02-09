@@ -7,6 +7,16 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes"
     />
+    
+    <!-- Resource hints for performance -->
+    <link rel="preconnect" href="https://webview.devvit.net" crossorigin>
+    <link rel="preconnect" href="https://i.redd.it" crossorigin>
+    <link rel="dns-prefetch" href="https://media.giphy.com">
+    <link rel="dns-prefetch" href="https://webview-dev.devvit.net">
+    
+    <!-- Preload critical font -->
+    <link rel="preload" href="/fonts/ComicSansMS.ttf" as="font" type="font/ttf" crossorigin>
+    
     <meta
       http-equiv="Content-Security-Policy"
       content="
@@ -25,6 +35,7 @@
       https://*.redditmedia.com
       https://*.redditstatic.com
       https://*.redd.it;
+    font-src 'self' data:;
   "
     />
     <meta name="description" content="Play GIF Enigma - Decode the word from animated GIF clues! Test your skills in this fun word guessing game." />
