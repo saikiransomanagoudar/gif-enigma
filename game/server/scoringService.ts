@@ -180,8 +180,14 @@ export async function saveScore(
       lastPlayed: timestamp.toString(),
     });
 
-    if (score > 0 && !isSystemUser) {
-      await redis.zIncrBy('cumulativeLeaderboard', username, score);
+
+    if (!isSystemUser) {
+      const existingScore = await redis.zScore('cumulativeLeaderboard', username);
+      if (existingScore === null || existingScore === undefined) {
+        await redis.zAdd('cumulativeLeaderboard', { member: username, score: score });
+      } else if (score > 0) {
+        await redis.zIncrBy('cumulativeLeaderboard', username, score);
+      }
     }
 
     // Invalidate leaderboard cache

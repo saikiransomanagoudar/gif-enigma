@@ -642,12 +642,24 @@ app.post('/api/game/mark-completed', async (req: any, res: any) => {
 
     const gameResult = await getGame({ gameId }, ctx);
     if (gameResult.success && gameResult.game && gameResult.game.word) {
-      const scoreData = calculateScore({
-        word: gameResult.game.word,
-        gifHintCount: playerState.gifHintCount,
-        revealedLetterCount: playerState.revealedLetters.length,
-        timeTaken: timeTaken || 0,
-      });
+      let scoreData;
+      if (hasGivenUp) {
+        // User gave up - save with 0 score
+        scoreData = {
+          score: 0,
+          gifPenalty: 0,
+          wordPenalty: 0,
+          timeTaken: timeTaken || 0,
+        };
+      } else {
+        // User completed normally - calculate actual score
+        scoreData = calculateScore({
+          word: gameResult.game.word,
+          gifHintCount: playerState.gifHintCount,
+          revealedLetterCount: playerState.revealedLetters.length,
+          timeTaken: timeTaken || 0,
+        });
+      }
 
       await saveScore(
         {
