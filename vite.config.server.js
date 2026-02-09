@@ -14,7 +14,7 @@ export default defineConfig({
   },
   build: {
     ssr: path.join(__dirname, 'src/server/index.ts'),
-    outDir: path.join(__dirname, 'dist/server'),
+    outDir: 'dist/server',
     emptyOutDir: false,
     target: 'node22',
     sourcemap: true,

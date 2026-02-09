@@ -40,6 +40,7 @@
     }
   },
   "server": {
+    "dir": "dist/server",
     "entry": "index.cjs"
   },
   "settings": {
