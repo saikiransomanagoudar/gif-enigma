@@ -84,38 +84,23 @@ app.get('/api/user/stats', async (req: any, res: any) => {
       lastPlayed: Number(statsData.lastPlayed ?? 0),
     };
 
-    const allUsers = await redis.zRange('cumulativeLeaderboard', 0, -1, { by: 'rank' });
-
-    let usersToCheck = allUsers;
-    if (allUsers.length === 0) {
-      const globalEntries = await redis.zRange('globalLeaderboard', 0, -1, { by: 'rank' });
-      const uniqueUsers = new Set<string>();
-      for (const item of globalEntries) {
-        const member = typeof item.member === 'string' ? item.member : String(item.member);
-        const parts = member.split(':');
-        if (parts.length >= 2) {
-          const user = parts.slice(1).join(':');
-          uniqueUsers.add(user);
+    // Use Redis ZRANK + ZCARD for O(log n) rank lookup instead of fetching all users
+    let rank = 0;
+    if (stats.totalScore > 0) {
+      try {
+        const [forwardRank, totalMembers] = await Promise.all([
+          redis.zRank('cumulativeLeaderboard', username),
+          redis.zCard('cumulativeLeaderboard'),
+        ]);
+        
+        if (forwardRank !== null && forwardRank !== undefined && totalMembers) {
+          rank = totalMembers - forwardRank;
         }
-      }
-      usersToCheck = Array.from(uniqueUsers).map((u) => ({ member: u, score: 0 }));
-    }
-
-    const allScores = [];
-
-    for (const item of usersToCheck) {
-      const user = typeof item.member === 'string' ? item.member : String(item.member);
-      const userData = await redis.hGetAll(`userStats:${user}`);
-      if (userData && Object.keys(userData).length > 0) {
-        const userTotalScore = Number(userData.totalScore ?? 0);
-        if (userTotalScore > 0) {
-          allScores.push(userTotalScore);
-        }
+      } catch {
+        // Fallback if rank lookup fails
+        rank = 0;
       }
     }
-
-    allScores.sort((a, b) => b - a);
-    const rank = stats.totalScore > 0 ? allScores.indexOf(stats.totalScore) + 1 : 0;
 
     res.json({ success: true, stats, rank });
   } catch (error) {

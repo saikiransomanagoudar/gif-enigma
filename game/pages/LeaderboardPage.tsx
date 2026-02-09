@@ -8,7 +8,7 @@ import { requestExpandedMode, exitExpandedMode } from '@devvit/web/client';
 // Refactored: Import API functions
 import { getCurrentUser, getTopScores, getUserStats } from '../lib/api';
 
-const CACHE_TTL = 30000;
+const CACHE_TTL = 60000;
 const LEADERBOARD_CACHE_KEY = 'gif_enigma_leaderboard_cache';
 const USER_DATA_CACHE_KEY = 'gif_enigma_user_data_cache';
 
@@ -88,44 +88,41 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
   useEffect(() => {
     async function fetchData() {
       try {
-        const [userResult, leaderboardResult] = await Promise.allSettled([
-          getCurrentUser(),
+        // Fetch user first to get username for parallel stats fetch
+        const userResult = await getCurrentUser();
+        const username = userResult.success ? userResult.user?.username : null;
+        
+        if (username) {
+          setCurrentUsername(username);
+        }
+
+        // Fetch leaderboard and user stats in parallel
+        const [leaderboardResult, statsResult] = await Promise.allSettled([
           getTopScores(),
+          username ? getUserStats(username) : Promise.resolve({ success: false }),
         ]);
 
-        // Process leaderboard data
         if (
           leaderboardResult.status === 'fulfilled' &&
           leaderboardResult.value.success &&
           Array.isArray(leaderboardResult.value.leaderboard)
         ) {
-          const top50 = leaderboardResult.value.leaderboard
-            .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
-            .slice(0, 50);
-
+          const top50 = leaderboardResult.value.leaderboard.slice(0, 50);
           setCachedLeaderboard(top50);
           setLeaderboard(top50);
         }
 
-        // Process user data
-        if (
-          userResult.status === 'fulfilled' &&
-          userResult.value.success &&
-          userResult.value.user?.username
-        ) {
-          const username = userResult.value.user.username;
-          setCurrentUsername(username);
+        // Process user stats
+        if (statsResult.status === 'fulfilled' && statsResult.value.success) {
+          const stats = {
+            totalScore: statsResult.value.stats?.score ?? 0,
+            rank: statsResult.value.rank ?? 0,
+          };
 
-          const statsData = await getUserStats(username);
-          if (statsData.success) {
-            const stats = {
-              totalScore: statsData.stats?.score ?? 0,
-              rank: statsData.rank ?? 0,
-            };
-
+          if (username) {
             setCachedUserData(username, stats);
-            setUserStats(stats);
           }
+          setUserStats(stats);
         }
 
         setIsLoading(false);
@@ -133,8 +130,14 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
         setIsLoading(false);
       }
     }
-    fetchData();
-  }, []);
+    
+    if (!hasCachedData) {
+      fetchData();
+    } else {
+      setIsLoading(false);
+      fetchData();
+    }
+  }, [hasCachedData]);
 
   useEffect(() => {
     if (headerRef.current)

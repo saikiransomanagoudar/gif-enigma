@@ -351,7 +351,7 @@ export async function getCumulativeLeaderboard(
   try {
     const { limit = 10 } = params;
     const cacheKey = `leaderboard:cumulative:${limit}`;
-    const cacheTTL = 120;
+    const cacheTTL = 300;
 
     const cached = await redis.get(cacheKey);
     if (cached) {
