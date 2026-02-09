@@ -454,12 +454,7 @@ export async function awardCreationBonus(
       return item.score >= twentyFourHoursAgo;
     });
 
-    await redis.zAdd(recentCreationsKey, {
-      member: `game_${now}`,
-      score: now,
-    });
-    await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
-    const shouldAwardBonus = creationsInLast24h.length < 4;
+    const shouldAwardBonus = creationsInLast24h.length <= 4;
 
     let userStats: any = await redis.hGetAll(`userStats:${username}`).catch(() => ({}));
 
@@ -487,6 +482,7 @@ export async function awardCreationBonus(
       ...userStats,
       gamesCreated: gamesCreated.toString(),
       totalScore: totalScore.toString(),
+      creatorBonusEarned: (Number(userStats.creatorBonusEarned || 0) + bonusXP).toString(),
       lastPlayed: Date.now().toString(),
     });
 

@@ -91,13 +91,14 @@ function transformGiphyResult(raw: GiphyRawGifResult, query: string): GiphyGifRe
         };
     };
 
+    // Balanced quality formats for reliable loading
     return {
         id: raw.id,
         title: raw.title || '',
         media_formats: {
-            gif: toFormat(images.original),
-            tinygif: toFormat(images.fixed_height) || toFormat(images.downsized),
-            mediumgif: toFormat(images.original) || toFormat(images.fixed_height),
+            gif: toFormat(images.fixed_width) || toFormat(images.downsized) || toFormat(images.original),
+            tinygif: toFormat(images.fixed_width) || toFormat(images.downsized) || toFormat(images.fixed_height),
+            mediumgif: toFormat(images.fixed_width) || toFormat(images.downsized) || toFormat(images.original),
             nanogif: toFormat(images.preview_gif) || toFormat(images.fixed_width_small),
         },
         content_description: raw.alt_text || raw.title || `${query} gif`,

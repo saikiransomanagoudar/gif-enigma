@@ -24,7 +24,6 @@ interface GameResultsPageProps extends NavigationProps {
 }
 
 export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, gameId }) => {
-  
   const [statistics, setStatistics] = useState<GameStatistics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,23 +77,14 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     setGameFound(false);
 
     try {
-      const response = await getRandomGame(
-        username || 'anonymous',
-        { useStickyNavigation: true }
-      );
+      const response = await getRandomGame(username || 'anonymous', { useStickyNavigation: true });
 
       const resolvedGame = response.game || response.result?.game;
       if (response.success && resolvedGame) {
         const game = resolvedGame;
         const postUrl = buildPostUrl(game);
 
-        if (
-          postUrl &&
-          game.gifs &&
-          Array.isArray(game.gifs) &&
-          game.gifs.length > 0 &&
-          game.word
-        ) {
+        if (postUrl && game.gifs && Array.isArray(game.gifs) && game.gifs.length > 0 && game.word) {
           setGameFound(true);
 
           setTimeout(() => {
@@ -164,7 +154,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       async function checkComment() {
         try {
           const data = await checkUserComment(username!, gameId!);
-          
+
           if (data.success && data.hasCommented) {
             setHasAlreadyCommented(true);
             setIsCommentPosted(true);
@@ -172,7 +162,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             setHasAlreadyCommented(false);
           }
         } catch (error) {
-            // error
+          // error
         }
       }
       checkComment();
@@ -241,7 +231,9 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           setError(null);
         } else {
           if (statsData.error === 'Game not found') {
-            setError('This game data has expired (common in playtest mode). Your score was saved, but detailed stats are no longer available.');
+            setError(
+              'This game data has expired (common in playtest mode). Your score was saved, but detailed stats are no longer available.'
+            );
           } else {
             setError(statsData.error || 'Failed to load statistics');
           }
@@ -363,7 +355,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         gifHintsUsed,
         statistics?.redditPostId
       );
-      
+
       setIsCommentPosting(false);
 
       if (data.success) {
@@ -602,14 +594,13 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         {/* Bottom Buttons */}
         <div className="mt-6 flex flex-col items-center justify-center gap-4">
           {(() => {
-            // Only hide if we have explicit evidence of giving up
             const hasGivenUp = gameState?.hasGivenUp === true || gameState?.gifHintCount === 999;
             const isCreator =
               statistics?.creatorUsername && username === statistics.creatorUsername;
 
             const shouldShow =
-              isGameStateLoaded && 
-              !hasGivenUp && 
+              isGameStateLoaded &&
+              !hasGivenUp &&
               !isCreator &&
               (commentedInThisSession || !hasAlreadyCommented);
 
@@ -651,12 +642,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
             <button
               type="button"
               onClick={(event) => {
-                requestExpandedMode(event.nativeEvent, 'leaderboard')
-                  .catch(() => {
-                    onNavigate('leaderboard', { gameId: statistics.gameId });
-                  });
+                event.preventDefault();
+                event.stopPropagation();
+                onNavigate('leaderboard', { gameId: statistics.gameId });
               }}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg sm:w-auto sm:min-w-[220px] sm:flex-1"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:translate-y-0 active:scale-95 sm:w-auto sm:min-w-[220px] sm:flex-1"
               style={{ backgroundColor: colors.primary }}
             >
               <span className="text-lg">🏆</span>

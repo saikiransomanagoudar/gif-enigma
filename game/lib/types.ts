@@ -155,6 +155,7 @@ export interface SaveGameResponse {
   error?: string;
   resetTime?: string;
   timeRemainingMs?: number;
+  postingError?: string;
   settings?: {
     isOriginalContent: boolean;
     isChatPost: boolean;

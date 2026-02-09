@@ -61,6 +61,7 @@ const GIF_CACHE_PREFIX = 'giphy_gif:';
 function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyGifResult {
   const images = raw.images || {};
 
+  // Helper to create a GiphyGifFormat from a rendition
   const toFormat = (rendition: GiphyImageRendition | undefined): GiphyGifFormat => {
     if (!rendition || !rendition.url) {
       return { url: '', dims: [0, 0], duration: 0, preview: '', size: 0 };
@@ -74,15 +75,14 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
     };
   };
 
-  const tinygifSource = images.fixed_height_small || images.fixed_width_small || images.downsized_small || images.fixed_height || images.downsized;
-  
-  const optimizedGifSource = images.downsized_small || images.fixed_width || images.downsized || images.original;
+  // Use fixed_height as tinygif equivalent (better quality, ~200px height)
+  const tinygifSource = images.fixed_height || images.downsized || images.fixed_height_small;
 
   return {
     id: raw.id,
     title: raw.title || '',
     media_formats: {
-      gif: toFormat(optimizedGifSource),
+      gif: toFormat(images.original),
       tinygif: toFormat(tinygifSource),
       mp4: images.original?.mp4
         ? {
@@ -167,7 +167,7 @@ async function cacheGiphyGif(_context: Context, giphyGif: GiphyGifResult): Promi
       await redis.set(cacheKey, JSON.stringify(cachedResult));
       await redis.expire(cacheKey, CACHE_TTL);
     } catch {
-      // Redis cache failed
+      // Redis cache failed, but return valid result anyway
     }
 
     return cachedResult;
@@ -419,14 +419,13 @@ export async function searchMultipleGiphyGifs(
 
   try {
     const searchWithTimeout = async () => {
-      let batchTimeoutId: NodeJS.Timeout;
       const timeoutPromise = new Promise<{ [query: string]: GiphyGifResult[] }>((_, reject) => {
-        batchTimeoutId = setTimeout(() => reject(new Error('Batch search timeout')), 60000);
+        setTimeout(() => reject(new Error('Batch search timeout')), 30000);
       });
 
-      // Wrap search to clear timeout immediately when it completes
       const searchPromise = (async () => {
         const uncachedQueries: string[] = [];
+
         for (const query of uniqueQueries) {
           try {
             const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
@@ -442,7 +441,7 @@ export async function searchMultipleGiphyGifs(
             } else {
               uncachedQueries.push(query);
             }
-          } catch (error) {
+          } catch {
             uncachedQueries.push(query);
           }
         }
@@ -451,31 +450,11 @@ export async function searchMultipleGiphyGifs(
           await new Promise((resolve) => setTimeout(resolve, index * 150));
 
           try {
-            const queryTimeout = 30000;
-            let timeoutId: NodeJS.Timeout;
-
-            const queryPromise = searchGiphyGifs(context, query, limit)
-              .then((results) => {
-                clearTimeout(timeoutId);
-                return results;
-              })
-              .catch((error) => {
-                clearTimeout(timeoutId);
-                throw error;
-              });
-
-            const timeoutPromise = new Promise<GiphyGifResult[]>((_, reject) => {
-              timeoutId = setTimeout(
-                () => reject(new Error(`Query timeout: ${query}`)),
-                queryTimeout
-              );
-            });
-
-            const results = await Promise.race([queryPromise, timeoutPromise]);
+            const results = await searchGiphyGifs(context, query, limit);
             resultMap[query] = results;
             if (onResult) onResult(query, results);
             return { query, results };
-          } catch (error) {
+          } catch {
             resultMap[query] = [];
             if (onResult) onResult(query, []);
             return { query, results: [] as GiphyGifResult[] };
@@ -484,22 +463,13 @@ export async function searchMultipleGiphyGifs(
 
         await Promise.all(fetchPromises);
         return resultMap;
-      })()
-        .then((results) => {
-          clearTimeout(batchTimeoutId);
-          return results;
-        })
-        .catch((error) => {
-          clearTimeout(batchTimeoutId);
-          throw error;
-        });
+      })();
 
       return Promise.race([searchPromise, timeoutPromise]);
     };
 
-    const result = await searchWithTimeout();
-    return result;
-  } catch (error) {
+    return await searchWithTimeout();
+  } catch {
     for (const query of uniqueQueries) {
       if (!resultMap[query]) {
         try {
@@ -510,7 +480,7 @@ export async function searchMultipleGiphyGifs(
           } else {
             resultMap[query] = [];
           }
-        } catch (cacheError) {
+        } catch {
           resultMap[query] = [];
         }
       }

@@ -65,7 +65,6 @@ interface PreGeneratedItem {
 
 const getGifUrl = (gif: GiphyGifResult | null): string => {
   const url = gif?.url || '';
-  // Validate URL format
   if (!url || !url.startsWith('https://')) {
     return '';
   }
@@ -223,19 +222,15 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     return `${hoursStr}hr ${minutesStr}m ${secondsStr}s`;
   };
 
-  // Safety: Clear loading state if GIFs are ready but modal is stuck loading
   useEffect(() => {
     if (isSearching && gifs.length > 0) {
-      // GIFs are loaded but loading state is still active - clear it
       setIsSearching(false);
       setLoadingStage(0);
       setIsWaitingForResults(false);
     }
   }, [gifs, isSearching]);
 
-  // Retry cache check while modal is open and still loading
   useEffect(() => {
-    // Only run if modal is open, we're waiting for results, and no GIFs yet
     if (!showSearchInput || gifs.length > 0 || !isWaitingForResults) {
       if (cacheRetryIntervalRef.current) {
         clearInterval(cacheRetryIntervalRef.current);
@@ -349,7 +344,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     Object.values(synonymTimeoutRef.current).forEach((timeout) => clearTimeout(timeout));
     synonymTimeoutRef.current = {};
 
-    // Priority 1: Check in-memory cache
     if (recommendationsCache.current[cacheKey]) {
       const cachedData = recommendationsCache.current[cacheKey];
       const firstWord = cachedData[0];
@@ -380,8 +374,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       }
     }
 
-    // Priority 2: Cache miss - fetch from pre-generated data
-    // Fetch silently without showing loading states initially
     async function loadPreGeneratedItems() {
       activeFetchRef.current = cacheKey;
 
@@ -932,6 +924,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (isAtLimit && timeUntilReset > 0) {
       setBonusAwarded(false);
       setIsQuickCreate(false);
+      setCreationError(null);
       setShowSuccessModal(true);
       return;
     }
@@ -958,6 +951,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
         setBonusAwarded(false);
         setIsQuickCreate(false);
+        setCreationError(null);
         setShowSuccessModal(true);
         return;
       }
@@ -1054,14 +1048,23 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       const saveData = await saveGame(gameData);
 
       if (saveData.success) {
-        setBonusAwarded(saveData.bonusAwarded !== false);
-
-        // Check if game was posted to Reddit
-        if (saveData.postedToReddit === false) {
-          setCreationError(
-            'Game created successfully, but failed to post to Reddit. You can still play it!'
-          );
+        // Check if Reddit posting failed
+        if (saveData.postingError || saveData.postedToReddit === false || !saveData.redditPostId) {
+          // Posting failed - don't count towards limit, don't show success, allow retry
+          setBonusAwarded(false);
+          setIsQuickCreate(false);
+          setShowSuccessModal(false);
+          const errorMsg = saveData.postingError
+            ? `Failed to post puzzle to Reddit: ${saveData.postingError}. Please try again.`
+            : 'Failed to post puzzle to Reddit. Please try again.';
+          setCreationError(errorMsg);
+          // Don't show success modal - user can retry
+          return;
         }
+
+        // Successfully posted to Reddit with valid post ID
+        setBonusAwarded(saveData.bonusAwarded !== false);
+        setShowSuccessModal(true);
 
         const limitCheck = await checkCreationLimit();
         if (limitCheck.success === true && limitCheck.canCreate === false) {
@@ -1077,9 +1080,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setIsAtLimit(true);
           setBonusAwarded(false);
           setCreationError(null);
-          // Use timing info from error response if available
           const timeRemaining = saveData.timeRemainingMs || 0;
           setTimeUntilReset(timeRemaining);
+        } else if (
+          errorMsg.includes('not authenticated') ||
+          errorMsg.includes('Failed to authenticate')
+        ) {
+          setBonusAwarded(false);
+          setCreationError('Authentication error. Please refresh the page and try again.');
         } else {
           setBonusAwarded(false);
           setCreationError(errorMsg || 'Failed to create game. Please try again.');
@@ -1098,6 +1106,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     if (validGifs.length !== 4) return;
 
     setIsCreating(true);
+    setCreationError(null);
 
     try {
       // Refactored: Check creation limit using API function
@@ -1119,6 +1128,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }
         setIsAtLimit(true);
         setTimeUntilReset(timeRemaining);
+        setBonusAwarded(false);
+        setIsQuickCreate(false);
+        setCreationError(null);
         setShowSuccessModal(true);
         setIsCreating(false);
         return;
@@ -1166,6 +1178,21 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       setIsCreating(false);
       if (saveData.success) {
+        // Check if Reddit posting failed
+        if (saveData.postingError || saveData.postedToReddit === false || !saveData.redditPostId) {
+          // Posting failed - don't count towards limit, don't show success, allow retry
+          setBonusAwarded(false);
+          const errorMsg = saveData.postingError
+            ? `Failed to post puzzle to Reddit: ${saveData.postingError}. Please try again.`
+            : 'Failed to post puzzle to Reddit. Please try again.';
+          setCreationError(errorMsg);
+          setIsQuickCreate(false);
+          setShowSuccessModal(false);
+          // Don't show success modal - user can retry
+          return;
+        }
+
+        // Successfully posted to Reddit with valid post ID
         setBonusAwarded(saveData.bonusAwarded !== false);
         setIsQuickCreate(false);
         setShowSuccessModal(true);
@@ -1179,15 +1206,22 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
           setIsAtLimit(false);
         }
       } else {
-        // Handle error cases
         const errorMsg = saveData.error || '';
         if (errorMsg.includes('Daily creation limit')) {
           setIsAtLimit(true);
           setBonusAwarded(false);
           setIsQuickCreate(false);
+          setCreationError(null);
           setShowSuccessModal(true);
           const timeRemaining = saveData.timeRemainingMs || 0;
           setTimeUntilReset(timeRemaining);
+        } else if (
+          errorMsg.includes('not authenticated') ||
+          errorMsg.includes('Failed to authenticate')
+        ) {
+          setCreationError('Authentication error. Please refresh the page and try again.');
+        } else {
+          setCreationError(errorMsg || 'Failed to create game. Please try again.');
         }
       }
     } catch (error) {
@@ -1475,6 +1509,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   {loadingStage >= 1 && loadingStage < 2 && '🎬 Searching GIF library...'}
                   {loadingStage >= 2 && `✨ Selecting best matches${animatedDots}`}
                 </ComicText>
+                {loadingStage >= 2 && (
+                  <ComicText size={0.45} color="white" className="mt-1 text-center">
+                    first load may take 10-15 secs, appreciate your patience :)
+                  </ComicText>
+                )}
               </div>
             </div>
           )}

@@ -141,13 +141,25 @@ app.get('/api/game/check-limit', async (_req: any, res: any) => {
 
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
 
+    const fiveMinutesAgo = now - 5 * 60 * 1000;
+    const allPendingToClean = await redis.zRange(recentCreationsKey, 0, -1, {
+      by: 'rank',
+    });
+    for (const entry of allPendingToClean) {
+      const member = entry.member.toString();
+      if (member.startsWith('pending_') && entry.score < fiveMinutesAgo) {
+        await redis.zRem(recentCreationsKey, [member]);
+      }
+    }
+
     const allEntries = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
 
+    // Count both completed games and pending reservations
     const recentCreations = allEntries.filter((entry) => {
       const member = entry.member.toString();
-      return member.startsWith('game_');
+      return member.startsWith('game_') || member.startsWith('pending_');
     });
 
     const creationCount = recentCreations.length;

@@ -16,6 +16,11 @@ import { awardCreationBonus, awardCreatorCompletionBonus } from './scoringServic
 import { getSemanticSynonyms, validateGifWordMatch } from './geminiService.js';
 
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
+  let username = 'anonymous';
+  let isSystemUser = false;
+  let recentCreationsKey = '';
+  let gameId = '';
+
   try {
     const {
       word,
@@ -30,16 +35,23 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       inputType = 'word',
       forceUsername,
     } = params;
-    
-    let username = 'anonymous';
     if (forceUsername) {
       username = forceUsername;
     } else {
       try {
         const user = await reddit.getCurrentUser();
-        username = user?.username || 'gif-enigma';
+        if (!user || !user.username) {
+          return {
+            success: false,
+            error: 'User not authenticated. Please refresh the page and try again.',
+          };
+        }
+        username = user.username;
       } catch (error) {
-        username = 'gif-enigma';
+        return {
+          success: false,
+          error: 'Failed to authenticate user. Please refresh the page and try again.',
+        };
       }
     }
 
@@ -51,46 +63,66 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       'AutoModerator',
       'reddit',
     ];
-    
-    const isSystemUser = systemUsernames.some(
+
+    isSystemUser = systemUsernames.some(
       (sysUser) => username.toLowerCase() === sysUser.toLowerCase()
     );
 
     const now = Date.now();
     const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
-    const recentCreationsKey = `user:${username}:recentCreations`;
+    recentCreationsKey = `user:${username}:recentCreations`;
+    gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     await redis.zRemRangeByScore(recentCreationsKey, 0, twentyFourHoursAgo);
 
-    const allEntries = await redis.zRange(recentCreationsKey, 0, -1, {
+    const fiveMinutesAgo = now - 5 * 60 * 1000;
+    const allPendingToClean = await redis.zRange(recentCreationsKey, 0, -1, {
       by: 'rank',
     });
-
-    const actualGameCreations = allEntries.filter((entry) =>
-      entry.member.toString().startsWith('game_')
-    );
-
-    if (actualGameCreations.length >= 4) {
-      // Calculate when the user can create again (24 hours from oldest creation)
-      let resetTime = null;
-      let timeRemainingMs = 0;
-      if (actualGameCreations.length > 0) {
-        const oldestCreation = actualGameCreations[0];
-        if (oldestCreation && oldestCreation.score !== undefined) {
-          resetTime = oldestCreation.score + 24 * 60 * 60 * 1000;
-          timeRemainingMs = Math.max(0, resetTime - now);
-        }
+    for (const entry of allPendingToClean) {
+      const member = entry.member.toString();
+      if (member.startsWith('pending_') && entry.score < fiveMinutesAgo) {
+        await redis.zRem(recentCreationsKey, [member]);
       }
-
-      return {
-        success: false,
-        error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
-        resetTime: resetTime ? new Date(resetTime).toISOString() : undefined,
-        timeRemainingMs,
-      };
     }
 
-    const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    // Use Redis transaction to atomically check and reserve slot
+    if (!isSystemUser) {
+      const allEntries = await redis.zRange(recentCreationsKey, 0, -1, {
+        by: 'rank',
+      });
+
+      // Count both completed games and pending reservations
+      const actualGameCreations = allEntries.filter((entry) => {
+        const member = entry.member.toString();
+        return member.startsWith('game_') || member.startsWith('pending_');
+      });
+
+      if (actualGameCreations.length >= 4) {
+        let resetTime = null;
+        let timeRemainingMs = 0;
+        if (actualGameCreations.length > 0) {
+          const oldestCreation = actualGameCreations[0];
+          if (oldestCreation && oldestCreation.score !== undefined) {
+            resetTime = oldestCreation.score + 24 * 60 * 60 * 1000;
+            timeRemainingMs = Math.max(0, resetTime - now);
+          }
+        }
+
+        return {
+          success: false,
+          error: 'Daily creation limit reached. You can create up to 4 puzzles per day.',
+          resetTime: resetTime ? new Date(resetTime).toISOString() : undefined,
+          timeRemainingMs,
+        };
+      }
+
+      // Reserve slot immediately to prevent race conditions
+      await redis.zAdd(recentCreationsKey, {
+        member: `pending_${gameId}`,
+        score: Date.now(),
+      });
+    }
 
     if (gifDescriptions && gifDescriptions.length === 4) {
       await validateGifWordMatch(
@@ -122,7 +154,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       inputType: inputType || 'word',
       acceptedSynonyms: JSON.stringify(acceptedSynonyms),
     });
-    await tx.zAdd('activeGames', { score: Date.now(), member: gameId });
+    // Note: We'll add to activeGames AFTER Reddit posting succeeds
     const txResult = await tx.exec();
 
     if (!txResult) {
@@ -133,6 +165,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     }
 
     let postId = null;
+    let postingError = null;
     if (postToSubreddit) {
       try {
         const subreddit = await reddit.getCurrentSubreddit();
@@ -158,8 +191,15 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           },
         });
 
-        if (post && post.id) {
+        // Validate post was actually created
+        if (!post) {
+          postingError = 'Reddit API returned null - post creation failed';
+        } else if (!post.id) {
+          postingError = 'Reddit post created but no ID returned - may have been filtered';
+        } else {
           postId = post.id;
+
+          await redis.zAdd('activeGames', { score: Date.now(), member: gameId });
 
           await redis.hSet(`game:${gameId}`, {
             redditPostId: postId,
@@ -171,12 +211,11 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
             gameId,
             created: Date.now().toString(),
             isChatPost: finalIsChatPost ? 'true' : 'false',
-            entryPoint: 'preview', // Mark this as a preview post
+            entryPoint: 'preview',
           });
-          
         }
       } catch (redditError) {
-       // error
+        postingError = `Failed to post to Reddit: ${String(redditError)}`;
       }
     }
 
@@ -185,8 +224,9 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       bonusAwarded: false,
     };
 
-    if (!isSystemUser) {
-      const recentCreationsKey = `user:${username}:recentCreations`;
+    if (!isSystemUser && postId) {
+      // Replace pending entry with actual gameId
+      await redis.zRem(recentCreationsKey, [`pending_${gameId}`]);
       await redis.zAdd(recentCreationsKey, {
         member: gameId,
         score: Date.now(),
@@ -198,8 +238,12 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
         bonusAwarded: result.bonusAwarded || false,
         error: result.error,
       };
+    } else if (!isSystemUser) {
+      // Reddit posting failed - remove the pending reservation
+      await redis.zRem(recentCreationsKey, [`pending_${gameId}`]);
     }
 
+    // Mark as completed for creator regardless of Reddit posting status
     if (username && username !== 'anonymous' && !isSystemUser) {
       await redis.zAdd(`user:${username}:completedGames`, {
         member: gameId,
@@ -225,8 +269,16 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       postedToReddit: !!postId,
       redditPostId: postId || undefined,
       bonusAwarded: bonusResult.bonusAwarded,
+      postingError: postingError || undefined,
     };
   } catch (error) {
+    if (gameId && !isSystemUser) {
+      try {
+        await redis.zRem(recentCreationsKey, [`pending_${gameId}`]);
+      } catch (cleanupError) {
+        // error
+      }
+    }
     return { success: false, error: String(error) };
   }
 }
@@ -278,12 +330,10 @@ export async function postCompletionComment(
       return { success: false, error: 'No Reddit post ID found for this game' };
     }
 
-    // Determine performance tier and emoji
     const usedNoHints = gifHints === 0;
     let emoji = '';
     let commentVariant = Math.floor(Math.random() * 3);
 
-    // Calculate performance tier based on attempts and hints
     if (numGuesses === 1 && usedNoHints) {
       emoji = '🎉🏆✨';
     } else if (numGuesses === 1) {
