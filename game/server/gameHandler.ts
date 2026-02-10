@@ -189,6 +189,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           postData: {
             gameId: gameId,
           },
+          runAs: 'APP',
         });
 
         // Validate post was actually created

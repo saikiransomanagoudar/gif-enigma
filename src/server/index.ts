@@ -1008,6 +1008,7 @@ app.post(
         subredditName: subreddit.name,
         title: '🎮 GIF Enigma',
         entry: 'landing',
+        runAs: 'APP',
       });
 
       res.json({
