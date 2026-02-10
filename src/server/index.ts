@@ -66,12 +66,18 @@ app.get('/api/user/stats', async (req: any, res: any) => {
 
     const statsData = await redis.hGetAll(`userStats:${username}`);
 
-    if (!statsData || Object.keys(statsData).length === 0) {
-      res.json({ success: true, stats: null, rank: 0 });
-      return;
-    }
-
-    const stats = {
+    const stats = (!statsData || Object.keys(statsData).length === 0) ? {
+      username,
+      gamesPlayed: 0,
+      gamesWon: 0,
+      totalScore: 0,
+      bestScore: 0,
+      score: 0,
+      averageScore: 0,
+      gamesCreated: 0,
+      creatorBonusEarned: 0,
+      lastPlayed: 0,
+    } : {
       username,
       gamesPlayed: Number(statsData.gamesPlayed ?? 0),
       gamesWon: Number(statsData.gamesWon ?? 0),
@@ -84,22 +90,20 @@ app.get('/api/user/stats', async (req: any, res: any) => {
       lastPlayed: Number(statsData.lastPlayed ?? 0),
     };
 
-    // Use Redis ZRANK + ZCARD for O(log n) rank lookup instead of fetching all users
+    // Use Redis ZRANK + ZCARD for O(log n) rank lookup - always check regardless of score
     let rank = 0;
-    if (stats.totalScore > 0) {
-      try {
-        const [forwardRank, totalMembers] = await Promise.all([
-          redis.zRank('cumulativeLeaderboard', username),
-          redis.zCard('cumulativeLeaderboard'),
-        ]);
-        
-        if (forwardRank !== null && forwardRank !== undefined && totalMembers) {
-          rank = totalMembers - forwardRank;
-        }
-      } catch {
-        // Fallback if rank lookup fails
-        rank = 0;
+    try {
+      const [forwardRank, totalMembers] = await Promise.all([
+        redis.zRank('cumulativeLeaderboard', username),
+        redis.zCard('cumulativeLeaderboard'),
+      ]);
+      
+      if (forwardRank !== null && forwardRank !== undefined && totalMembers) {
+        rank = totalMembers - forwardRank;
       }
+    } catch {
+      // Fallback if rank lookup fails
+      rank = 0;
     }
 
     res.json({ success: true, stats, rank });
@@ -450,6 +454,46 @@ app.post('/api/gemini/synonyms', async (req: any, res: any) => {
 app.post('/api/score/save', async (req: any, res: any) => {
   try {
     const result = await saveScore(req.body, createContext());
+    
+    // Send one-time welcome PM for first successful completion
+    if (result.success && req.body.score > 0 && req.body.username) {
+      const username = req.body.username;
+      const pmFlagKey = `user:${username}`;
+      const pmFlagField = 'welcomePMSent';
+      
+      try {
+        const alreadySent = await redis.get(`${pmFlagKey}:${pmFlagField}`);
+        
+        if (!alreadySent) {
+          const subject = 'Thanks for playing GIF Enigma!';
+          const text =
+            '**Nice work decoding a GIF Enigma!** 🎉\n\n' +
+            'If you want more interesting GIF puzzles in your feed **please join us at [r/PlayGIFEnigma](https://www.reddit.com/r/PlayGIFEnigma)**. ' +
+            'And, if you have any feedback or ideas, feel free to reply here or contact us via mod mail.';
+          
+          const toUsername = String(username).trim().replace(/^u\//i, '');
+          
+          try {
+            await reddit.sendPrivateMessage({
+              subject,
+              text,
+              to: toUsername,
+            });
+            await redis.set(`${pmFlagKey}:${pmFlagField}`, '1');
+          } catch (pmErr: any) {
+            const errorMessage = pmErr?.details || pmErr?.message || String(pmErr);
+            
+            // Mark as sent even if user has blocked PMs
+            if (errorMessage.includes('NOT_WHITELISTED_BY_USER_MESSAGE')) {
+              await redis.set(`${pmFlagKey}:${pmFlagField}`, '1');
+            }
+          }
+        }
+      } catch (pmError) {
+        // Don't fail the score save if PM fails
+      }
+    }
+    
     res.json(result);
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -742,21 +786,6 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
     if (!force) {
       try {
         const now = new Date();
-        const timeStr = new Intl.DateTimeFormat('en-US', {
-          timeZone: 'America/Chicago',
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(now);
-        const [hhStr, mmStr] = timeStr.split(':');
-        const hour = Number(hhStr);
-        const minute = Number(mmStr);
-
-        if (!((hour === 9 || hour === 19) && minute === 0)) {
-          res.json({ status: 'skipped: outside posting window' });
-          return;
-        }
-
         const dateParts = new Intl.DateTimeFormat('en-CA', {
           timeZone: 'America/Chicago',
           year: 'numeric',

@@ -99,7 +99,7 @@
     "tasks": {
       "auto_create_post": {
         "endpoint": "/internal/scheduler/auto-create-post",
-        "cron": "0 9,19 * * *"
+        "cron": "0 15,1 * * *"
       },
       "clean_leaderboards": {
         "endpoint": "/internal/scheduler/clean-leaderboards",
