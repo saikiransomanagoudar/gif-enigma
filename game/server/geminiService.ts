@@ -58,7 +58,9 @@ export async function getRecommendations(
                 ? 'Include a balanced mix of the following: (1) VIRAL EMOTION STATES (like "SHOOK", "SNATCHED", "PRESSED", "LIVING", "SERVING", "UNHINGED", "DELULU"), (2) INTERNET SLANG ADJECTIVES (like "BUSSIN", "ICONIC", "CRINGE", "AWKWARD", "SALTY", "CURSED", "BASED"), (3) VIRAL TRENDS and REACTIONS (like "RIZZ", "SIGMA", "SLAY", "GLAZING", "FLEXING"), (4) MEME EXPRESSIONS (like "NO CAP", "SUS", "MID", "GOATED", "RATIO"). Focus exclusively on INTERNET CULTURE, MEMES, and SOCIAL MEDIA terminology that describes states, emotions, and reactions. COMPLETELY AVOID: cinematic/dramatic terms (revenge, betrayal, destiny), gaming terms (quest, dungeon, warrior), or literary terms (mystery, tragedy) - those belong in other categories.'
                 : 'Include visually expressive concepts, action-oriented terms, and emotion-evoking ideas that produce great GIFs.'
         } 
-    All words must be at least 5 characters long and safe for all audiences (not NSFW).
+    
+    CRITICAL LENGTH REQUIREMENT: Every single word MUST be EXACTLY 5 characters or longer. Reject any word with 4 or fewer characters.
+    All words must be safe for all audiences (not NSFW).
     DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the words.${exclusionClause}
     
     IMPORTANT GIF SEARCH OPTIMIZATION:
@@ -82,7 +84,11 @@ export async function getRecommendations(
                 ? 'Include a balanced mix of the following: (1) VIRAL ACTION PHRASES (like "MIC DROP", "SIDE EYE", "FACE PALM", "JAW DROP", "EYE ROLL", "CHEF KISS"), (2) TRENDING REACTION MOMENTS (like "VIBE CHECK", "GLOW UP", "SPILL TEA", "THROW SHADE", "ATE THAT", "LEFT HANGING"), (3) INTERNET CULTURE ACTIONS (like "TOUCH GRASS", "GO VIRAL", "EPIC FAIL", "RATIO TIME", "GET REKT"), (4) MEME EXPRESSIONS (like "MAIN CHARACTER", "HOT TAKE", "PLOT TWIST", "NO CAP", "FOR REAL"). Focus exclusively on ACTION-BASED INTERNET SLANG, REACTION PHRASES, and SOCIAL MEDIA expressions. COMPLETELY AVOID: cinematic storytelling phrases (unless they became memes), gaming-specific terms, or literary concepts - those belong in other categories.'
                 : 'Include reaction phrases, expressive actions, and visual concepts that produce great GIFs.'
         } 
-    Each phrase must be at least 5 characters and at most 15 characters including spaces long and safe for all audiences (not NSFW).
+    
+    CRITICAL PHRASE REQUIREMENTS:
+    - Each phrase MUST contain at least 2 SEPARATE WORDS (not single words)
+    - Total length should be between 5-25 characters including spaces
+    - Safe for all audiences (not NSFW)
     DO NOT include any punctuation marks (no exclamation marks, question marks, periods, commas, etc.) in the phrases.${exclusionClause}
     
     IMPORTANT GIF SEARCH OPTIMIZATION:
@@ -165,7 +171,6 @@ export async function getRecommendations(
         // Strategy 2: Look for a JSON array pattern and extract it
         if (!parseSuccessful) {
           try {
-            // Match [ ... ] even if there's text before/after
             const arrayMatch = text.match(/\[[\s\S]*\]/);
             if (arrayMatch) {
               const parsed = JSON.parse(arrayMatch[0]);
@@ -215,9 +220,21 @@ export async function getRecommendations(
         }
 
         if (parseSuccessful && recommendations.length > 0) {
-          const validItems = recommendations
+          let validItems = recommendations
             .filter((item: any) => typeof item === 'string' && item.trim().length > 0)
             .map((item: string) => item.trim().toUpperCase());
+
+          // Additional validation based on inputType
+          if (inputType === 'word') {
+            // Filter out words shorter than 5 characters
+            validItems = validItems.filter((word: string) => word.length >= 5);
+          } else if (inputType === 'phrase') {
+            // Filter out phrases that don't have at least 2 separate words
+            validItems = validItems.filter((phrase: string) => {
+              const wordCount = phrase.split(/\s+/).filter(w => w.length > 0).length;
+              return wordCount >= 2;
+            });
+          }
 
           if (validItems.length > 0) {
             return {
@@ -554,16 +571,16 @@ function getDefaultRecommendations(category: CategoryType, type: 'word' | 'phras
         ];
       default:
         return [
-          'Mystery',
-          'Secret',
-          'Puzzle',
-          'Riddle',
-          'Hidden',
-          'Enigma',
-          'Cipher',
-          'Clue',
-          'Decode',
-          'Reveal',
+          'MYSTERY',
+          'SECRET',
+          'PUZZLE',
+          'RIDDLE',
+          'HIDDEN',
+          'ENIGMA',
+          'CIPHER',
+          'DETECTIVE',
+          'DECODE',
+          'REVEAL',
         ];
     }
   } else {
