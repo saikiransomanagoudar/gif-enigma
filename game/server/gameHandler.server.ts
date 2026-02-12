@@ -148,7 +148,7 @@ export async function getRandomGame(
                 try {
                   const post = await context.reddit.getPostById(gameData.redditPostId);
 
-                  if (post && !post.removed) {
+                  if (post && !post.removedByCategory) {
                     const gameResult = await getGame({ gameId: assignedGameId }, context);
                     return gameResult;
                   } else {
@@ -375,7 +375,7 @@ export async function getRandomGame(
       try {
         const post = await context.reddit.getPostById(gameData.redditPostId);
 
-        if (post && !post.removed) {
+        if (post && !post.removedByCategory) {
           if (useStickyNavigation && resolvedUsername) {
             const assignedGameKey = `user:${resolvedUsername}:assignedGame`;
             await context.redis.set(assignedGameKey, randomGameId);

@@ -101,7 +101,7 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
         let errorMessage = '';
 
         if (result.hasPlayedAll) {
-          errorMessage = '🎉 Amazing! you have played all games, more games to come';
+          errorMessage = '🎉 Amazing! you have played all games, more games to come, or feel free to create one!';
           setIsFindingGame(false);
           isHandlingPlayAgainRequest.current = false;
           setToastMessage(errorMessage);

@@ -208,7 +208,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
         let errorMessage = '';
 
         if (result.hasPlayedAll) {
-          errorMessage = '🎉 Amazing! you have played all games, more games to come';
+          errorMessage = '🎉 Amazing! you have played all games, more games to come, or feel free to create one!';
           setToastMessage(errorMessage);
           setShowToast(true);
           setTimeout(() => setShowToast(false), 4000);
