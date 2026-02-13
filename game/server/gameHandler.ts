@@ -570,7 +570,26 @@ export async function getGame(
       await redis.zAdd('activeGames', { score: Date.now(), member: gameId });
     }
 
-    // 3. Parse and validate
+    // 3. Validate Reddit post is not deleted/removed
+    if (rawGameData.redditPostId) {
+      try {
+        const formattedPostId = rawGameData.redditPostId.startsWith('t3_') 
+          ? rawGameData.redditPostId 
+          : `t3_${rawGameData.redditPostId}`;
+        const post = await reddit.getPostById(formattedPostId as `t3_${string}`);
+        if (!post || post.removedByCategory) {
+          // Post is deleted/removed, mark it and return error
+          await redis.hSet(`game:${gameId}`, { isRemoved: 'true' });
+          return { success: false, error: 'This game has been removed and is no longer available' };
+        }
+      } catch (error) {
+        // Post fetch failed (likely deleted), mark it and return error
+        await redis.hSet(`game:${gameId}`, { isRemoved: 'true' });
+        return { success: false, error: 'This game is no longer available' };
+      }
+    }
+
+    // 4. Parse and validate
     const gameData: GameData = {
       id: gameId,
       word: rawGameData.word,
@@ -584,7 +603,7 @@ export async function getGame(
       category: rawGameData.category || 'Pop Culture',
     };
 
-    // 4. Process GIFs
+    // 5. Process GIFs
     try {
       gameData.gifs = JSON.parse(rawGameData.gifs || '[]');
 
@@ -600,7 +619,7 @@ export async function getGame(
       return { success: false, error: 'Invalid GIF data' };
     }
 
-    // 5. Add username if missing
+    // 6. Add username if missing
     if (gameData.username?.startsWith('t2_')) {
       const user = await reddit.getUserByUsername(gameData.username);
       if (user) {

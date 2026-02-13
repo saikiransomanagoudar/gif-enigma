@@ -146,7 +146,10 @@ export async function getRandomGame(
               const gifs = JSON.parse(gameData.gifs);
               if (Array.isArray(gifs) && gifs.length > 0) {
                 try {
-                  const post = await context.reddit.getPostById(gameData.redditPostId);
+                  const formattedPostId = gameData.redditPostId.startsWith('t3_')
+                    ? gameData.redditPostId
+                    : `t3_${gameData.redditPostId}`;
+                  const post = await context.reddit.getPostById(formattedPostId as `t3_${string}`);
 
                   if (post && !post.removedByCategory) {
                     const gameResult = await getGame({ gameId: assignedGameId }, context);
@@ -373,7 +376,10 @@ export async function getRandomGame(
       }
 
       try {
-        const post = await context.reddit.getPostById(gameData.redditPostId);
+        const formattedPostId = gameData.redditPostId.startsWith('t3_')
+          ? gameData.redditPostId
+          : `t3_${gameData.redditPostId}`;
+        const post = await context.reddit.getPostById(formattedPostId as `t3_${string}`);
 
         if (post && !post.removedByCategory) {
           if (useStickyNavigation && resolvedUsername) {

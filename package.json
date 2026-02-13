@@ -21,8 +21,8 @@
     "start": "npx devvit dev"
   },
   "dependencies": {
-    "@devvit/public-api": "0.12.7",
-    "@devvit/web": "^0.12.12",
+    "@devvit/public-api": "0.12.12",
+    "@devvit/web": "0.12.12",
     "@google/generative-ai": "^0.24.0",
     "axios": "^1.8.3",
     "clsx": "^2.1.1",
@@ -48,7 +48,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.1.2",
     "cross-env": "^10.1.0",
-    "devvit": "^0.12.12",
+    "devvit": "0.12.12",
     "prettier": "^3.5.2",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "tailwindcss": "4.0.13",
