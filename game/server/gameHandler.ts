@@ -422,6 +422,7 @@ export async function postCompletionComment(
       await reddit.submitComment({
         id: formattedPostId as `t3_${string}`,
         text: completionText,
+        runAs: 'USER',
       });
 
       // Mark as posted in Redis to prevent duplicates

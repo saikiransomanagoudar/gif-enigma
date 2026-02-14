@@ -83,16 +83,14 @@
   "permissions": {
     "http": {
       "enable": true,
-      "domains": [
-        "api.giphy.com",
-        "generativelanguage.googleapis.com"
-      ]
+      "domains": ["api.giphy.com", "generativelanguage.googleapis.com"]
     },
     "redis": true,
     "media": true,
     "realtime": true,
     "reddit": {
-      "enable": true
+      "enable": true,
+      "asUser": ["SUBMIT_COMMENT"]
     }
   },
   "scheduler": {
