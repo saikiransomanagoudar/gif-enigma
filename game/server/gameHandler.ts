@@ -34,7 +34,9 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       isChatPost = false,
       inputType = 'word',
       forceUsername,
+      runAsUser = false,
     } = params;
+    
     if (forceUsername) {
       username = forceUsername;
     } else {
@@ -189,7 +191,8 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           postData: {
             gameId: gameId,
           },
-          runAs: 'APP',
+          runAs: runAsUser ? 'USER' : 'APP',
+          userGeneratedContent: runAsUser ? { text: postTitle } : undefined,
         });
 
         // Validate post was actually created

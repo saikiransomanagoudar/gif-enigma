@@ -14,7 +14,8 @@ import {
   searchGiphyGifs,
   batchSearchGiphyGifs,
   checkCreationLimit,
-  saveGame,
+  quickCreateGame,
+  manualCreateGame,
 } from '../lib/api';
 
 export interface GiphyGifResult {
@@ -64,10 +65,19 @@ interface PreGeneratedItem {
 }
 
 const getGifUrl = (gif: GiphyGifResult | null): string => {
-  const url = gif?.url || '';
+  if (!gif) return '';
+  
+  // Priority: tinygif (optimized for web) > gif (original) > url field
+  const tinygifUrl = gif.media_formats?.tinygif?.url;
+  const gifUrl = gif.media_formats?.gif?.url;
+  const fallbackUrl = gif.url;
+  
+  const url = tinygifUrl || gifUrl || fallbackUrl || '';
+  
   if (!url || !url.startsWith('https://')) {
     return '';
   }
+  
   return url;
 };
 
@@ -916,7 +926,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setSelectedGifs(newSelectedGifs);
   };
 
-  // Refactored: Quick Create function - uses API functions
+  // Refactored: Quick Create function - server-side processing
   const handleQuickCreate = async () => {
     if (!secretInput) return;
     if (synonyms.length < 4) return;
@@ -928,6 +938,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       setShowSuccessModal(true);
       return;
     }
+
+    setCreationError(null);
 
     try {
       let limitData;
@@ -948,7 +960,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         }
         setIsAtLimit(true);
         setTimeUntilReset(timeRemaining);
-
         setBonusAwarded(false);
         setIsQuickCreate(false);
         setCreationError(null);
@@ -956,150 +967,58 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         return;
       }
 
-      // Show modal immediately without loading state
-      setIsQuickCreate(true);
-      setBonusAwarded(true);
-      setCreationError(null);
-      setShowSuccessModal(true);
-
       const synonymsToFetch = synonyms
         .slice(0, 4)
         .map((group) => group[0])
         .filter(Boolean);
       if (synonymsToFetch.length < 4) {
-        setBonusAwarded(false);
         setCreationError('Not enough synonyms available. Please try a different word.');
         return;
       }
 
-      const needsFetching = synonymsToFetch.filter(
-        (synonym) => !gifCache.current[synonym] || gifCache.current[synonym].length === 0
-      );
+      // Show success modal immediately
+      setBonusAwarded(true);
+      setIsQuickCreate(true);
+      setShowSuccessModal(true);
 
-      // Refactored: Batch fetch missing GIFs using API function
-      if (needsFetching.length > 0) {
-        const data = await batchSearchGiphyGifs(needsFetching, 10);
-
-        if (data.success && data.results) {
-          Object.keys(data.results).forEach((query) => {
-            const gifsForQuery = data.results![query];
-            if (gifsForQuery && gifsForQuery.length > 0) {
-              gifCache.current[query] = gifsForQuery;
-            }
-          });
-        }
-      }
-
-      // Collect GIF data from cache
-      const autoGifUrls: string[] = [];
-      const autoGifDescriptions: string[] = [];
-      const autoSearchTerms: string[] = [];
-
-      for (const synonym of synonymsToFetch) {
-        const gifResults = gifCache.current[synonym];
-
-        if (gifResults && gifResults.length > 0) {
-          const gif = gifResults[0];
-          const gifUrl = getGifUrl(gif);
-
-          if (gifUrl) {
-            autoGifUrls.push(gifUrl);
-            autoGifDescriptions.push(gif.content_description || gif.title || synonym);
-            autoSearchTerms.push(synonym);
-          }
-        }
-      }
-
-      if (autoGifUrls.length < 4) {
-        setBonusAwarded(false);
-        setCreationError('Failed to fetch enough GIFs. Please try again.');
-        return;
-      }
-
-      // Create masked word
-      const wordArray = secretInput.split('');
-      const maskCount = Math.floor((wordArray.length * 2) / 3);
-      const indicesToMask = new Set<number>();
-      while (indicesToMask.size < maskCount) {
-        indicesToMask.add(Math.floor(Math.random() * wordArray.length));
-      }
-      const maskedWord = wordArray
-        .map((char, i) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
-        .join('');
-
-      const questionText =
-        inputType === 'word'
-          ? 'Can you decode the word from this GIF?'
-          : 'Can you decode the phrase from this GIF?';
-
-      const gameData = {
+      // Trigger server-side Quick Create (no await - fire and forget)
+      // Server responds immediately and processes in background
+      quickCreateGame({
         word: secretInput,
         category: currentCategory,
-        maskedWord,
-        questionText,
-        gifs: autoGifUrls,
-        gifDescriptions: autoGifDescriptions,
-        searchTerms: autoSearchTerms,
         inputType,
-        postToSubreddit: true,
-      };
-
-      // Refactored: Save game using API function
-      const saveData = await saveGame(gameData);
-
-      if (saveData.success) {
-        // Check if Reddit posting failed
-        if (saveData.postingError || saveData.postedToReddit === false || !saveData.redditPostId) {
-          // Posting failed - don't count towards limit, don't show success, allow retry
-          setBonusAwarded(false);
-          setIsQuickCreate(false);
-          setShowSuccessModal(false);
-          const errorMsg = saveData.postingError
-            ? `Failed to post puzzle to Reddit: ${saveData.postingError}. Please try again.`
-            : 'Failed to post puzzle to Reddit. Please try again.';
-          setCreationError(errorMsg);
-          // Don't show success modal - user can retry
-          return;
+        synonyms: synonymsToFetch,
+      }).then((result) => {
+        if (!result.success) {
+          console.error('Quick Create failed to start:', result.error);
         }
+      }).catch((error) => {
+        console.error('Quick Create request failed:', error);
+      });
 
-        // Successfully posted to Reddit with valid post ID
-        setBonusAwarded(saveData.bonusAwarded !== false);
-        setShowSuccessModal(true);
+      // Update limit status after a delay (since server processes async)
+      setTimeout(async () => {
+        try {
+          const limitCheck = await checkCreationLimit();
+          if (limitCheck.success === true && limitCheck.canCreate === false) {
+            setIsAtLimit(true);
+            const timeRemaining = limitCheck.timeRemainingMs || 0;
+            setTimeUntilReset(timeRemaining);
+          } else {
+            setIsAtLimit(false);
+          }
+        } catch (error) {
+          // Ignore limit check errors
+        }
+      }, 2000);
 
-        const limitCheck = await checkCreationLimit();
-        if (limitCheck.success === true && limitCheck.canCreate === false) {
-          setIsAtLimit(true);
-          const timeRemaining = limitCheck.timeRemainingMs || 0;
-          setTimeUntilReset(timeRemaining);
-        } else {
-          setIsAtLimit(false);
-        }
-      } else {
-        const errorMsg = saveData.error || '';
-        if (errorMsg.includes('Daily creation limit')) {
-          setIsAtLimit(true);
-          setBonusAwarded(false);
-          setCreationError(null);
-          const timeRemaining = saveData.timeRemainingMs || 0;
-          setTimeUntilReset(timeRemaining);
-        } else if (
-          errorMsg.includes('not authenticated') ||
-          errorMsg.includes('Failed to authenticate')
-        ) {
-          setBonusAwarded(false);
-          setCreationError('Authentication error. Please refresh the page and try again.');
-        } else {
-          setBonusAwarded(false);
-          setCreationError(errorMsg || 'Failed to create game. Please try again.');
-        }
-      }
     } catch (error) {
       setBonusAwarded(false);
-      setCreationError('An unexpected error occurred. Please try again.');
+      setCreationError(`An unexpected error occurred: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     }
   };
 
-  // Refactored: Submit game function - uses API functions
+  // Refactored: Submit game function - server-side processing
   const submitGame = async () => {
     const validGifs = selectedGifs.filter((gif) => gif !== null);
     if (!secretInput) return;
@@ -1109,7 +1028,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
     setCreationError(null);
 
     try {
-      // Refactored: Check creation limit using API function
+      // Check creation limit
       let limitData;
       try {
         limitData = await checkCreationLimit();
@@ -1155,6 +1074,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
       const gifUrls = validGifs.map((gif) => getGifUrl(gif));
       if (!gifUrls.every((url) => typeof url === 'string' && url.trim() !== '')) {
         throw new Error('One or more selected GIFs have invalid URLs');
+        return;
       }
 
       const gifDescriptions = validGifs.map(
@@ -1163,8 +1083,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
       const searchTerms = synonyms.map((group) => group[0] || '');
 
-      // Refactored: Save game using API function
-      const saveData = await saveGame({
+      // Show success modal immediately
+      setIsCreating(false);
+      setBonusAwarded(true);
+      setIsQuickCreate(false);
+      setShowSuccessModal(true);
+
+      // Trigger server-side Manual Create (no await - fire and forget)
+      manualCreateGame({
         word: secretInput,
         category: currentCategory,
         maskedWord,
@@ -1173,59 +1099,34 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         gifDescriptions,
         searchTerms,
         inputType,
-        postToSubreddit: true,
+      }).then((result) => {
+        if (!result.success) {
+          console.error('Manual Create failed to start:', result.error);
+        }
+      }).catch((error) => {
+        console.error('Manual Create request failed:', error);
       });
 
-      setIsCreating(false);
-      if (saveData.success) {
-        // Check if Reddit posting failed
-        if (saveData.postingError || saveData.postedToReddit === false || !saveData.redditPostId) {
-          // Posting failed - don't count towards limit, don't show success, allow retry
-          setBonusAwarded(false);
-          const errorMsg = saveData.postingError
-            ? `Failed to post puzzle to Reddit: ${saveData.postingError}. Please try again.`
-            : 'Failed to post puzzle to Reddit. Please try again.';
-          setCreationError(errorMsg);
-          setIsQuickCreate(false);
-          setShowSuccessModal(false);
-          // Don't show success modal - user can retry
-          return;
+      // Update limit status after a delay (since server processes async)
+      setTimeout(async () => {
+        try {
+          const limitCheck = await checkCreationLimit();
+          if (limitCheck.success === true && limitCheck.canCreate === false) {
+            setIsAtLimit(true);
+            const timeRemaining = limitCheck.timeRemainingMs || 0;
+            setTimeUntilReset(timeRemaining);
+          } else {
+            setIsAtLimit(false);
+          }
+        } catch (error) {
+          // Ignore limit check errors
         }
+      }, 2000);
 
-        // Successfully posted to Reddit with valid post ID
-        setBonusAwarded(saveData.bonusAwarded !== false);
-        setIsQuickCreate(false);
-        setShowSuccessModal(true);
-
-        const limitCheck = await checkCreationLimit();
-        if (limitCheck.success === true && limitCheck.canCreate === false) {
-          setIsAtLimit(true);
-          const timeRemaining = limitCheck.timeRemainingMs || 0;
-          setTimeUntilReset(timeRemaining);
-        } else {
-          setIsAtLimit(false);
-        }
-      } else {
-        const errorMsg = saveData.error || '';
-        if (errorMsg.includes('Daily creation limit')) {
-          setIsAtLimit(true);
-          setBonusAwarded(false);
-          setIsQuickCreate(false);
-          setCreationError(null);
-          setShowSuccessModal(true);
-          const timeRemaining = saveData.timeRemainingMs || 0;
-          setTimeUntilReset(timeRemaining);
-        } else if (
-          errorMsg.includes('not authenticated') ||
-          errorMsg.includes('Failed to authenticate')
-        ) {
-          setCreationError('Authentication error. Please refresh the page and try again.');
-        } else {
-          setCreationError(errorMsg || 'Failed to create game. Please try again.');
-        }
-      }
     } catch (error) {
       setIsCreating(false);
+      setBonusAwarded(false);
+      setCreationError(`An unexpected error occurred: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     }
   };
 
@@ -1708,16 +1609,16 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             <div className="group relative">
               <button
                 onClick={handleQuickCreate}
-                disabled={!secretInput || synonyms.length < 4 || isCreating}
+                disabled={!secretInput || synonyms.length < 4}
                 className={`rounded-full px-2 py-1.5 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg ${
-                  !secretInput || synonyms.length < 4 || isCreating
+                  !secretInput || synonyms.length < 4
                     ? 'cursor-not-allowed opacity-60'
                     : 'cursor-pointer'
                 }`}
                 style={{ backgroundColor: colors.primary }}
               >
                 <ComicText size={0.6} color="#fff">
-                  {isCreating ? '⏳ Creating...' : '🚀 Quick Create'}
+                  🚀 Quick Create
                 </ComicText>
               </button>
               {(!secretInput || synonyms.length < 4) && (
@@ -1727,6 +1628,29 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
               )}
             </div>
           </div>
+
+          {/* Error Banner - shown when creation fails without modal */}
+          {creationError && !showSuccessModal && (
+            <div className="mb-4 rounded-lg border-2 border-red-500 bg-red-900/30 p-3 backdrop-blur-sm">
+              <div className="flex items-start gap-2">
+                <span className="text-xl">⚠️</span>
+                <div className="flex-1">
+                  <ComicText size={0.6} color="#FCA5A5" className="mb-1 font-semibold">
+                    Creation Failed
+                  </ComicText>
+                  <ComicText size={0.5} color="white">
+                    {creationError}
+                  </ComicText>
+                </div>
+                <button
+                  onClick={() => setCreationError(null)}
+                  className="text-white hover:text-red-300 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
 
           {renderGifGrid()}
 

@@ -63,6 +63,48 @@ export async function saveGame(gameData: any) {
   }
 }
 
+export async function quickCreateGame(gameData: {
+  word: string;
+  category: string;
+  inputType: string;
+  synonyms: string[];
+}) {
+  try {
+    const response = await fetch('/api/game/quick-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gameData),
+    });
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function manualCreateGame(gameData: {
+  word: string;
+  category: string;
+  inputType: string;
+  maskedWord: string;
+  questionText: string;
+  gifs: string[];
+  gifDescriptions: string[];
+  searchTerms: string[];
+}) {
+  try {
+    const response = await fetch('/api/game/manual-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gameData),
+    });
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 export async function getGameState(username: string, gameId: string) {
   const response = await fetch(
     `/api/game/state?username=${encodeURIComponent(username)}&gameId=${encodeURIComponent(gameId)}`

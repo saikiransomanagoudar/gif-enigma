@@ -338,6 +338,132 @@ app.post('/api/game/random', async (req: any, res: any) => {
   }
 });
 
+// Manual Create
+app.post('/api/game/manual-create', async (req: any, res: any) => {
+  try {
+    const { word, category, inputType, maskedWord, questionText, gifs, gifDescriptions, searchTerms } = req.body;
+
+    if (!word || !category || !inputType || !maskedWord || !questionText) {
+      res.json({ success: false, error: 'Missing required fields' });
+      return;
+    }
+
+    if (!gifs || !Array.isArray(gifs) || gifs.length !== 4) {
+      res.json({ success: false, error: 'Need exactly 4 GIF URLs' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Manual Create started in background' });
+
+    (async () => {
+      try {
+        const gameData = {
+          word,
+          category,
+          maskedWord,
+          questionText,
+          gifs,
+          gifDescriptions: gifDescriptions || [],
+          searchTerms: searchTerms || [],
+          inputType,
+          postToSubreddit: true,
+          runAsUser: true,
+        };
+
+        await saveGame(gameData, createContext());
+      } catch (error) {
+        // Background process, errors are silent
+      }
+    })();
+
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
+// Quick Create
+app.post('/api/game/quick-create', async (req: any, res: any) => {
+  try {
+    const { word, category, inputType, synonyms: clientSynonyms } = req.body;
+
+    if (!word || !category || !inputType) {
+      res.json({ success: false, error: 'Missing required fields' });
+      return;
+    }
+
+    if (!clientSynonyms || clientSynonyms.length < 4) {
+      res.json({ success: false, error: 'Need at least 4 synonyms' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Quick Create started in background' });
+
+    (async () => {
+      try {
+        const synonymsToFetch = clientSynonyms.slice(0, 4);
+
+        const gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 10);
+
+        const autoGifUrls: string[] = [];
+        const autoGifDescriptions: string[] = [];
+        const autoSearchTerms: string[] = [];
+
+        for (const synonym of synonymsToFetch) {
+          const gifs = gifResults[synonym];
+          if (gifs && gifs.length > 0) {
+            const gif = gifs[0];
+            const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+            if (gifUrl) {
+              autoGifUrls.push(gifUrl);
+              autoGifDescriptions.push(gif.content_description || gif.title || synonym);
+              autoSearchTerms.push(synonym);
+            }
+          }
+        }
+
+        if (autoGifUrls.length < 4) {
+          return;
+        }
+
+        const wordArray = word.split('');
+        const maskCount = Math.floor((wordArray.length * 2) / 3);
+        const indicesToMask = new Set<number>();
+        while (indicesToMask.size < maskCount) {
+          indicesToMask.add(Math.floor(Math.random() * wordArray.length));
+        }
+        const maskedWord = wordArray
+          .map((char: string, i: number) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
+          .join('');
+
+        const questionText =
+          inputType === 'word'
+            ? 'Can you decode the word from this GIF?'
+            : 'Can you decode the phrase from this GIF?';
+
+        const gameData = {
+          word,
+          category,
+          maskedWord,
+          questionText,
+          gifs: autoGifUrls,
+          gifDescriptions: autoGifDescriptions,
+          searchTerms: autoSearchTerms,
+          inputType,
+          postToSubreddit: true,
+          runAsUser: true,
+        };
+
+        await saveGame(gameData, createContext());
+      } catch (error) {
+        // Background process - errors are silent
+      }
+    })();
+
+  } catch (error) {
+    res.json({ success: false, error: String(error) });
+  }
+});
+
 // Save game
 app.post('/api/game/save', async (req: any, res: any) => {
   try {

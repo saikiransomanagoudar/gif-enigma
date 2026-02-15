@@ -90,7 +90,7 @@
     "realtime": true,
     "reddit": {
       "enable": true,
-      "asUser": ["SUBMIT_COMMENT"]
+      "asUser": ["SUBMIT_COMMENT", "SUBMIT_POST"]
     }
   },
   "scheduler": {
