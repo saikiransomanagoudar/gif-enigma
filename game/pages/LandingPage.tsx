@@ -36,6 +36,18 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
     setIsLoading(false);
     setShowSuccessMessage(false);
     isHandlingRequest.current = false;
+    
+    // Preload GIF images to prevent loading issues
+    const preloadImages = [
+      '/landing-page/lets-play.gif',
+      '/landing-page/lets-build.gif'
+    ];
+    
+    preloadImages.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+    
     return () => {
       isMounted.current = false;
     };
@@ -277,6 +289,16 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               width="400"
               height="400"
               loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                // Retry loading once with cache-busting
+                if (!target.dataset.retried) {
+                  target.dataset.retried = 'true';
+                  target.src = `/landing-page/lets-play.gif?t=${Date.now()}`;
+                }
+              }}
               className={`block w-full rounded-2xl ${isLoading ? 'opacity-50' : ''}`}
             />
             <div className="absolute top-[85%] left-1/2 w-[120px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">
@@ -297,6 +319,16 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
               width="400"
               height="400"
               loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                // Retry loading once with cache-busting
+                if (!target.dataset.retried) {
+                  target.dataset.retried = 'true';
+                  target.src = `/landing-page/lets-build.gif?t=${Date.now()}`;
+                }
+              }}
               className="block w-full rounded-2xl"
             />
             <div className="absolute top-[85%] left-1/2 w-[140px] -translate-x-1/2 -translate-y-1/2 rounded-md bg-black/60 px-4 py-2 text-center text-sm text-white max-sm:w-[90px] max-sm:px-2 max-sm:py-1 max-sm:text-[10px]">

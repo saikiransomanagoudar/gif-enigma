@@ -32,7 +32,6 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const [gameData, setGameData] = useState<GameData | null>(null);
   const [hasCompleted, setHasCompleted] = useState(false);
   const [username, setUsername] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isPlayingAgain, setIsPlayingAgain] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
@@ -76,43 +75,55 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
       return;
     }
 
-    setIsLoading(true);
-
     try {
-      const userResult = await getCurrentUser();
+      // Parallelize user and game data fetching - don't wait for each other
+      const [userResult, gameResult] = await Promise.all([
+        getCurrentUser(),
+        getGame(gameId),
+      ]);
+
       const currentUsername =
         userResult.success && userResult.username ? userResult.username : 'anonymous';
       setUsername(currentUsername);
-
-      const gameResult = await getGame(gameId);
 
       const loadedGame = gameResult.game || gameResult.result;
       if (gameResult.success && loadedGame) {
         setGameData(loadedGame);
 
-        if (currentUsername !== 'anonymous') {
-          const completionResult = await hasUserCompletedGame(currentUsername, gameId);
-          const completionFlag = Boolean(
-            completionResult.hasCompleted ??
-              completionResult.completed ??
-              completionResult.hasCompleted?.completed
-          );
-          setHasCompleted(completionFlag);
+        // Preload the first GIF immediately to avoid loading delay
+        if (loadedGame.gifs?.[0]) {
+          const img = new Image();
+          img.src = loadedGame.gifs[0];
+        }
 
-          try {
-            const stateResult = await getGameState(currentUsername, gameId);
-            if (stateResult.success && stateResult.state?.playerState) {
-              setGameState(stateResult.state.playerState);
-            }
-          } catch (error) {
-            // error
-          }
+        // Fetch completion status and game state in background without blocking render
+        if (currentUsername !== 'anonymous') {
+          // Run these in parallel, but don't block the UI
+          Promise.all([
+            hasUserCompletedGame(currentUsername, gameId).then((completionResult) => {
+              const completionFlag = Boolean(
+                completionResult.hasCompleted ??
+                  completionResult.completed ??
+                  completionResult.hasCompleted?.completed
+              );
+              setHasCompleted(completionFlag);
+            }),
+            getGameState(currentUsername, gameId)
+              .then((stateResult) => {
+                if (stateResult.success && stateResult.state?.playerState) {
+                  setGameState(stateResult.state.playerState);
+                }
+              })
+              .catch(() => {
+                // Silent fail for game state
+              }),
+          ]).catch(() => {
+            // Silent fail for background operations
+          });
         }
       }
     } catch (error) {
       // error
-    } finally {
-      setIsLoading(false);
     }
   }, [gameId]);
 
@@ -123,13 +134,11 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        setIsLoading(false);
         setShowSuccessMessage(false);
       }
     };
 
     const handleFocus = () => {
-      setIsLoading(false);
       setShowSuccessMessage(false);
     };
 
@@ -228,11 +237,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const cardBackground = isDarkMode ? 'bg-[#0a1020]' : 'bg-[#f5f5f0]';
   const borderColor = isDarkMode ? 'border-[#1a2030]' : 'border-gray-300';
 
-  if (!gameId) {
-    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
-  }
-
-  if (isLoading) {
+  if (!gameId || !gameData) {
     return <div className={`min-h-screen w-full ${backgroundColor}`} />;
   }
 

@@ -37,6 +37,23 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       runAsUser = false,
     } = params;
     
+    // Validate GIFs array
+    if (!gifs || !Array.isArray(gifs) || gifs.length !== 4) {
+      return {
+        success: false,
+        error: `Invalid GIFs array. Expected exactly 4 GIFs, got ${gifs?.length || 0}.`,
+      };
+    }
+    
+    // Validate all GIF URLs are non-empty strings
+    const invalidGifs = gifs.filter(gif => !gif || typeof gif !== 'string' || gif.trim() === '');
+    if (invalidGifs.length > 0) {
+      return {
+        success: false,
+        error: `Invalid GIF URLs detected. All 4 GIFs must be valid URL strings.`,
+      };
+    }
+    
     if (forceUsername) {
       username = forceUsername;
     } else {

@@ -353,8 +353,10 @@ app.post('/api/game/manual-create', async (req: any, res: any) => {
       return;
     }
 
+    // Send response immediately to avoid frontend timeout
     res.json({ success: true, message: 'Manual Create started in background' });
 
+    // Background processing - response already sent
     (async () => {
       try {
         const gameData = {
@@ -396,32 +398,71 @@ app.post('/api/game/quick-create', async (req: any, res: any) => {
       return;
     }
 
+    // Send response immediately to avoid frontend timeout
     res.json({ success: true, message: 'Quick Create started in background' });
 
+    // Background processing - response already sent
     (async () => {
       try {
         const synonymsToFetch = clientSynonyms.slice(0, 4);
 
-        const gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 10);
+        let gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 10);
 
         const autoGifUrls: string[] = [];
         const autoGifDescriptions: string[] = [];
         const autoSearchTerms: string[] = [];
 
-        for (const synonym of synonymsToFetch) {
-          const gifs = gifResults[synonym];
-          if (gifs && gifs.length > 0) {
-            const gif = gifs[0];
-            const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
-            if (gifUrl) {
-              autoGifUrls.push(gifUrl);
-              autoGifDescriptions.push(gif.content_description || gif.title || synonym);
-              autoSearchTerms.push(synonym);
+        // Helper function to collect GIFs from results
+        const collectGifs = () => {
+          // First pass: try to get one GIF from each synonym
+          for (const synonym of synonymsToFetch) {
+            if (autoGifUrls.length >= 4) break;
+            const gifs = gifResults[synonym];
+            if (gifs && gifs.length > 0) {
+              const gif = gifs[0];
+              const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+              if (gifUrl) {
+                autoGifUrls.push(gifUrl);
+                autoGifDescriptions.push(gif.content_description || gif.title || synonym);
+                autoSearchTerms.push(synonym);
+              }
             }
           }
-        }
+
+          // Second pass: if we still don't have 4, try additional results from synonyms
+          if (autoGifUrls.length < 4) {
+            for (const synonym of synonymsToFetch) {
+              if (autoGifUrls.length >= 4) break;
+              const gifs = gifResults[synonym];
+              if (gifs && gifs.length > 1) {
+                // Try additional GIFs from this synonym
+                for (let i = 1; i < gifs.length && autoGifUrls.length < 4; i++) {
+                  const gif = gifs[i];
+                  const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+                  if (gifUrl && !autoGifUrls.includes(gifUrl)) {
+                    autoGifUrls.push(gifUrl);
+                    autoGifDescriptions.push(gif.content_description || gif.title || synonym);
+                    autoSearchTerms.push(synonym);
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        // Try collecting with initial 10 results
+        collectGifs();
 
         if (autoGifUrls.length < 4) {
+          autoGifUrls.length = 0;
+          autoGifDescriptions.length = 0;
+          autoSearchTerms.length = 0;
+          
+          gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 20);
+          collectGifs();
+        }
+
+        if (autoGifUrls.length !== 4) {
           return;
         }
 
@@ -1036,17 +1077,21 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
     const gifDescriptions: string[] = [];
     const gifSearchTerms: string[] = [];
 
+    // Fetch more GIFs per synonym to increase success rate
     for (const synonymGroup of synonyms) {
       if (gifUrls.length >= 4) break;
       const term = synonymGroup[0];
-      const gifs = await searchGiphyGifs(createContext(), term, 1);
-      if (gifs[0]) {
-        const gifUrl = gifs[0].media_formats?.tinygif?.url;
-        const gifDescription = gifs[0].content_description || gifs[0].title || term;
-        if (gifUrl) {
-          gifUrls.push(gifUrl);
-          gifDescriptions.push(gifDescription);
-          gifSearchTerms.push(term);
+      const gifs = await searchGiphyGifs(createContext(), term, 5);
+      if (gifs && gifs.length > 0) {
+        for (const gif of gifs) {
+          if (gifUrls.length >= 4) break;
+          const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+          const gifDescription = gif.content_description || gif.title || term;
+          if (gifUrl && !gifUrls.includes(gifUrl)) {
+            gifUrls.push(gifUrl);
+            gifDescriptions.push(gifDescription);
+            gifSearchTerms.push(term);
+          }
         }
       }
     }
@@ -1236,17 +1281,21 @@ app.post(
       const gifDescriptions: string[] = [];
       const gifSearchTerms: string[] = [];
 
+      // Fetch more GIFs per synonym to increase success rate
       for (const synonymGroup of synonyms) {
         if (gifUrls.length >= 4) break;
         const term = synonymGroup[0];
-        const gifs = await searchGiphyGifs(createContext(), term, 1);
-        if (gifs[0]) {
-          const gifUrl = gifs[0].media_formats?.tinygif?.url;
-          const gifDescription = gifs[0].content_description || gifs[0].title || term;
-          if (gifUrl) {
-            gifUrls.push(gifUrl);
-            gifDescriptions.push(gifDescription);
-            gifSearchTerms.push(term);
+        const gifs = await searchGiphyGifs(createContext(), term, 5);
+        if (gifs && gifs.length > 0) {
+          for (const gif of gifs) {
+            if (gifUrls.length >= 4) break;
+            const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+            const gifDescription = gif.content_description || gif.title || term;
+            if (gifUrl && !gifUrls.includes(gifUrl)) {
+              gifUrls.push(gifUrl);
+              gifDescriptions.push(gifDescription);
+              gifSearchTerms.push(term);
+            }
           }
         }
       }
@@ -1383,17 +1432,21 @@ app.post(
       const gifDescriptions: string[] = [];
       const gifSearchTerms: string[] = [];
 
+      // Fetch more GIFs per synonym to increase success rate
       for (const synonymGroup of synonyms) {
         if (gifUrls.length >= 4) break;
         const term = synonymGroup[0];
-        const gifs = await searchGiphyGifs(createContext(), term, 1);
-        if (gifs[0]) {
-          const gifUrl = gifs[0].media_formats?.tinygif?.url;
-          const gifDescription = gifs[0].content_description || gifs[0].title || term;
-          if (gifUrl) {
-            gifUrls.push(gifUrl);
-            gifDescriptions.push(gifDescription);
-            gifSearchTerms.push(term);
+        const gifs = await searchGiphyGifs(createContext(), term, 5);
+        if (gifs && gifs.length > 0) {
+          for (const gif of gifs) {
+            if (gifUrls.length >= 4) break;
+            const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
+            const gifDescription = gif.content_description || gif.title || term;
+            if (gifUrl && !gifUrls.includes(gifUrl)) {
+              gifUrls.push(gifUrl);
+              gifDescriptions.push(gifDescription);
+              gifSearchTerms.push(term);
+            }
           }
         }
       }
