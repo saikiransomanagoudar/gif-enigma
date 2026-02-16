@@ -220,12 +220,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           )}
         </div>
       )}
-      <div className={`${backgroundColor} mt-0 mb-0 min-h-screen w-full p-5 pb-15 select-none`}>
-        <div className="relative flex flex-col items-center p-4 pt-6 max-sm:mt-0 md:pt-12">
+      <div className={`${backgroundColor} h-screen w-full overflow-hidden p-3 select-none`}>
+        <div className="relative flex flex-col items-center p-2 pt-4 max-sm:mt-0 md:pt-8">
           {/* Leaderboard Button */}
           <motion.button
             type="button"
-            className={`absolute top-4 right-2 mt-2 cursor-pointer rounded-lg px-4 py-3 text-lg select-none max-sm:top-2 max-sm:mt-2 max-sm:px-3 max-sm:py-2 md:top-4 md:px-2.5 md:py-2 md:text-base ${
+            className={`absolute top-2 right-2 mt-2 cursor-pointer rounded-lg px-4 py-3 text-lg select-none max-sm:top-2 max-sm:mt-2 max-sm:px-3 max-sm:py-2 md:top-4 md:px-2.5 md:py-2 md:text-base ${
               ifhover === 'btn1'
                 ? 'border-1 border-[#FF4500] bg-[#FF4500] text-white'
                 : 'border-border border-1 bg-[#E8E5DA] text-black'
@@ -255,12 +255,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
             </span>
           </motion.button>
 
-          <div className="mt-16 flex w-full cursor-default flex-col items-center justify-center gap-2 select-none max-sm:mt-16">
+          <div className="mt-16 flex w-full cursor-default flex-col items-center justify-center gap-1 select-none max-sm:mt-12">
             <motion.h2
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.2 }}
-              className="mb-[7px] cursor-default select-none"
+              className="mb-[5px] cursor-default select-none"
             >
               <ComicText size={2.5} color={colors.primary}>
                 GIF Enigma
@@ -275,7 +275,7 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        <div className="mb-[15px] flex flex-row items-center justify-center gap-5 max-sm:mt-[20px]">
+        <div className="mb-[10px] flex flex-row items-center justify-center gap-5 max-sm:mt-[10px]">
           <motion.div
             className="relative w-[30%] cursor-pointer p-2 max-sm:w-[100%] lg:w-[21%]"
             onClick={handlePlayClick}
@@ -338,12 +338,12 @@ export const LandingPage: React.FC<NavigationProps> = ({ onNavigate }) => {
         </div>
 
         <motion.div
-          className="mt-3 text-center"
+          className="mt-2 text-center"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.7 }}
         >
-          <div className="mt-6 mb-[21px] flex w-full items-center justify-center">
+          <div className="mt-2 mb-2 flex w-full items-center justify-center">
             <button
               type="button"
               className={`relative flex w-[53.1%] cursor-pointer items-center justify-center gap-2 rounded-lg border-1 px-4 py-3 text-lg hover:scale-105 max-sm:w-[90%] max-sm:py-3 lg:w-[30%] ${ifhover === 'btn2' ? 'border-[#FF4500] bg-[#FF4500] !text-white' : 'border-black bg-[#E8E5DA] !text-black'}`}

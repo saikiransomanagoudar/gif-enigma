@@ -238,7 +238,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const borderColor = isDarkMode ? 'border-[#1a2030]' : 'border-gray-300';
 
   if (!gameId || !gameData) {
-    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
+    return <div className={`h-screen w-full overflow-hidden ${backgroundColor}`} />;
   }
 
   // Play Again loading overlay
@@ -272,11 +272,11 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   }
 
   if (!gameData) {
-    return <div className={`min-h-screen w-full ${backgroundColor}`} />;
+    return <div className={`h-screen w-full overflow-hidden ${backgroundColor}`} />;
   }
 
   return (
-    <div className={`flex min-h-screen w-full flex-col items-center px-2 py-2 ${backgroundColor}`}>
+    <div className={`flex h-screen w-full flex-col items-center overflow-hidden px-2 py-2 ${backgroundColor}`}>
       {/* Toast Notification */}
       {showToast && (
         <div
