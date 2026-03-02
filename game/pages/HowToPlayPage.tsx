@@ -70,7 +70,7 @@ export const HowToPlayPage: React.FC<HowToPlayPageProps> = ({ onNavigate }) => {
               </ComicText>
             </motion.h3>
             <div className="space-y-4">
-              {['🖼️', '�', '💡', '🎯'].map((icon, index) => (
+              {['🖼️', '👆', '💡', '🎯'].map((icon, index) => (
                 <motion.div
                   key={index}
                   className="flex items-center"
