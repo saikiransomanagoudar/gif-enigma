@@ -236,6 +236,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
   const backgroundColor = isDarkMode ? 'bg-[#1A1A2E]' : 'bg-[#E8E5DA]';
   const cardBackground = isDarkMode ? 'bg-[#0a1020]' : 'bg-[#f5f5f0]';
   const borderColor = isDarkMode ? 'border-[#1a2030]' : 'border-gray-300';
+  const secondaryButtonColor = isDarkMode ? 'bg-[#4267B2]' : 'bg-[#6B7280]';
 
   if (!gameId || !gameData) {
     return <div className={`h-screen w-full overflow-hidden ${backgroundColor}`} />;
@@ -335,7 +336,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
               className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">🔍</span>
-              <ComicText size={0.6} color="white">
+              <ComicText size={0.7} color="white">
                 Decode the GIF
               </ComicText>
             </button>
@@ -343,10 +344,10 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
             <button
               type="button"
               onClick={handleHowToPlayClick}
-              className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#4267B2] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
+              className={`flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none ${secondaryButtonColor}`}
             >
               <span className="text-lg">🤔</span>
-              <ComicText size={0.6} color="white">
+              <ComicText size={0.7} color="white">
                 How to play?
               </ComicText>
             </button>
@@ -360,8 +361,8 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
               className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#FF4500] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">📊</span>
-              <ComicText size={0.6} color="white">
-                View Results
+              <ComicText size={0.7} color="white">
+                View results
               </ComicText>
             </button>
 
@@ -371,7 +372,7 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
               className="flex w-full max-w-[260px] cursor-pointer items-center justify-center gap-2 rounded-full bg-[#10B981] px-4 py-2.5 transition-all hover:scale-105 active:scale-95 sm:max-w-none"
             >
               <span className="text-lg">🎮</span>
-              <ComicText size={0.6} color="white">
+              <ComicText size={0.7} color="white">
                 {gameState?.hasGivenUp
                   ? 'Try another'
                   : gameData?.username && username === gameData.username
