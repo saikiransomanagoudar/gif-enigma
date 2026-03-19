@@ -653,17 +653,17 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         username: currentUsername,
       });
 
-      if (scoreResult.success && scoreResult.result) {
+      if (scoreResult.success && scoreResult.score !== undefined) {
         await saveScore({
-          ...scoreResult.result,
+          ...scoreResult.score,
           username: currentUsername,
           gameId: gameData.id,
           timestamp: Date.now(),
         });
         
         const leaderboardResult = await getGameLeaderboard(gameData.id, 10);
-        if (leaderboardResult.success && leaderboardResult.result?.leaderboard) {
-          setLeaderboard(leaderboardResult.result.leaderboard);
+        if (leaderboardResult.success && leaderboardResult.leaderboard) {
+          setLeaderboard(leaderboardResult.leaderboard);
         }
       }
 
@@ -830,8 +830,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
 
     // Fetch leaderboard for results page
     const leaderboardResult = await getGameLeaderboard(gameData.id, 10);
-    if (leaderboardResult.success && leaderboardResult.result?.leaderboard) {
-      setLeaderboard(leaderboardResult.result.leaderboard);
+    if (leaderboardResult.success && leaderboardResult.leaderboard) {
+      setLeaderboard(leaderboardResult.leaderboard);
     }
     
     onNavigate('gameResults', { gameId: gameData.id });
