@@ -46,3 +46,12 @@ Each GIF hint progressively reveals more details about the secret word or phrase
 - **Community Driven**: Puzzles created in Creator Mode are shared with the community on the subreddit for everyone to enjoy.
 
 Happy puzzling!
+
+## Codebase Statistics
+
+| Metric | Count |
+|---|---|
+| Total source files (`.ts`, `.tsx`, `.js`, `.jsx`, `.css`, `.html`) | 55 |
+| Total lines of code | ~15,785 |
+
+> Run `npm run count-lines` to get an up-to-date line count.
