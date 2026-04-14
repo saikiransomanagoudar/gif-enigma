@@ -33,7 +33,6 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       postToSubreddit = true,
       isChatPost = false,
       inputType = 'word',
-      forceUsername,
       runAsUser = false,
     } = params;
     
@@ -54,25 +53,37 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       };
     }
     
-    if (forceUsername) {
-      username = forceUsername;
-    } else {
+    let resolvedUsername: string | undefined;
+    try {
+      resolvedUsername = (await reddit.getCurrentUsername()) || undefined;
+    } catch {
+      resolvedUsername = undefined;
+    }
+
+    if (!resolvedUsername) {
       try {
         const user = await reddit.getCurrentUser();
-        if (!user || !user.username) {
-          return {
-            success: false,
-            error: 'User not authenticated. Please refresh the page and try again.',
-          };
-        }
-        username = user.username;
-      } catch (error) {
-        return {
-          success: false,
-          error: 'Failed to authenticate user. Please refresh the page and try again.',
-        };
+        resolvedUsername = user?.username || undefined;
+      } catch {
+        resolvedUsername = undefined;
       }
     }
+
+    if (!resolvedUsername && typeof (context as any)?.username === 'string') {
+      const contextUsername = ((context as any).username as string).trim();
+      if (contextUsername.length > 0) {
+        resolvedUsername = contextUsername;
+      }
+    }
+
+    if (!resolvedUsername) {
+      return {
+        success: false,
+        error: 'User not authenticated. Please refresh the page and try again.',
+      };
+    }
+
+    username = resolvedUsername;
 
     const systemUsernames = [
       'gif-enigma',
@@ -187,8 +198,25 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     let postingError = null;
     if (postToSubreddit) {
       try {
-        const subreddit = await reddit.getCurrentSubreddit();
-        const subredditName = subreddit?.name || 'PlayGIFEnigma';
+        let subredditName = '';
+        try {
+          const subreddit = await reddit.getCurrentSubreddit();
+          subredditName = subreddit?.name || '';
+        } catch {
+          subredditName = '';
+        }
+
+        if (!subredditName && typeof (context as any)?.subredditName === 'string') {
+          const contextSubredditName = ((context as any).subredditName as string).trim();
+          if (contextSubredditName.length > 0) {
+            subredditName = contextSubredditName;
+          }
+        }
+
+        if (!subredditName) {
+          postingError = 'Unable to resolve current subreddit for posting.';
+          throw new Error(postingError);
+        }
 
         const allowChatPostCreation = await settings.get('allowChatPostCreation');
         const postTitle = questionText || `Can you decode the ${inputType} from this GIF?`;
@@ -201,23 +229,36 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
           isChatPost: finalIsChatPost ? 'true' : 'false',
         });
 
-        const post = await reddit.submitCustomPost({
-          subredditName: subredditName,
-          title: postTitle,
-          entry: 'preview',
-          postData: {
-            gameId: gameId,
-          },
-          runAs: runAsUser ? 'USER' : 'APP',
-          userGeneratedContent: runAsUser ? { text: postTitle } : undefined,
-        });
+        const submitPost = async (asUser: boolean) => {
+          return reddit.submitCustomPost({
+            subredditName,
+            title: postTitle,
+            entry: 'preview',
+            postData: {
+              gameId: gameId,
+            },
+            runAs: asUser ? 'USER' : 'APP',
+            userGeneratedContent: asUser ? { text: postTitle } : undefined,
+          });
+        };
+
+        let post = null;
+        try {
+          post = await submitPost(runAsUser);
+        } catch (firstPostError) {
+          if (runAsUser) {
+            postingError = `Failed to post to Reddit as the current user: ${String(firstPostError)}`;
+          } else {
+            postingError = `Failed to post to Reddit: ${String(firstPostError)}`;
+          }
+        }
 
         // Validate post was actually created
-        if (!post) {
+        if (!post && !postingError) {
           postingError = 'Reddit API returned null - post creation failed';
-        } else if (!post.id) {
+        } else if (post && !post.id) {
           postingError = 'Reddit post created but no ID returned - may have been filtered';
-        } else {
+        } else if (post && post.id) {
           postId = post.id;
 
           await redis.zAdd('activeGames', { score: Date.now(), member: gameId });

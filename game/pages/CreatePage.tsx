@@ -104,7 +104,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const recommendationsCache = useRef<{ [key: string]: string[] }>({});
   const synonymsCache = useRef<{ [key: string]: string[][] }>({});
   const currentWordRef = useRef<string>('');
-  const synonymTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
+  const synonymTimeoutRef = useRef<{ [key: string]: ReturnType<typeof setTimeout> }>({});
   const activeFetchRef = useRef<string | null>(null);
   const lastCategoryRef = useRef<CategoryType | null>(null);
 
@@ -159,9 +159,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
   const gifGridRef = useRef<HTMLDivElement>(null);
   const submitButtonRef = useRef<HTMLButtonElement>(null);
 
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const cacheCheckTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
-  const cacheRetryIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cacheCheckTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cacheRetryIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const isCacheCheckingRef = React.useRef<boolean>(false);
   const searchStartTimeRef = React.useRef<number | null>(null);
   const progressAnimationRef = React.useRef<number | null>(null);
@@ -976,25 +976,33 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
         return;
       }
 
-      // Show success modal immediately
       setBonusAwarded(true);
       setIsQuickCreate(true);
+      setCreationError(null);
       setShowSuccessModal(true);
 
-      // Trigger server-side Quick Create (no await - fire and forget)
-      // Server responds immediately and processes in background
       quickCreateGame({
         word: secretInput,
         category: currentCategory,
         inputType,
         synonyms: synonymsToFetch,
-      }).then((result) => {
-        if (!result.success) {
-          console.error('Quick Create failed to start:', result.error);
-        }
-      }).catch((error) => {
-        console.error('Quick Create request failed:', error);
-      });
+      })
+        .then((quickCreateResult) => {
+          if (!quickCreateResult.success) {
+            setBonusAwarded(false);
+            setIsQuickCreate(false);
+            setCreationError(
+              quickCreateResult.error || 'Quick Create could not be started. Please try again.'
+            );
+          }
+        })
+        .catch((error) => {
+          setBonusAwarded(false);
+          setIsQuickCreate(false);
+          setCreationError(
+            `Quick Create request failed: ${error instanceof Error ? error.message : String(error)}`
+          );
+        });
 
       // Update limit status after a delay (since server processes async)
       setTimeout(async () => {
@@ -1014,6 +1022,8 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     } catch (error) {
       setBonusAwarded(false);
+      setIsQuickCreate(false);
+      setShowSuccessModal(true);
       setCreationError(`An unexpected error occurred: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     }
   };
