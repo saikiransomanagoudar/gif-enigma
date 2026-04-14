@@ -30,7 +30,6 @@ import {
   getCumulativeLeaderboard,
 } from '../../game/server/scoringService.js';
 import { fetchMultiplePreGenerated } from '../../game/server/dailyPreGenerator.js';
-import { validateGifWordMatch } from '../../game/server/geminiService.js';
 
 type CategoryType = 'Viral Vibes' | 'Cinematic Feels' | 'Gaming Moments' | 'Story Experiences';
 
@@ -398,107 +397,177 @@ app.post('/api/game/quick-create', async (req: any, res: any) => {
       return;
     }
 
-    // Send response immediately to avoid frontend timeout
-    res.json({ success: true, message: 'Quick Create started in background' });
+    const synonymsToFetch = Array.from(
+      new Set(
+        (Array.isArray(clientSynonyms) ? clientSynonyms : [])
+          .map((term: unknown) => (typeof term === 'string' ? term.trim() : ''))
+          .filter((term: string) => term.length > 0)
+      )
+    ).slice(0, 4);
 
-    // Background processing - response already sent
-    (async () => {
-      try {
-        const synonymsToFetch = clientSynonyms.slice(0, 4);
+    if (synonymsToFetch.length < 4) {
+      res.json({ success: false, error: 'Need at least 4 valid synonyms' });
+      return;
+    }
 
-        let gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 10);
+    let gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 10);
 
-        const autoGifUrls: string[] = [];
-        const autoGifDescriptions: string[] = [];
-        const autoSearchTerms: string[] = [];
+    const autoGifUrls: string[] = [];
+    const autoGifDescriptions: string[] = [];
+    const autoSearchTerms: string[] = [];
 
-        // Helper function to collect GIFs from results
-        const collectGifs = () => {
-          // First pass: try to get one GIF from each synonym
-          for (const synonym of synonymsToFetch) {
-            if (autoGifUrls.length >= 4) break;
-            const gifs = gifResults[synonym];
-            if (gifs && gifs.length > 0) {
-              const gif = gifs[0];
-              const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
-              if (gifUrl) {
-                autoGifUrls.push(gifUrl);
-                autoGifDescriptions.push(gif.content_description || gif.title || synonym);
-                autoSearchTerms.push(synonym);
-              }
-            }
-          }
-
-          // Second pass: if we still don't have 4, try additional results from synonyms
-          if (autoGifUrls.length < 4) {
-            for (const synonym of synonymsToFetch) {
-              if (autoGifUrls.length >= 4) break;
-              const gifs = gifResults[synonym];
-              if (gifs && gifs.length > 1) {
-                // Try additional GIFs from this synonym
-                for (let i = 1; i < gifs.length && autoGifUrls.length < 4; i++) {
-                  const gif = gifs[i];
-                  const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
-                  if (gifUrl && !autoGifUrls.includes(gifUrl)) {
-                    autoGifUrls.push(gifUrl);
-                    autoGifDescriptions.push(gif.content_description || gif.title || synonym);
-                    autoSearchTerms.push(synonym);
-                  }
-                }
-              }
-            }
-          }
-        };
-
-        // Try collecting with initial 10 results
-        collectGifs();
-
-        if (autoGifUrls.length < 4) {
-          autoGifUrls.length = 0;
-          autoGifDescriptions.length = 0;
-          autoSearchTerms.length = 0;
-          
-          gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 20);
-          collectGifs();
-        }
-
-        if (autoGifUrls.length !== 4) {
-          return;
-        }
-
-        const wordArray = word.split('');
-        const maskCount = Math.floor((wordArray.length * 2) / 3);
-        const indicesToMask = new Set<number>();
-        while (indicesToMask.size < maskCount) {
-          indicesToMask.add(Math.floor(Math.random() * wordArray.length));
-        }
-        const maskedWord = wordArray
-          .map((char: string, i: number) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
-          .join('');
-
-        const questionText =
-          inputType === 'word'
-            ? 'Can you decode the word from this GIF?'
-            : 'Can you decode the phrase from this GIF?';
-
-        const gameData = {
-          word,
-          category,
-          maskedWord,
-          questionText,
-          gifs: autoGifUrls,
-          gifDescriptions: autoGifDescriptions,
-          searchTerms: autoSearchTerms,
-          inputType,
-          postToSubreddit: true,
-          runAsUser: true,
-        };
-
-        await saveGame(gameData, createContext());
-      } catch (error) {
-        // Background process - errors are silent
+    const getGifUrlFromResult = (gif: any): string => {
+      const url =
+        gif?.media_formats?.tinygif?.url ||
+        gif?.media_formats?.gif?.url ||
+        gif?.media_formats?.mediumgif?.url ||
+        gif?.url ||
+        '';
+      if (typeof url !== 'string' || !url.startsWith('https://')) {
+        return '';
       }
-    })();
+      return url;
+    };
+
+    const tryAddGif = (gif: any, sourceTerm: string, allowDuplicates = false): boolean => {
+      if (autoGifUrls.length >= 4) return false;
+      const gifUrl = getGifUrlFromResult(gif);
+      if (!gifUrl) return false;
+      if (!allowDuplicates && autoGifUrls.includes(gifUrl)) return false;
+
+      autoGifUrls.push(gifUrl);
+      autoGifDescriptions.push(gif?.content_description || gif?.title || sourceTerm);
+      autoSearchTerms.push(sourceTerm);
+      return true;
+    };
+
+    // Helper function to collect GIFs from results
+    const collectGifs = () => {
+      // First pass: try to get one GIF from each synonym
+      for (const synonym of synonymsToFetch) {
+        if (autoGifUrls.length >= 4) break;
+        const gifs = gifResults[synonym];
+        if (gifs && gifs.length > 0) {
+          tryAddGif(gifs[0], synonym);
+        }
+      }
+
+      // Second pass: if we still don't have 4, try additional results from synonyms
+      if (autoGifUrls.length < 4) {
+        for (const synonym of synonymsToFetch) {
+          if (autoGifUrls.length >= 4) break;
+          const gifs = gifResults[synonym];
+          if (gifs && gifs.length > 1) {
+            // Try additional GIFs from this synonym
+            for (let i = 1; i < gifs.length && autoGifUrls.length < 4; i++) {
+              tryAddGif(gifs[i], synonym);
+            }
+          }
+        }
+      }
+    };
+
+    // Try collecting with initial 10 results
+    collectGifs();
+
+    if (autoGifUrls.length < 4) {
+      autoGifUrls.length = 0;
+      autoGifDescriptions.length = 0;
+      autoSearchTerms.length = 0;
+
+      gifResults = await searchMultipleGiphyGifs(createContext(), synonymsToFetch, 20);
+      collectGifs();
+    }
+
+    // Fallback: search with the word itself if synonyms didn't yield 4 GIFs
+    if (autoGifUrls.length < 4) {
+      const wordGifs = await searchGiphyGifs(createContext(), word, 20);
+      for (const gif of wordGifs) {
+        if (autoGifUrls.length >= 4) break;
+        tryAddGif(gif, word);
+      }
+    }
+
+    // Extra fallback: broad queries to avoid dead-end failures
+    if (autoGifUrls.length < 4) {
+      const fallbackQueries = ['reaction', 'meme', 'funny', 'wow'];
+      for (const query of fallbackQueries) {
+        if (autoGifUrls.length >= 4) break;
+        const fallbackGifs = await searchGiphyGifs(createContext(), query, 20);
+        for (const gif of fallbackGifs) {
+          if (autoGifUrls.length >= 4) break;
+          tryAddGif(gif, query);
+        }
+      }
+    }
+
+    // Last-resort fill: allow duplicates so game creation can proceed
+    if (autoGifUrls.length < 4) {
+      const wordGifs = await searchGiphyGifs(createContext(), word, 40);
+      for (const gif of wordGifs) {
+        if (autoGifUrls.length >= 4) break;
+        tryAddGif(gif, word, true);
+      }
+    }
+
+    if (autoGifUrls.length !== 4) {
+      res.json({
+        success: false,
+        error: 'Could not gather enough GIFs for quick create. Please try another word.',
+      });
+      return;
+    }
+
+    const wordArray = word.split('');
+    const maskCount = Math.floor((wordArray.length * 2) / 3);
+    const indicesToMask = new Set<number>();
+    while (indicesToMask.size < maskCount) {
+      indicesToMask.add(Math.floor(Math.random() * wordArray.length));
+    }
+    const maskedWord = wordArray
+      .map((char: string, i: number) => (indicesToMask.has(i) && char !== ' ' ? '_' : char))
+      .join('');
+
+    const questionText =
+      inputType === 'word'
+        ? 'Can you decode the word from this GIF?'
+        : 'Can you decode the phrase from this GIF?';
+
+    const gameData = {
+      word,
+      category,
+      maskedWord,
+      questionText,
+      gifs: autoGifUrls,
+      gifDescriptions: autoGifDescriptions,
+      searchTerms: autoSearchTerms,
+      inputType,
+      postToSubreddit: true,
+      runAsUser: true,
+    };
+
+    const saveResult = await saveGame(gameData, createContext());
+    if (!saveResult.success) {
+      res.json(saveResult);
+      return;
+    }
+
+    if (!saveResult.postedToReddit) {
+      res.json({
+        success: false,
+        error:
+          saveResult.postingError ||
+          'Quick create generated a game but failed to post to your subreddit.',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'Quick Create completed successfully',
+      gameId: saveResult.gameId,
+      redditPostId: saveResult.redditPostId,
+    });
 
   } catch (error) {
     res.json({ success: false, error: String(error) });
@@ -1101,16 +1170,6 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
       return;
     }
 
-    const validation = await validateGifWordMatch(
-      { word, gifDescriptions, searchTerms: gifSearchTerms },
-      createContext()
-    );
-
-    if (!validation.isValid || validation.matchScore < 0.5) {
-      res.json({ status: 'error: validation failed' });
-      return;
-    }
-
     const maskedWord = word
       .split('')
       .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -1130,7 +1189,6 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         gifs: gifUrls,
         postToSubreddit: true,
         inputType,
-        forceUsername: 'gif-enigma',
       },
       createContext()
     );
@@ -1305,16 +1363,6 @@ app.post(
         return;
       }
 
-      const validation = await validateGifWordMatch(
-        { word, gifDescriptions, searchTerms: gifSearchTerms },
-        createContext()
-      );
-
-      if (!validation.isValid || validation.matchScore < 0.5) {
-        res.json({ showToast: '❌ Validation failed' });
-        return;
-      }
-
       const maskedWord = word
         .split('')
         .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -1331,7 +1379,7 @@ app.post(
           gifs: gifUrls,
           postToSubreddit: true,
           inputType,
-          forceUsername: 'gif-enigma',
+          runAsUser: false,
         },
         createContext()
       );
@@ -1456,16 +1504,6 @@ app.post(
         return;
       }
 
-      const validation = await validateGifWordMatch(
-        { word, gifDescriptions, searchTerms: gifSearchTerms },
-        createContext()
-      );
-
-      if (!validation.isValid || validation.matchScore < 0.5) {
-        res.json({ showToast: '❌ Validation failed' });
-        return;
-      }
-
       const maskedWord = word
         .split('')
         .map((c) => (Math.random() < 0.66 && c !== ' ' ? '_' : c))
@@ -1482,7 +1520,7 @@ app.post(
           gifs: gifUrls,
           postToSubreddit: true,
           inputType,
-          forceUsername: 'gif-enigma',
+          runAsUser: false,
         },
         createContext()
       );
