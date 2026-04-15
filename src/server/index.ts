@@ -1189,6 +1189,7 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
         gifs: gifUrls,
         postToSubreddit: true,
         inputType,
+        forceUsername: 'gif-enigma',
       },
       createContext()
     );
