@@ -358,10 +358,25 @@ export async function getCumulativeLeaderboard(
     const { limit = 10 } = params;
     const cacheKey = `leaderboard:cumulative:${limit}`;
     const cacheTTL = 300;
+    const shouldLogTop100 = limit >= 100;
 
     const cached = await redis.get(cacheKey);
     if (cached) {
-      const leaderboard = JSON.parse(cached) as LeaderboardEntry[];
+      const leaderboard = (JSON.parse(cached) as LeaderboardEntry[])
+        .sort((a, b) => b.score - a.score)
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+      if (shouldLogTop100) {
+        console.log('[cumulativeLeaderboard] cache hit', {
+          limit,
+          cachedCount: leaderboard.length,
+          top100: leaderboard.slice(0, 100).map((entry) => ({
+            rank: entry.rank,
+            username: entry.username,
+            score: entry.score,
+            totalScore: entry.totalScore,
+          })),
+        });
+      }
       return { success: true, leaderboard };
     }
 
@@ -371,7 +386,22 @@ export async function getCumulativeLeaderboard(
     });
 
     if (!leaderboardItems || leaderboardItems.length === 0) {
+      if (shouldLogTop100) {
+        console.log('[cumulativeLeaderboard] empty Redis result', { limit });
+      }
       return { success: true, leaderboard: [] };
+    }
+
+    if (shouldLogTop100) {
+      console.log('[cumulativeLeaderboard] raw Redis entries', {
+        limit,
+        count: leaderboardItems.length,
+        entries: leaderboardItems.slice(0, 100).map((item, index) => ({
+          rank: index + 1,
+          username: typeof item.member === 'string' ? item.member : '',
+          score: item.score,
+        })),
+      });
     }
 
     const validUsers: Array<{ username: string; item: (typeof leaderboardItems)[0] }> = [];
@@ -423,10 +453,24 @@ export async function getCumulativeLeaderboard(
 
     const leaderboard: LeaderboardEntry[] = leaderboardResults
       .filter((entry): entry is Omit<LeaderboardEntry, 'rank'> => entry !== null)
+      .sort((a, b) => b.score - a.score)
       .map((entry, index) => ({
         ...entry,
         rank: index + 1,
       }));
+
+    if (shouldLogTop100) {
+      console.log('[cumulativeLeaderboard] final leaderboard', {
+        limit,
+        count: leaderboard.length,
+        top100: leaderboard.slice(0, 100).map((entry) => ({
+          rank: entry.rank,
+          username: entry.username,
+          score: entry.score,
+          totalScore: entry.totalScore,
+        })),
+      });
+    }
 
     await redis.set(cacheKey, JSON.stringify(leaderboard), {
       expiration: new Date(Date.now() + cacheTTL * 1000),
