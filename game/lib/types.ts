@@ -122,6 +122,7 @@ export interface CreatorData {
   isChatPost?: boolean;
   inputType?: 'word' | 'phrase';
   runAsUser?: boolean;
+  forceUsername?: string;
 }
 
 export interface SubredditSettings {

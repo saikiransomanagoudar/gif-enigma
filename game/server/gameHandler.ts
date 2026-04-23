@@ -15,6 +15,83 @@ import {
 import { awardCreationBonus, awardCreatorCompletionBonus } from './scoringService';
 import { getSemanticSynonyms, validateGifWordMatch } from './geminiService.js';
 
+const SCORE_THREAD_MARKER = '[GIF_ENIGMA_SCORE_THREAD]';
+const SCORE_THREAD_CACHE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+function normalizePostId(postId: string): `t3_${string}` {
+  return (postId.startsWith('t3_') ? postId : `t3_${postId}`) as `t3_${string}`;
+}
+
+function normalizeCommentId(commentId: string): `t1_${string}` {
+  return (commentId.startsWith('t1_') ? commentId : `t1_${commentId}`) as `t1_${string}`;
+}
+
+async function getOrCreateScoreThreadComment(postId: string): Promise<`t1_${string}`> {
+  const formattedPostId = normalizePostId(postId);
+  const scoreThreadKey = `scoreThread:${formattedPostId}`;
+
+  const cachedCommentId = await redis.get(scoreThreadKey);
+  if (cachedCommentId) {
+    try {
+      const cachedComment = await reddit.getCommentById(normalizeCommentId(cachedCommentId));
+      if (cachedComment.postId === formattedPostId && cachedComment.stickied) {
+        return cachedComment.id;
+      }
+    } catch {
+      await redis.del(scoreThreadKey);
+    }
+  }
+
+  const comments = await reddit
+    .getComments({
+      postId: formattedPostId,
+      limit: 100,
+      pageSize: 100,
+    })
+    .all();
+
+  const markerSticky = comments.find(
+    (comment) =>
+      comment.parentId === formattedPostId && comment.stickied && comment.body.includes(SCORE_THREAD_MARKER)
+  );
+
+  const existingSticky = markerSticky
+    ? markerSticky
+    : comments.find((comment) => comment.parentId === formattedPostId && comment.stickied);
+
+  if (existingSticky) {
+    await redis.set(scoreThreadKey, existingSticky.id, {
+      expiration: new Date(Date.now() + SCORE_THREAD_CACHE_TTL_MS),
+    });
+    return existingSticky.id;
+  }
+
+  const scoreThread = await reddit.submitComment({
+    id: formattedPostId,
+    text:
+      '## 🎯 Game Performance Comments\n\n',
+    runAs: 'APP',
+  });
+
+  try {
+    await scoreThread.distinguish(true);
+  } catch (error) {
+    // Keep this policy-compliant: generic score replies must go under a sticky score thread.
+    // If we cannot sticky, surface an actionable message.
+    throw new Error(
+      'No sticky comment exists on this post, and the app account could not create a stickied score thread. ' +
+        'A moderator must sticky a score-thread comment (or grant the app moderator permissions). ' +
+        `Details: ${String(error)}`
+    );
+  }
+
+  await redis.set(scoreThreadKey, scoreThread.id, {
+    expiration: new Date(Date.now() + SCORE_THREAD_CACHE_TTL_MS),
+  });
+
+  return scoreThread.id;
+}
+
 export async function saveGame(params: CreatorData, context: Context): Promise<SaveGameResponse> {
   let username = 'anonymous';
   let isSystemUser = false;
@@ -34,6 +111,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       isChatPost = false,
       inputType = 'word',
       runAsUser = false,
+      forceUsername,
     } = params;
     
     // Validate GIFs array
@@ -53,11 +131,35 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       };
     }
     
+    const systemUsernames = [
+      'gif-enigma',
+      'anonymous',
+      'GIFEnigmaBot',
+      'system',
+      'AutoModerator',
+      'reddit',
+    ];
+
     let resolvedUsername: string | undefined;
-    try {
-      resolvedUsername = (await reddit.getCurrentUsername()) || undefined;
-    } catch {
-      resolvedUsername = undefined;
+
+    const normalizedForcedUsername =
+      typeof forceUsername === 'string' ? forceUsername.trim() : '';
+
+    if (
+      normalizedForcedUsername &&
+      systemUsernames.some(
+        (sysUser) => normalizedForcedUsername.toLowerCase() === sysUser.toLowerCase()
+      )
+    ) {
+      resolvedUsername = normalizedForcedUsername;
+    }
+
+    if (!resolvedUsername) {
+      try {
+        resolvedUsername = (await reddit.getCurrentUsername()) || undefined;
+      } catch {
+        resolvedUsername = undefined;
+      }
     }
 
     if (!resolvedUsername) {
@@ -84,15 +186,6 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
     }
 
     username = resolvedUsername;
-
-    const systemUsernames = [
-      'gif-enigma',
-      'anonymous',
-      'GIFEnigmaBot',
-      'system',
-      'AutoModerator',
-      'reddit',
-    ];
 
     isSystemUser = systemUsernames.some(
       (sysUser) => username.toLowerCase() === sysUser.toLowerCase()
@@ -393,6 +486,14 @@ export async function postCompletionComment(
     }
 
     const usedNoHints = gifHints === 0;
+    const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
+    const parsedScore = Number(scoreData?.score);
+    const hasNumericScore = Number.isFinite(parsedScore);
+    const scoreText = hasNumericScore ? `**Score:** ${parsedScore}` : '**Score:** pending';
+    const hintSummary = usedNoHints
+      ? '**GIF hints used:** 0'
+      : `**GIF hints used:** ${gifHints}`;
+
     let emoji = '';
     let commentVariant = Math.floor(Math.random() * 3);
 
@@ -477,11 +578,14 @@ export async function postCompletionComment(
       completionText += ' 🧠';
     }
 
+    completionText += `\n\n${scoreText} | **Attempts:** ${numGuesses} | ${hintSummary}`;
+
     try {
-      const formattedPostId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+      const formattedPostId = normalizePostId(postId);
+      const scoreThreadCommentId = await getOrCreateScoreThreadComment(formattedPostId);
 
       await reddit.submitComment({
-        id: formattedPostId as `t3_${string}`,
+        id: scoreThreadCommentId,
         text: completionText,
         runAs: 'USER',
       });
@@ -492,7 +596,12 @@ export async function postCompletionComment(
       });
       return { success: true };
     } catch (commentError) {
-      return { success: false, error: String(commentError) };
+      return {
+        success: false,
+        error:
+          'Failed to post score reply under the required sticky score thread. ' +
+          `Details: ${String(commentError)}`,
+      };
     }
   } catch (error) {
     return { success: false, error: String(error) };

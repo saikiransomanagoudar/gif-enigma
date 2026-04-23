@@ -1381,6 +1381,7 @@ app.post(
           postToSubreddit: true,
           inputType,
           runAsUser: false,
+          forceUsername: 'gif-enigma',
         },
         createContext()
       );
@@ -1522,6 +1523,7 @@ app.post(
           postToSubreddit: true,
           inputType,
           runAsUser: false,
+          forceUsername: 'gif-enigma',
         },
         createContext()
       );
