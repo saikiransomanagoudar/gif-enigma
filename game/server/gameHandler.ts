@@ -52,7 +52,9 @@ async function getOrCreateScoreThreadComment(postId: string): Promise<`t1_${stri
 
   const markerSticky = comments.find(
     (comment) =>
-      comment.parentId === formattedPostId && comment.stickied && comment.body.includes(SCORE_THREAD_MARKER)
+      comment.parentId === formattedPostId &&
+      comment.stickied &&
+      comment.body.includes(SCORE_THREAD_MARKER)
   );
 
   const existingSticky = markerSticky
@@ -68,8 +70,7 @@ async function getOrCreateScoreThreadComment(postId: string): Promise<`t1_${stri
 
   const scoreThread = await reddit.submitComment({
     id: formattedPostId,
-    text:
-      '## 🎯 Game Performance Comments\n\n',
+    text: '## 🎯 Game Performance Comments\n\n',
     runAs: 'APP',
   });
 
@@ -113,7 +114,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
       runAsUser = false,
       forceUsername,
     } = params;
-    
+
     // Validate GIFs array
     if (!gifs || !Array.isArray(gifs) || gifs.length !== 4) {
       return {
@@ -121,16 +122,16 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
         error: `Invalid GIFs array. Expected exactly 4 GIFs, got ${gifs?.length || 0}.`,
       };
     }
-    
+
     // Validate all GIF URLs are non-empty strings
-    const invalidGifs = gifs.filter(gif => !gif || typeof gif !== 'string' || gif.trim() === '');
+    const invalidGifs = gifs.filter((gif) => !gif || typeof gif !== 'string' || gif.trim() === '');
     if (invalidGifs.length > 0) {
       return {
         success: false,
         error: `Invalid GIF URLs detected. All 4 GIFs must be valid URL strings.`,
       };
     }
-    
+
     const systemUsernames = [
       'gif-enigma',
       'anonymous',
@@ -142,8 +143,7 @@ export async function saveGame(params: CreatorData, context: Context): Promise<S
 
     let resolvedUsername: string | undefined;
 
-    const normalizedForcedUsername =
-      typeof forceUsername === 'string' ? forceUsername.trim() : '';
+    const normalizedForcedUsername = typeof forceUsername === 'string' ? forceUsername.trim() : '';
 
     if (
       normalizedForcedUsername &&
@@ -485,21 +485,68 @@ export async function postCompletionComment(
       return { success: false, error: 'No Reddit post ID found for this game' };
     }
 
+    const gameState = await redis.hGetAll(`gameState:${username}:${gameId}`);
+    let resolvedNumGuesses = Number(numGuesses);
+    if (gameState?.playerState) {
+      const parsedState = JSON.parse(gameState.playerState);
+      const savedNumGuesses = Number(parsedState?.numGuesses);
+      if (Number.isFinite(savedNumGuesses) && savedNumGuesses > 0) {
+        resolvedNumGuesses = savedNumGuesses;
+      }
+    }
+
+    // Fetch user's guesses for spoiler display
+    let wrongGuesses: string[] = [];
+    try {
+      const userGuessesKey = `userGuesses:${username}:${gameId}`;
+      const guessesStr = await redis.get(userGuessesKey);
+      
+      if (guessesStr) {
+        try {
+          const allGuesses = JSON.parse(guessesStr) as string[];
+          
+          if (allGuesses && allGuesses.length > 0) {
+            // Get the game data to find the correct answer
+            const gameData = await redis.hGetAll(`game:${gameId}`);
+            const correctAnswer = gameData?.word
+              ?.replace(/\s+/g, '')
+              .replace(/[^\w]/g, '')
+              .trim()
+              .toUpperCase();
+
+            // Show all wrong attempts (exclude only the final correct answer value).
+            // Remove duplicate identical guesses so a repeated wrong guess appears only once.
+            const seen = new Set<string>();
+            wrongGuesses = allGuesses
+              .filter((g: string) => g && g !== correctAnswer)
+              .reverse()
+              .filter((g: string) => {
+                if (seen.has(g)) return false;
+                seen.add(g);
+                return true;
+              });
+          }
+        } catch {
+          // If parsing fails, continue without guesses
+        }
+      }
+    } catch (guessError) {
+      // If fetching guesses fails, continue without them
+    }
+
     const usedNoHints = gifHints === 0;
     const scoreData = await redis.hGetAll(`score:${gameId}:${username}`);
     const parsedScore = Number(scoreData?.score);
     const hasNumericScore = Number.isFinite(parsedScore);
     const scoreText = hasNumericScore ? `**Score:** ${parsedScore}` : '**Score:** pending';
-    const hintSummary = usedNoHints
-      ? '**GIF hints used:** 0'
-      : `**GIF hints used:** ${gifHints}`;
+    const hintSummary = usedNoHints ? '**GIF hints used:** 0' : `**GIF hints used:** ${gifHints}`;
 
     let emoji = '';
     let commentVariant = Math.floor(Math.random() * 3);
 
-    if (numGuesses === 1 && usedNoHints) {
+    if (resolvedNumGuesses === 1 && usedNoHints) {
       emoji = '🎉🏆✨';
-    } else if (numGuesses === 1) {
+    } else if (resolvedNumGuesses === 1) {
       emoji = '🎉🔥';
     } else if (numGuesses === 2 && gifHints <= 1) {
       emoji = '💪⚡';
@@ -539,46 +586,54 @@ export async function postCompletionComment(
         `Got it right away on **attempt #1** ${hintsDescription}! ${emoji}`,
       ];
       completionText = masterTexts[commentVariant];
-    } else if (numGuesses === 2) {
+    } else if (resolvedNumGuesses === 2) {
       // Quick solver
       const quickTexts = [
-        `Solved it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
-        `Cracked the code in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Solved it in **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Cracked the code in **${resolvedNumGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Got it in **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = quickTexts[commentVariant];
-    } else if (numGuesses <= 4) {
+    } else if (resolvedNumGuesses <= 4) {
       // Good performance
       const goodTexts = [
-        `Figured it out in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
-        `Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Cracked it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Figured it out in **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Solved in **${resolvedNumGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Cracked it after **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = goodTexts[commentVariant];
-    } else if (numGuesses <= 7) {
+    } else if (resolvedNumGuesses <= 7) {
       // Persistent solver
       const persistentTexts = [
-        `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
-        `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Finally got it in **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Persistence paid off! Solved in **${resolvedNumGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Conquered it after **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = persistentTexts[commentVariant];
     } else {
       // Very persistent solver (7+ attempts) - keep same wording
       const veryPersistentTexts = [
-        `Finally got it in **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
-        `Persistence paid off! Solved in **${numGuesses} tries** ${hintsDescription}! ${emoji}`,
-        `Conquered it after **${numGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Finally got it in **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
+        `Persistence paid off! Solved in **${resolvedNumGuesses} tries** ${hintsDescription}! ${emoji}`,
+        `Conquered it after **${resolvedNumGuesses} attempts** ${hintsDescription}! ${emoji}`,
       ];
       completionText = veryPersistentTexts[commentVariant];
     }
 
     // Add special badge for no-hint achievements
-    if (usedNoHints && numGuesses <= 3) {
+    if (usedNoHints && resolvedNumGuesses <= 3) {
       completionText += ' 🧠';
     }
 
-    completionText += `\n\n${scoreText} | **Attempts:** ${numGuesses} | ${hintSummary}`;
+    completionText = `#### ${completionText}`;
+
+    completionText += `\n\n${scoreText} | **Attempts:** ${resolvedNumGuesses} | ${hintSummary}`;
+
+    // Add spoilered guesses if there are any
+    if (wrongGuesses.length > 0) {
+      const spoilerAttempts = wrongGuesses.map((guess) => `>!${guess}!<`).join(', ');
+      completionText += `\n\n**My other attempts:** ${spoilerAttempts}`;
+    }
 
     try {
       const formattedPostId = normalizePostId(postId);
@@ -744,8 +799,8 @@ export async function getGame(
     // 3. Validate Reddit post is not deleted/removed
     if (rawGameData.redditPostId) {
       try {
-        const formattedPostId = rawGameData.redditPostId.startsWith('t3_') 
-          ? rawGameData.redditPostId 
+        const formattedPostId = rawGameData.redditPostId.startsWith('t3_')
+          ? rawGameData.redditPostId
           : `t3_${rawGameData.redditPostId}`;
         const post = await reddit.getPostById(formattedPostId as `t3_${string}`);
         if (!post || post.removedByCategory) {
@@ -1170,6 +1225,26 @@ export async function trackGuess(
       member: username,
       score: Date.now(),
     });
+
+    // Store per-user guesses for spoiler display
+    const userGuessesKey = `userGuesses:${username}:${gameId}`;
+    try {
+      const existingGuessesStr = await redis.get(userGuessesKey);
+      let allGuesses: string[] = [];
+      if (existingGuessesStr) {
+        try {
+          allGuesses = JSON.parse(existingGuessesStr);
+        } catch {
+          allGuesses = [];
+        }
+      }
+      allGuesses.push(normalizedGuess);
+      await redis.set(userGuessesKey, JSON.stringify(allGuesses), {
+        expiration: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      });
+    } catch (guessStorageError) {
+      // Silently fail - guesses are optional
+    }
 
     return { success: true };
   } catch (error) {

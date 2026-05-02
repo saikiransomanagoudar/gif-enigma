@@ -341,13 +341,19 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
       return;
     }
 
-    const gifHintCount = gameState?.gifHintCount || 1;
-    const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
-    const actualGuesses = gameState?.numGuesses || 1;
-
     setIsCommentPosting(true);
 
     try {
+      // Refresh game state immediately before posting to ensure we have latest data
+      const freshStateData = await getGameState(username, gameId);
+      const freshGameState = freshStateData.success && freshStateData.state?.playerState
+        ? freshStateData.state.playerState
+        : gameState;
+
+      const gifHintCount = freshGameState?.gifHintCount || 1;
+      const gifHintsUsed = gifHintCount > 1 ? gifHintCount - 1 : 0;
+      const actualGuesses = freshGameState?.numGuesses || 1;
+
       const data = await postCompletionComment(
         gameId,
         username,
