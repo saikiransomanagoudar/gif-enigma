@@ -69,6 +69,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
   // @ts-ignore
   const [gameId, setGameId] = useState<string | null>(propGameId || null);
   const [guessCount, setGuessCount] = useState(0);
+  const guessCountRef = useRef(0);
   const lastSubmittedGuessRef = useRef<string>('');
   const [showIncorrectPopup, setShowIncorrectPopup] = useState(false);
   const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
@@ -285,6 +286,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     setIsInitialLoading(true);
     setIsPageLoaded(false);
     didAnimateRef.current = false;
+    setGuessCount(0);
+    guessCountRef.current = 0;
 
     const animationTimeout = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -314,6 +317,8 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
           setGameData(loadedGameData);
           setGameFlowState('playing');
           setIsCorrect(null);
+          setGuessCount(0);
+          guessCountRef.current = 0;
 
           const letters = loadedGameData.word.replace(/\s+/g, '').toUpperCase().split('');
           const scrambled = scrambleArray([...letters]);
@@ -439,7 +444,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         guess: gameFlowState === 'won' || gameFlowState === 'completed' ? gameData.word : guess,
         lastPlayed: Date.now(),
         isCompleted: gameFlowState === 'won' || gameFlowState === 'completed',
-        numGuesses: guessCount,
+        numGuesses: guessCountRef.current,
         hasGivenUp: gifHintCount === 999 ? true : undefined,
       };
 
@@ -632,6 +637,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
         guess: gameData.word,
         lastPlayed: Date.now(),
         isCompleted: true,
+        numGuesses: guessCountRef.current,
       };
 
       await saveGameState(currentUsername, gameData.id, playerState);
@@ -800,7 +806,7 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
       guess: gameData.word,
       lastPlayed: Date.now(),
       isCompleted: true,
-      numGuesses: guessCount,
+      numGuesses: guessCountRef.current,
       hasGivenUp: true,
     };
 
@@ -931,7 +937,11 @@ export const GamePage: React.FC<GamePageProps> = ({ onNavigate, gameId: propGame
     }
 
     setIsSubmittingGuess(true);
-    setGuessCount((prevCount) => prevCount + 1);
+    setGuessCount((prevCount) => {
+      const nextCount = prevCount + 1;
+      guessCountRef.current = nextCount;
+      return nextCount;
+    });
 
     if (!gameData || !gameData.word) {
       setIsSubmittingGuess(false);

@@ -28,6 +28,7 @@ export interface PlayerGameState {
   guess: string;
   lastPlayed: number;
   isCompleted: boolean;
+  numGuesses?: number;
   hasGivenUp?: boolean;
   isCreator?: boolean;
 }
