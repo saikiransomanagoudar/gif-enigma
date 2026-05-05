@@ -625,7 +625,7 @@ export async function postCompletionComment(
       completionText += ' 🧠';
     }
 
-    completionText = `#### ${completionText}`;
+    completionText = `${completionText}`;
 
     completionText += `\n\n${scoreText} | **Attempts:** ${resolvedNumGuesses} | ${hintSummary}`;
 
