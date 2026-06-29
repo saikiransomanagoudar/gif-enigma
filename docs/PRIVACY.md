@@ -7,16 +7,16 @@ This Privacy Policy explains how GIF Enigma collects, uses, and shares informati
 
 ## 2. Information We Collect
 - **Game Data**: Game questions, answers, and scores created by users
-- **GIF Usage**: Which GIFs users select from Tenor
+- **GIF Usage**: Which GIFs users select from Giphy
 - **Reddit Information**: Basic profile information available through Reddit
 
 ## 3. How We Use Information
 - To provide and improve GIF Enigma functionality
 - To store your game data and preferences
-- To facilitate GIF search through Tenor API
+- To facilitate GIF search through Giphy API
 
 ## 4. Third-Party Services
-We use Tenor API to provide GIF content. When you search for GIFs, your search terms are sent to Tenor. Please review Tenor's Privacy Policy for information about how they handle your data.
+We use Giphy API to provide GIF content. When you search for GIFs, your search terms are sent to Giphy. Please review Giphy's Privacy Policy for information about how they handle your data.
 
 ## 5. Data Storage
 Game data is stored in Reddit's server infrastructure using Devvit's Redis storage capabilities.
