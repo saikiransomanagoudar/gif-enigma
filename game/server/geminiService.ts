@@ -35,7 +35,7 @@ export async function getRecommendations(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
     const timestamp = Date.now();
     const randomSeed = Math.floor(Math.random() * 1000);
@@ -113,10 +113,7 @@ export async function getRecommendations(
         },
       ],
       generationConfig: {
-        temperature: 0.88,
         maxOutputTokens: 200,
-        topP: 0.93,
-        topK: 45,
         responseMimeType: 'application/json',
       },
     };
@@ -288,7 +285,7 @@ export async function getSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
     const timestamp = Date.now();
     const randomSeed = Math.floor(Math.random() * 1000);
@@ -363,10 +360,7 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
         },
       ],
       generationConfig: {
-        temperature: 0.85,
         maxOutputTokens: 200,
-        topP: 0.92,
-        topK: 50,
         responseMimeType: 'application/json',
       },
     };
@@ -731,7 +725,7 @@ export async function getSemanticSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
     // Calculate word length (without spaces/punctuation)
     const normalizedWord = word.replace(/\s+/g, '').replace(/[^\w]/g, '');
@@ -771,10 +765,7 @@ IMPORTANT: Each word in the array MUST have exactly ${wordLength} letters (exclu
         },
       ],
       generationConfig: {
-        temperature: 0.7,
         maxOutputTokens: 500,
-        topP: 0.9,
-        topK: 40,
         responseMimeType: 'application/json',
       },
     };
@@ -881,7 +872,7 @@ export async function validateGifWordMatch(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
     const prompt = `Evaluate if these GIFs match the secret word or phrase for a GIF-guessing game with progressive hints.
 
@@ -949,10 +940,7 @@ Return ONLY a JSON object:
         },
       ],
       generationConfig: {
-        temperature: 0.3,
         maxOutputTokens: 200,
-        topP: 0.8,
-        topK: 20,
         responseMimeType: 'application/json',
       },
     };
