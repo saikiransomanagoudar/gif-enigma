@@ -308,71 +308,63 @@ export async function searchGiphyGifs(
 
       const results = data.data;
 
-      let consecutiveErrors = 0;
-      const MAX_CONSECUTIVE_ERRORS = 3;
+      const candidateResults = results
+        .filter((result: GiphyRawGifResult) => !seenIds.has(result.id))
+        .slice(0, Math.max(desiredCount * 3, desiredCount));
+      const processedCandidates: GiphyGifResult[] = [];
 
-      for (let i = 0; i < results.length && collected.length < desiredCount; i++) {
-        const result = results[i] as GiphyRawGifResult;
+      // Upload/cache candidates in small parallel batches instead of waiting for
+      // every GIF and adding an artificial delay between successful results.
+      for (let i = 0; i < candidateResults.length; i += 8) {
+        const batch = candidateResults.slice(i, i + 8);
+        const processed = await Promise.all(
+          batch.map(async (result: GiphyRawGifResult) => {
+            const transformed = transformGiphyToInternal(result, query);
+            try {
+              return await cacheGiphyGif(context, transformed);
+            } catch {
+              return transformed;
+            }
+          })
+        );
+        processedCandidates.push(...processed);
+      }
 
-        if (seenIds.has(result.id)) {
-          continue;
+      const validCandidates = processedCandidates.filter((cachedGif) => {
+        const url = cachedGif?.url;
+        return (
+          typeof url === 'string' &&
+          url.trim().length > 0 &&
+          (url.startsWith('https://i.redd.it/') ||
+            url.startsWith('https://media') ||
+            url.startsWith('https://giphy.com'))
+        );
+      });
+
+      // Prefer diverse results, but do not return fewer GIFs just because the
+      // optional similarity heuristic classified candidates as similar.
+      const addCandidate = (cachedGif: GiphyGifResult) => {
+        if (collected.length >= desiredCount || seenIds.has(cachedGif.id)) {
+          return;
         }
 
-        const transformed = transformGiphyToInternal(result, query);
-        let cachedGif: GiphyGifResult;
-
-        try {
-          cachedGif = await cacheGiphyGif(context, transformed);
-          if (cachedGif.url && cachedGif.url.startsWith('https://i.redd.it/')) {
-            consecutiveErrors = 0;
-          }
-        } catch {
-          consecutiveErrors++;
-          cachedGif = transformed;
-
-          const backoffMs = Math.min(200 * consecutiveErrors, 800);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            break;
-          }
+        collected.push(cachedGif);
+        seenIds.add(cachedGif.id);
+        const metadata = extractMetadata(cachedGif);
+        if (metadata) {
+          collectedMetadata.set(cachedGif.id, metadata);
+          seenBaseUrls.add(metadata.baseUrl);
         }
+      };
 
-        const hasValidUrl =
-          typeof cachedGif?.url === 'string' &&
-          cachedGif.url.trim().length > 0 &&
-          (cachedGif.url.startsWith('https://i.redd.it/') ||
-            cachedGif.url.startsWith('https://media') ||
-            cachedGif.url.startsWith('https://giphy.com'));
-
-        if (hasValidUrl && !seenIds.has(cachedGif.id)) {
-          consecutiveErrors = 0;
-
-          if (isSimilarToCollected(cachedGif)) {
-            continue;
-          }
-
-          collected.push(cachedGif);
-          seenIds.add(cachedGif.id);
-          const metadata = extractMetadata(cachedGif);
-          if (metadata) {
-            collectedMetadata.set(cachedGif.id, metadata);
-            seenBaseUrls.add(metadata.baseUrl);
-          }
-
-          if (collected.length < desiredCount) {
-            await new Promise((resolve) => setTimeout(resolve, 400));
-          }
-        } else {
-          consecutiveErrors++;
-
-          const backoffMs = Math.min(500 * consecutiveErrors, 1500);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            break;
-          }
+      validCandidates.forEach((cachedGif) => {
+        if (!isSimilarToCollected(cachedGif)) {
+          addCandidate(cachedGif);
         }
+      });
+
+      if (collected.length < desiredCount) {
+        validCandidates.forEach(addCandidate);
       }
 
       if (collected.length >= desiredCount) break;
@@ -446,9 +438,7 @@ export async function searchMultipleGiphyGifs(
           }
         }
 
-        const fetchPromises = uncachedQueries.map(async (query, index) => {
-          await new Promise((resolve) => setTimeout(resolve, index * 150));
-
+        const fetchPromises = uncachedQueries.map(async (query) => {
           try {
             const results = await searchGiphyGifs(context, query, limit);
             resultMap[query] = results;

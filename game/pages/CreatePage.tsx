@@ -827,7 +827,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
         // Refactored: Use API function for batch search
         try {
-          const data = await batchSearchGiphyGifs(allSynonyms, 10);
+          const data = await batchSearchGiphyGifs(allSynonyms, 6);
 
           if (data.success && data.results) {
             Object.keys(data.results).forEach((query) => {
@@ -867,7 +867,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
 
     // Refactored: Direct search using API function (fallback if not in batch cache)
     try {
-      const data = await searchGiphyGifs(term, 10);
+      const data = await searchGiphyGifs(term, 6);
 
       if (data.success && Array.isArray(data.results)) {
         if (data.results.length > 0) {
@@ -880,18 +880,25 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
             setLoadingStage(0);
             setIsWaitingForResults(false);
           }
-        } else {
+        } else if (currentSearchTermRef.current === term) {
           setGifs([]);
           setIsSearching(false);
           setLoadingStage(0);
           setIsWaitingForResults(false);
         }
+      } else if (currentSearchTermRef.current === term) {
+        setGifs([]);
+        setIsSearching(false);
+        setLoadingStage(0);
+        setIsWaitingForResults(false);
       }
     } catch (error) {
-      setGifs([]);
-      setIsSearching(false);
-      setLoadingStage(0);
-      setIsWaitingForResults(false);
+      if (currentSearchTermRef.current === term) {
+        setGifs([]);
+        setIsSearching(false);
+        setLoadingStage(0);
+        setIsWaitingForResults(false);
+      }
     }
   };
 
