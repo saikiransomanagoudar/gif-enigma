@@ -16,6 +16,8 @@ import {
   getGameStatistics,
   getCreatorBonusStats,
   postCompletionComment,
+  getSubredditSubscriptionStatus,
+  subscribeToCurrentSubreddit,
 } from '../lib/api';
 
 interface GameResultsPageProps extends NavigationProps {
@@ -45,6 +47,11 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [commentedInThisSession, setCommentedInThisSession] = useState(false);
+  const [hasJoinedSubreddit, setHasJoinedSubreddit] = useState(false);
+  const [justJoinedSubreddit, setJustJoinedSubreddit] = useState(false);
+  const [subredditName, setSubredditName] = useState('r/PlayGIFEnigma');
+  const [isSubscriptionStatusLoading, setIsSubscriptionStatusLoading] = useState(true);
+  const [isJoiningSubreddit, setIsJoiningSubreddit] = useState(false);
   const isHandlingPlayAgainRequest = useRef(false);
   const normalizePostId = (id: string) => (id.startsWith('t3_') ? id.slice(3) : id);
   const normalizePostIdForLookup = (id: string) => (id.startsWith('t3_') ? id : `t3_${id}`);
@@ -128,6 +135,39 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     darkModeQuery.addEventListener('change', handleThemeChange);
     return () => darkModeQuery.removeEventListener('change', handleThemeChange);
   }, []);
+
+  useEffect(() => {
+    const loadSubscriptionStatus = async () => {
+      const response = await getSubredditSubscriptionStatus();
+      if (response.success) {
+        setHasJoinedSubreddit(response.subscribedThroughButton === true);
+      }
+      if (response.subredditName) {
+        setSubredditName(response.subredditName);
+      }
+      setIsSubscriptionStatusLoading(false);
+    };
+
+    loadSubscriptionStatus();
+  }, []);
+
+  const handleJoinSubreddit = async () => {
+    if (isJoiningSubreddit || hasJoinedSubreddit) return;
+
+    setIsJoiningSubreddit(true);
+    const response = await subscribeToCurrentSubreddit();
+    if (response.success) {
+      setHasJoinedSubreddit(true);
+      setJustJoinedSubreddit(true);
+    } else {
+      setToastMessage(
+        response.error || `Unable to join ${subredditName} right now. Please try again.`
+      );
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 4000);
+    }
+    setIsJoiningSubreddit(false);
+  };
 
   const backgroundColor = isDarkMode ? '' : 'bg-[#E8E5DA]';
 
@@ -645,21 +685,55 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
           )}
 
           <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-center">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onNavigate('leaderboard', { gameId: statistics.gameId });
-              }}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:translate-y-0 active:scale-95 sm:w-auto sm:min-w-[220px] sm:flex-1"
-              style={{ backgroundColor: colors.primary }}
-            >
-              <span className="text-lg">🏆</span>
-              <ComicText size={0.7} color="white">
-                Leaderboard
-              </ComicText>
-            </button>
+            {isSubscriptionStatusLoading ? (
+              <div className="flex w-full items-center justify-center px-6 py-3 text-white sm:w-auto sm:min-w-[220px] sm:flex-1">
+                <ComicText size={0.7} color={colors.textSecondary}>
+                  Loading...
+                </ComicText>
+              </div>
+            ) : justJoinedSubreddit ? (
+              <button
+                type="button"
+                disabled
+                className="flex w-full cursor-default items-center justify-center gap-2 rounded-full px-6 py-3 text-white sm:w-auto sm:min-w-[220px] sm:flex-1"
+                style={{ backgroundColor: '#10B981' }}
+              >
+                <span className="text-lg">✅</span>
+                <ComicText size={0.7} color="white">
+                  Joined
+                </ComicText>
+              </button>
+            ) : hasJoinedSubreddit ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onNavigate('leaderboard', { gameId: statistics.gameId });
+                }}
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:translate-y-0 active:scale-95 sm:w-auto sm:min-w-[220px] sm:flex-1"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <span className="text-lg">🏆</span>
+                <ComicText size={0.7} color="white">
+                  Leaderboard
+                </ComicText>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleJoinSubreddit}
+                disabled={isJoiningSubreddit}
+                title={`Join ${subredditName} to support the community. This does not affect your game.`}
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-6 py-3 text-white transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:shadow-lg active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:min-w-[220px] sm:flex-1"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <span className="text-lg">{isJoiningSubreddit ? '⏳' : '➕'}</span>
+                <ComicText size={0.7} color="white">
+                  {isJoiningSubreddit ? 'Joining...' : `Join ${subredditName}`}
+                </ComicText>
+              </button>
+            )}
 
             <button
               type="button"

@@ -54,6 +54,55 @@ app.get('/api/user/current', async (_req: any, res: any) => {
   }
 });
 
+const subredditSubscriptionKey = (username: string) => `subredditSubscription:${username}`;
+
+app.get('/api/subreddit/subscription-status', async (_req: any, res: any) => {
+  try {
+    const username = await reddit.getCurrentUsername();
+    const subreddit = await reddit.getCurrentSubreddit();
+    const subredditName = subreddit?.name ? `r/${subreddit.name}` : 'the subreddit';
+    if (!username) {
+      res.json({ success: true, subscribedThroughButton: false, subredditName });
+      return;
+    }
+
+    const subscribedThroughButton = await redis.get(subredditSubscriptionKey(username));
+    res.json({
+      success: true,
+      subscribedThroughButton: subscribedThroughButton === '1',
+      subredditName,
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      subscribedThroughButton: false,
+      subredditName: 'the subreddit',
+      error: String(error),
+    });
+  }
+});
+
+app.post('/api/subreddit/subscribe', async (_req: any, res: any) => {
+  try {
+    const username = await reddit.getCurrentUsername();
+    if (!username) {
+      res.status(401).json({ success: false, error: 'User is not authenticated' });
+      return;
+    }
+
+    await reddit.subscribeToCurrentSubreddit();
+    await redis.set(subredditSubscriptionKey(username), '1');
+
+    res.json({ success: true, subscribedThroughButton: true });
+  } catch (error) {
+    console.error('Failed to subscribe to current subreddit:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to subscribe to the subreddit',
+    });
+  }
+});
+
 app.get('/api/user/stats', async (req: any, res: any) => {
   try {
     const username = req.query.username as string | undefined;

@@ -9,6 +9,34 @@ export async function getCurrentUser() {
   }
 }
 
+export async function getSubredditSubscriptionStatus() {
+  try {
+    const response = await fetch('/api/subreddit/subscription-status');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return {
+      success: false,
+      subscribedThroughButton: false,
+      subredditName: 'the subreddit',
+      error: String(error),
+    };
+  }
+}
+
+export async function subscribeToCurrentSubreddit() {
+  try {
+    const response = await fetch('/api/subreddit/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 export async function getUserStats(username: string) {
   const response = await fetch(`/api/user/stats?username=${encodeURIComponent(username)}`);
   const data = await response.json();
