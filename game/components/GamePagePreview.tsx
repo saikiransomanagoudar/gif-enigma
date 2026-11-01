@@ -183,7 +183,10 @@ export const GamePagePreview: React.FC<GamePagePreviewProps> = ({ gameId, onNavi
     setShowSuccessMessage(false);
 
     try {
-      const response = await getRandomGame(username || 'anonymous', { useStickyNavigation: true });
+      const response = await getRandomGame(username || 'anonymous', {
+        excludeIds: gameId ? [gameId] : [],
+        useStickyNavigation: true,
+      });
 
       if (!isMounted.current) {
         return;

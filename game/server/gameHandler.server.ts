@@ -127,7 +127,7 @@ export async function getRandomGame(
       const assignedGameKey = `user:${resolvedUsername}:assignedGame`;
       const assignedGameId = await context.redis.get(assignedGameKey);
 
-      if (assignedGameId) {
+      if (assignedGameId && !excludeIds.includes(assignedGameId)) {
         const isCompleted = await isGameCompleted(assignedGameId);
 
         if (isCompleted) {
@@ -169,6 +169,8 @@ export async function getRandomGame(
             await context.redis.del(assignedGameKey);
           }
         }
+      } else if (assignedGameId) {
+        await context.redis.del(assignedGameKey);
       }
     }
 

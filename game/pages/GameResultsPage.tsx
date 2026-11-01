@@ -84,7 +84,10 @@ export const GameResultsPage: React.FC<GameResultsPageProps> = ({ onNavigate, ga
     setGameFound(false);
 
     try {
-      const response = await getRandomGame(username || 'anonymous', { useStickyNavigation: true });
+      const response = await getRandomGame(username || 'anonymous', {
+        excludeIds: gameId ? [gameId] : [],
+        useStickyNavigation: true,
+      });
 
       const resolvedGame = response.game || response.result?.game;
       if (response.success && resolvedGame) {
