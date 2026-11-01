@@ -107,9 +107,9 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
           leaderboardResult.value.success &&
           Array.isArray(leaderboardResult.value.leaderboard)
         ) {
-          const top50 = leaderboardResult.value.leaderboard.slice(0, 50);
-          setCachedLeaderboard(top50);
-          setLeaderboard(top50);
+          const top100 = leaderboardResult.value.leaderboard.slice(0, 100);
+          setCachedLeaderboard(top100);
+          setLeaderboard(top100);
         }
 
         // Process user stats
@@ -216,7 +216,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       <div className="flex items-center justify-center gap-1 px-6 pt-4 pb-2 md:px-10">
         <span className="text-2xl">🏆</span>
         <h2 className="text-xl font-bold text-[#FF4500]">
-          <ComicText>Top Players</ComicText>
+          <ComicText>Leaderboard</ComicText>
         </h2>
       </div>
 
@@ -325,12 +325,12 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
       {/* Sticky Bottom Bar for User Stats */}
       <div
         className={`fixed right-0 bottom-0 left-0 ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-300 bg-white'} z-50 m-2 rounded-2xl border-2 shadow-lg ${
-          userStats && userStats.rank > 0 && userStats.rank <= 50
+          userStats && userStats.rank > 0 && userStats.rank <= 100
             ? 'cursor-pointer transition-all duration-150 hover:opacity-90 hover:shadow-xl active:scale-[0.98] active:shadow-md'
             : ''
         }`}
         onClick={
-          userStats && userStats.rank > 0 && userStats.rank <= 50 ? handleScrollToUser : undefined
+          userStats && userStats.rank > 0 && userStats.rank <= 100 ? handleScrollToUser : undefined
         }
       >
         <div className="flex max-w-full items-center justify-between gap-2 px-4 py-3">
@@ -343,7 +343,7 @@ export const LeaderboardPage: React.FC<LeaderboardPageProps> = ({ onNavigate, ga
                 Your Stats
               </span>
             </ComicText>
-            {userStats && userStats.rank > 0 && userStats.rank <= 50 && (
+            {userStats && userStats.rank > 0 && userStats.rank <= 100 && (
               <span className="text-sm opacity-60">👆</span>
             )}
           </div>

@@ -1427,11 +1427,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({ onNavigate, category = '
                   {loadingStage >= 1 && loadingStage < 2 && '🎬 Searching GIF library...'}
                   {loadingStage >= 2 && `✨ Selecting best matches${animatedDots}`}
                 </ComicText>
-                {loadingStage >= 2 && (
-                  <ComicText size={0.45} color="white" className="mt-1 text-center">
-                    first load may take 10-15 secs, appreciate your patience :)
-                  </ComicText>
-                )}
               </div>
             </div>
           )}
