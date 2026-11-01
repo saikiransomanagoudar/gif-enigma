@@ -14,6 +14,18 @@ interface GeminiResponse {
   error?: any;
 }
 
+const GEMINI_API_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+
+// Static instruction block shared by single and batch synonym generation.
+// Kept identical across requests so Gemini's implicit prompt caching discounts it.
+const SYNONYM_INSTRUCTIONS = `You generate GIPHY search terms for a GIF-guessing game. For each given word/phrase, produce exactly 4 sets of 3 search terms, progressing from contextual to specific:
+Set 1 (contextual, shown first): situations/scenarios where the concept occurs. Must NOT contain the answer; solvable by deduction. e.g. EXCITED -> ["surprise party","big news","winning"]
+Set 2 (emotional/reaction): feelings or reactions tied to the concept. e.g. BETRAYED -> ["shocked face","crying alone","broken trust"]
+Set 3 (action/visual): direct actions or visual representations. e.g. CELEBRATING -> ["dance party","champagne pop","victory dance"]
+Set 4 (direct): the word itself plus closest synonyms. e.g. HEARTBROKEN -> ["heartbroken","heartbreak","broken heart"]
+Rules: prefer 2-3 word compound terms ("surprise party" over "party"); every term must yield animated, expressive GIFs with clear emotion/action; avoid philosophical/abstract terms and text-heavy GIFs; sets should feel like a logical progression of hints.`;
+
 export async function getRecommendations(
   params: {
     category: CategoryType;
@@ -35,11 +47,8 @@ export async function getRecommendations(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `${GEMINI_API_URL}?key=${apiKey}`;
 
-    const timestamp = Date.now();
-    const randomSeed = Math.floor(Math.random() * 1000);
-    
     // Build exclusion clause if we have words to exclude
     const exclusionClause = excludeWords.length > 0 
       ? `\n\nIMPORTANT: DO NOT include any of these previously used ${inputType}s: ${excludeWords.join(', ')}.` 
@@ -70,7 +79,6 @@ export async function getRecommendations(
     - Select words that have clear visual representations
     - Include pop culture references that appear frequently in GIFs
     - Avoid abstract concepts that don't translate well to visual media
-    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
     
     Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["word1", "word2", "word3"]`
         : `Generate ${count} DIVERSE phrases (each with a minimum of two words) that would yield EXCELLENT ANIMATED GIFs when searched on GIPHY related to ${category}. 
@@ -98,7 +106,6 @@ export async function getRecommendations(
     - Include phrases from viral videos, TV shows, or movies that became GIFs
     - Focus on dynamic content rather than static concepts
     - Consider what phrases people actually search for when looking for reaction GIFs
-    - Use randomization seed ${randomSeed} and timestamp ${timestamp} for variety
     
     Return your answer ONLY as a JSON array of strings. No explanation, no formatting, just a valid JSON array. For example: ["phrase1", "phrase2", "phrase3"]`;
 
@@ -113,7 +120,8 @@ export async function getRecommendations(
         },
       ],
       generationConfig: {
-        maxOutputTokens: 200,
+        maxOutputTokens: 600,
+        temperature: 1.0,
         responseMimeType: 'application/json',
       },
     };
@@ -285,69 +293,14 @@ export async function getSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `${GEMINI_API_URL}?key=${apiKey}`;
 
-    const timestamp = Date.now();
-    const randomSeed = Math.floor(Math.random() * 1000);
+    const prompt = `${SYNONYM_INSTRUCTIONS}
 
-    const prompt = `For the word/phrase "${word}", generate four sets of HIGHLY EFFECTIVE GIPHY GIF search terms that create a CHALLENGING but FAIR visual puzzle, arranged from contextual to specific:
+Word/phrase: "${word}"
 
-1. FIRST SET (Contextual/Situational - shown to player first):
-   - Use terms that show WHEN or WHERE you'd experience "${word}"
-   - For EMOTIONS: show scenarios/situations that trigger this feeling
-   - For ACTIONS: show contexts where this action happens
-   - For ABSTRACT CONCEPTS: show visual representations or related scenarios
-   - Must produce visually clear, recognizable GIFs that hint at the concept
-   - Example: For "EXCITED" → ["surprise party", "big news", "winning"]
-   - Example: For "TERRIFIED" → ["horror movie", "dark hallway", "jump scare"]
-   - Example: For "ESCAPING" → ["running away", "chase scene", "prison break"]
-   - Example: For "DESTINY" → ["chosen one", "prophecy fulfilled", "fate decides"]
-   - Example: For "BETRAYAL" → ["backstabbing friend", "trust broken", "double cross"]
-   - (3 terms)
-
-2. SECOND SET (Emotional/Reaction - clearer connection):
-   - Terms showing the FEELING or REACTION associated with "${word}"
-   - Should yield expressive face/body language GIFs
-   - For abstract concepts: show how people REACT to or FEEL about this concept
-   - Example: For "EXCITED" → ["screaming happy", "can't believe", "freaking out"]
-   - Example: For "BETRAYED" → ["shocked face", "crying alone", "broken trust"]
-   - Example: For "DESTINY" → ["meant to be", "it was fate", "written in stars"]
-   - (3 terms)
-
-3. THIRD SET (Action/Visual - more direct):
-   - Specific ACTIONS or VISUAL REPRESENTATIONS of "${word}"
-   - Should show what the word LOOKS like in motion
-   - For abstract concepts: use movie/story references that embody the concept
-   - Example: For "CELEBRATING" → ["dance party", "champagne pop", "victory dance"]
-   - Example: For "SNEAKING" → ["tiptoeing", "looking around", "spy move"]
-   - Example: For "DESTINY" → ["hero journey", "final battle", "inevitable moment"]
-   - (3 terms)
-
-4. FOURTH SET (Direct/Specific - most obvious):
-   - The word/phrase itself and closest visual synonyms
-   - Direct terms that clearly represent the concept
-   - Example: For "HEARTBROKEN" → ["heartbroken", "heartbreak", "broken heart"]
-   - Example: For "DESTINY" → ["destiny", "fate", "predetermined"]
-   - (3 terms)
-
-CRITICAL RULES FOR CHALLENGING BUT FAIR PUZZLES:
-✅ FIRST SET should be solvable with thinking (not random guessing)
-✅ Use COMPOUND TERMS (2-3 words) for better GIF matching ("surprise party" vs "party")
-✅ For abstract concepts, use MOVIE/STORY SCENARIOS that embody the idea
-✅ Each set should feel like a logical progression when revealed
-✅ All terms must produce ANIMATED, expressive GIFs with clear emotion/action
-✅ Avoid overly philosophical terms ("inevitable", "eternal", "transcendent")
-✅ Think like a puzzle creator: "Can players deduce this from visual context?"
-
-❌ AVOID first set being too disconnected (players feel frustrated)
-❌ AVOID single abstract words that yield random philosophical GIFs
-❌ AVOID terms that yield text-heavy or static GIFs
-❌ AVOID overly vague concepts with no clear visual representation
-
-Use timestamp ${timestamp} and seed ${randomSeed} for variety.
-
-Return ONLY a valid JSON array of arrays with no additional text, formatting, or explanations.
-Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","term8","term9"],["term10","term11","term12"]]`;
+Return ONLY a valid JSON array of 4 arrays of 3 strings, no additional text.
+Format: [["term1","term2","term3"],["term4","term5","term6"],["term7","term8","term9"],["term10","term11","term12"]]`;
 
     const requestBody = {
       contents: [
@@ -361,6 +314,7 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
       ],
       generationConfig: {
         maxOutputTokens: 200,
+        temperature: 1.0,
         responseMimeType: 'application/json',
       },
     };
@@ -505,6 +459,126 @@ Example format: [["term1","term2","term3"],["term4","term5","term6"],["term7","t
       synonyms: getDefaultSynonyms(word),
       debug: { error: String(error) },
     };
+  }
+}
+
+// Batched synonym generation: one API call for many words. The large instruction
+// block is paid once per batch instead of once per word (~90% input-token saving).
+export async function getSynonymsBatch(
+  params: { words: string[] },
+  _context: Context
+): Promise<{
+  success: boolean;
+  synonymsByWord?: { [word: string]: string[][] };
+  error?: string;
+  debug?: any;
+}> {
+  const { words } = params;
+
+  if (words.length === 0) {
+    return { success: true, synonymsByWord: {} };
+  }
+
+  try {
+    const apiKey = await settings.get('geminiApiKey');
+    if (!apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
+
+    const apiUrl = `${GEMINI_API_URL}?key=${apiKey}`;
+
+    const prompt = `${SYNONYM_INSTRUCTIONS}
+
+Generate the 4 sets for EACH of these words/phrases:
+${JSON.stringify(words)}
+
+Return ONLY a valid JSON object mapping each input word/phrase (exact same spelling/casing) to its array of 4 arrays of 3 strings, no additional text.
+Format: {"WORD1": [["a","b","c"],["d","e","f"],["g","h","i"],["j","k","l"]], "WORD2": [...]}`;
+
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        // ~50 output tokens per word plus JSON overhead
+        maxOutputTokens: Math.min(65536, 120 * words.length + 200),
+        temperature: 1.0,
+        responseMimeType: 'application/json',
+      },
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        success: false,
+        error: `API error: ${response.status} - ${errorText.substring(0, 200)}`,
+        debug: { status: response.status },
+      };
+    }
+
+    const data = (await response.json()) as GeminiResponse;
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      return { success: false, error: 'Invalid response format for batch synonyms', debug: { data } };
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      // Try to salvage a JSON object embedded in extra text
+      const objMatch = text.match(/\{[\s\S]*\}/);
+      if (!objMatch) {
+        return { success: false, error: 'Could not parse batch synonyms', debug: { rawText: text.substring(0, 200) } };
+      }
+      try {
+        parsed = JSON.parse(objMatch[0]);
+      } catch (e2) {
+        return { success: false, error: 'Could not parse batch synonyms', debug: { rawText: text.substring(0, 200) } };
+      }
+    }
+
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return { success: false, error: 'Batch synonyms response is not an object' };
+    }
+
+    // Case-insensitive lookup so minor casing drift from the model still matches
+    const parsedByLower: { [lower: string]: any } = {};
+    for (const key of Object.keys(parsed)) {
+      parsedByLower[key.toLowerCase()] = parsed[key];
+    }
+
+    const synonymsByWord: { [word: string]: string[][] } = {};
+    for (const word of words) {
+      const value = parsedByLower[word.toLowerCase()];
+      if (!Array.isArray(value)) continue;
+
+      const validGroups = value
+        .filter((group: any) => Array.isArray(group) && group.length > 0)
+        .map((group: any[]) =>
+          group
+            .filter((item: any) => typeof item === 'string' && item.trim().length > 0)
+            .map((item: string) => item.trim().toLowerCase())
+        )
+        .filter((group: string[]) => group.length > 0);
+
+      if (validGroups.length > 0) {
+        synonymsByWord[word] = validGroups;
+      }
+    }
+
+    return {
+      success: true,
+      synonymsByWord,
+      debug: { requested: words.length, returned: Object.keys(synonymsByWord).length },
+    };
+  } catch (error) {
+    return { success: false, error: String(error) };
   }
 }
 
@@ -725,7 +799,7 @@ export async function getSemanticSynonyms(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `${GEMINI_API_URL}?key=${apiKey}`;
 
     // Calculate word length (without spaces/punctuation)
     const normalizedWord = word.replace(/\s+/g, '').replace(/[^\w]/g, '');
@@ -872,7 +946,7 @@ export async function validateGifWordMatch(
       };
     }
 
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `${GEMINI_API_URL}?key=${apiKey}`;
 
     const prompt = `Evaluate if these GIFs match the secret word or phrase for a GIF-guessing game with progressive hints.
 

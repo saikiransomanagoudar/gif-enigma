@@ -1,11 +1,18 @@
 import type { Context } from '@devvit/web/server';
 import { redis } from '@devvit/web/server';
-import { getRecommendations, getSynonyms } from './geminiService';
+import { getRecommendations, getSynonyms, getSynonymsBatch } from './geminiService';
 import { CategoryType } from '../pages/CategoryPage';
 
 const RECS_CACHE_PREFIX = 'gemini:recs:';
 const SYN_CACHE_PREFIX = 'gemini:syn:';
-const CACHE_TTL = 60 * 60;
+// Recommendations rotate daily (key includes day of week), so a 24h TTL suffices.
+const RECS_CACHE_TTL = 24 * 60 * 60;
+// Synonyms for a word are static — cache them long-term, no day-of-week in the key.
+const SYN_CACHE_TTL = 30 * 24 * 60 * 60;
+
+function synCacheKey(word: string): string {
+  return `${SYN_CACHE_PREFIX}${word}`.toLowerCase();
+}
 
 // Fisher-Yates algorithm to shuffle array
 function shuffleArray<T>(array: T[]): T[] {
@@ -50,7 +57,7 @@ export async function fetchGeminiRecommendations(
 
   if (result.success && result.recommendations) {
     await redis.set(cacheKey, JSON.stringify(result.recommendations));
-    await redis.expire(cacheKey, CACHE_TTL);
+    await redis.expire(cacheKey, RECS_CACHE_TTL);
     
     // Shuffle and return a subset of results for diversity
     const shuffledResults = shuffleArray(result.recommendations);
@@ -108,13 +115,10 @@ export async function bulkFetchCachedSynonyms(
   _context: Context,
   words: string[]
 ): Promise<{ [word: string]: string[][] }> {
-  const dayOfWeek = new Date().getDay();
   const result: { [word: string]: string[][] } = {};
   
   const promises = words.map(async word => {
-    const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
-    
-    const cachedData = await redis.get(cacheKey);
+    const cachedData = await redis.get(synCacheKey(word));
     if (cachedData) {
       const parsed = JSON.parse(cachedData) as string[][];
       result[word] = parsed;
@@ -129,8 +133,7 @@ export async function fetchGeminiSynonyms(
   context: Context,
   word: string
 ): Promise<{ success: boolean; synonyms: string[][]; error?: string; debug?: any }> {
-  const dayOfWeek = new Date().getDay();
-  const cacheKey = `${SYN_CACHE_PREFIX}${word}:day${dayOfWeek}`.toLowerCase();
+  const cacheKey = synCacheKey(word);
 
   const cachedData = await redis.get(cacheKey);
   if (cachedData) {
@@ -146,7 +149,7 @@ export async function fetchGeminiSynonyms(
 
   if (result.success && result.synonyms) {
     await redis.set(cacheKey, JSON.stringify(result.synonyms));
-    await redis.expire(cacheKey, CACHE_TTL);
+    await redis.expire(cacheKey, SYN_CACHE_TTL);
     return {
       success: true,
       synonyms: result.synonyms,
@@ -160,4 +163,39 @@ export async function fetchGeminiSynonyms(
     error: result.error,
     debug: result.debug || {}
   };
+}
+
+// Fetch synonyms for many words with a single Gemini call for all cache misses.
+// Falls back to per-word requests only for words the batch response omitted.
+export async function fetchGeminiSynonymsBatch(
+  context: Context,
+  words: string[]
+): Promise<{ [word: string]: string[][] }> {
+  const result: { [word: string]: string[][] } = {};
+  if (words.length === 0) return result;
+
+  // 1. Serve from cache where possible
+  const cached = await bulkFetchCachedSynonyms(context, words);
+  Object.assign(result, cached);
+
+  const misses = words.filter(word => !result[word]);
+  if (misses.length === 0) return result;
+
+  // 2. One batched API call for all misses (chunked to keep responses reliable)
+  const BATCH_SIZE = 15;
+  for (let i = 0; i < misses.length; i += BATCH_SIZE) {
+    const chunk = misses.slice(i, i + BATCH_SIZE);
+    const batchResult = await getSynonymsBatch({ words: chunk }, context);
+
+    if (batchResult.success && batchResult.synonymsByWord) {
+      for (const [word, synonyms] of Object.entries(batchResult.synonymsByWord)) {
+        result[word] = synonyms;
+        const cacheKey = synCacheKey(word);
+        await redis.set(cacheKey, JSON.stringify(synonyms));
+        await redis.expire(cacheKey, SYN_CACHE_TTL);
+      }
+    }
+  }
+
+  return result;
 }

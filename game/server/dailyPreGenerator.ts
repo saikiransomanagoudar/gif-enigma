@@ -1,6 +1,6 @@
 import type { Context } from '@devvit/web/server';
 import { redis } from '@devvit/web/server';
-import { fetchGeminiRecommendations, fetchGeminiSynonyms } from './geminiApi.server.js';
+import { fetchGeminiRecommendations, fetchGeminiSynonymsBatch } from './geminiApi.server.js';
 import { CategoryType } from '../pages/CategoryPage';
 
 const categories: CategoryType[] = [
@@ -101,54 +101,34 @@ export async function preGenerateItems(context: Context, force: boolean = false)
         if (recsResult.success && recsResult.recommendations) {
           const words = recsResult.recommendations;
 
-          // Generate synonyms for all words in parallel
-          const results = await Promise.allSettled(
-            words.map(async (word, idx) => {
-              for (let attempt = 0; attempt < 2; attempt++) {
-                try {
-                  const synResult = await fetchGeminiSynonyms(context, word);
+          // Generate synonyms for all words in one batched Gemini call
+          // (instruction prompt is paid once per batch instead of once per word)
+          const synonymsByWord = await fetchGeminiSynonymsBatch(context, words);
 
-                  if (synResult.success && synResult.synonyms) {
-                    const item: PreGeneratedItem = {
-                      word,
-                      synonyms: synResult.synonyms,
-                      category,
-                      inputType,
-                      generatedAt: Date.now(),
-                    };
-                    const itemKey = `pregenerated:${category}:${inputType}:${idx}`;
-                    await redis.set(itemKey, JSON.stringify(item), {
-                      expiration: new Date(Date.now() + 24 * 60 * 60 * 1000),
-                    });
-                    return { success: true, word, index: idx };
-                  }
+          const successfulWords: string[] = [];
+          for (const word of words) {
+            const synonyms = synonymsByWord[word];
+            if (!synonyms || synonyms.length === 0) continue;
 
-                  if (attempt === 0) {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                  }
-                } catch (error) {
-                  if (attempt === 0) {
-                    await new Promise((resolve) => setTimeout(resolve, 1000));
-                  }
-                }
-              }
-              return { success: false, word, index: idx };
-            })
-          );
+            const item: PreGeneratedItem = {
+              word,
+              synonyms,
+              category,
+              inputType,
+              generatedAt: Date.now(),
+            };
+            const itemKey = `pregenerated:${category}:${inputType}:${successfulWords.length}`;
+            await redis.set(itemKey, JSON.stringify(item), {
+              expiration: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            });
+            successfulWords.push(word);
+          }
 
-          const successCount = results.filter(
-            (r) => r.status === 'fulfilled' && r.value.success
-          ).length;
-
-          totalGenerated += successCount;
+          totalGenerated += successfulWords.length;
           const metaKey = `pregenerated:meta:${category}:${inputType}`;
-          await redis.set(metaKey, successCount.toString(), {
+          await redis.set(metaKey, successfulWords.length.toString(), {
             expiration: new Date(Date.now() + 24 * 60 * 60 * 1000),
           });
-          const successfulWords = results
-            .filter((r) => r.status === 'fulfilled' && r.value.success)
-            .map((r) => (r.status === 'fulfilled' ? r.value.word : ''))
-            .filter(Boolean);
           await storeHistory(context, category, inputType, successfulWords);
         }
       }
