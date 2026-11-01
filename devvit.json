@@ -1,5 +1,8 @@
 {
   "name": "gif-enigma",
+  "marketingAssets": {
+    "icon": "assets/gif-logo-icon.png"
+  },
   "post": {
     "dir": "dist/client",
     "entrypoints": {
