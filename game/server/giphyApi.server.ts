@@ -57,6 +57,28 @@ const GIPHY_CACHE_PREFIX = 'giphy_search:';
 const CACHE_TTL = 60 * 60 * 24; // 1 day
 
 const GIF_CACHE_PREFIX = 'giphy_gif:';
+const GIPHY_CACHE_VERSION_KEY = 'giphy_cache:version';
+
+async function getGiphyCacheVersion(): Promise<string> {
+  const version = await redis.get(GIPHY_CACHE_VERSION_KEY);
+  return version || '1';
+}
+
+function getGiphySearchCacheKey(query: string, version: string): string {
+  return `${GIPHY_CACHE_PREFIX}${version}:${encodeURIComponent(query.toLowerCase().trim())}`;
+}
+
+function getGiphyGifCacheKey(id: string, version: string): string {
+  return `${GIF_CACHE_PREFIX}${version}:${id}`;
+}
+
+/**
+ * Invalidates search results and uploaded GIF metadata without requiring a
+ * Redis key scan. Old entries expire normally and become unreachable.
+ */
+export async function clearGiphyCache(): Promise<void> {
+  await redis.incrBy(GIPHY_CACHE_VERSION_KEY, 1);
+}
 
 function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyGifResult {
   const images = raw.images || {};
@@ -102,7 +124,8 @@ function transformGiphyToInternal(raw: GiphyRawGifResult, query: string): GiphyG
 }
 
 async function cacheGiphyGif(_context: Context, giphyGif: GiphyGifResult): Promise<GiphyGifResult> {
-  const cacheKey = `${GIF_CACHE_PREFIX}${giphyGif.id}`;
+  const cacheVersion = await getGiphyCacheVersion();
+  const cacheKey = getGiphyGifCacheKey(giphyGif.id, cacheVersion);
 
   try {
     const cachedFormats = await redis.get(cacheKey);
@@ -185,7 +208,8 @@ export async function searchGiphyGifs(
     return [];
   }
 
-  const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+  const cacheVersion = await getGiphyCacheVersion();
+  const cacheKey = getGiphySearchCacheKey(query, cacheVersion);
   const cachedData = await redis.get(cacheKey);
 
   if (cachedData) {
@@ -383,7 +407,7 @@ export async function searchGiphyGifs(
   const usableResults = collected.slice(0, desiredCount);
 
   if (usableResults.length > 0) {
-    const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+    const cacheKey = getGiphySearchCacheKey(query, cacheVersion);
     await redis.set(cacheKey, JSON.stringify(usableResults));
     await redis.expire(cacheKey, CACHE_TTL);
   }
@@ -417,10 +441,11 @@ export async function searchMultipleGiphyGifs(
 
       const searchPromise = (async () => {
         const uncachedQueries: string[] = [];
+        const cacheVersion = await getGiphyCacheVersion();
 
         for (const query of uniqueQueries) {
           try {
-            const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+            const cacheKey = getGiphySearchCacheKey(query, cacheVersion);
             const cachedData = await redis.get(cacheKey);
             if (cachedData) {
               const cachedResults = JSON.parse(cachedData);
@@ -463,7 +488,8 @@ export async function searchMultipleGiphyGifs(
     for (const query of uniqueQueries) {
       if (!resultMap[query]) {
         try {
-          const cacheKey = `${GIPHY_CACHE_PREFIX}${encodeURIComponent(query.toLowerCase().trim())}`;
+          const cacheVersion = await getGiphyCacheVersion();
+          const cacheKey = getGiphySearchCacheKey(query, cacheVersion);
           const cachedData = await redis.get(cacheKey);
           if (cachedData) {
             resultMap[query] = JSON.parse(cachedData);

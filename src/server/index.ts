@@ -1,7 +1,11 @@
 import express from 'express';
 import { createServer, getServerPort, redis, reddit } from '@devvit/web/server';
 import type { UiResponse } from '@devvit/shared';
-import { searchGiphyGifs, searchMultipleGiphyGifs } from '../../game/server/giphyApi.server.js';
+import {
+  clearGiphyCache,
+  searchGiphyGifs,
+  searchMultipleGiphyGifs,
+} from '../../game/server/giphyApi.server.js';
 import {
   saveGame,
   getGame,
@@ -1201,8 +1205,13 @@ app.post('/internal/scheduler/auto-create-post', async (req: any, res: any) => {
       const term = synonymGroup[0];
       const gifs = await searchGiphyGifs(createContext(), term, 5);
       if (gifs && gifs.length > 0) {
-        for (const gif of gifs) {
+        // GIPHY returns cached results in a stable order. Rotate the starting
+        // point so manual regenerations do not repeatedly choose the same
+        // first GIF even when the search cache is warm.
+        const startIndex = Math.floor(Math.random() * gifs.length);
+        for (let offset = 0; offset < gifs.length; offset++) {
           if (gifUrls.length >= 4) break;
+          const gif = gifs[(startIndex + offset) % gifs.length];
           const gifUrl = gif.media_formats?.tinygif?.url || gif.url;
           const gifDescription = gif.content_description || gif.title || term;
           if (gifUrl && !gifUrls.includes(gifUrl)) {
@@ -1261,16 +1270,13 @@ app.post('/internal/scheduler/clean-leaderboards', async (_req: any, res: any) =
 
 app.post('/internal/scheduler/cache-prewarmer', async (req: any, res: any) => {
   try {
-    const runPreGen = req.body?.data?.runPreGen !== false;
     const force = req.body?.data?.force || false;
 
-    if (runPreGen) {
-      const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
-      await preGenerateItems(createContext(), force);
-    } else {
-      const { preWarmCache } = await import('../../game/server/cachePreWarmer.js');
-      await preWarmCache(createContext());
-    }
+    // The daily pre-generator populates both the recommendations cache and the
+    // pre-generated word+synonym pool, so the separate cache pre-warmer was
+    // redundant (it duplicated ~170 Gemini calls/day).
+    const { preGenerateItems } = await import('../../game/server/dailyPreGenerator.js');
+    await preGenerateItems(createContext(), force);
 
     res.json({ status: 'ok' });
   } catch (error) {
@@ -1304,6 +1310,10 @@ app.post(
   '/internal/menu/trigger-word-post',
   async (_req: any, res: express.Response<UiResponse>) => {
     try {
+      // Start with fresh GIPHY search results so a manually regenerated post
+      // does not reuse the previous post's cached GIF candidates.
+      await clearGiphyCache();
+
       // Force-create a word-based post (bypasses time/subreddit checks)
       const categories: CategoryType[] = [
         'Cinematic Feels',
@@ -1438,6 +1448,18 @@ app.post(
       res.json({ showToast: '✅ Word-based game post created!' });
     } catch (error) {
       res.json({ showToast: `❌ Failed: ${String(error)}` });
+    }
+  }
+);
+
+app.post(
+  '/internal/menu/clear-gif-cache',
+  async (_req: any, res: express.Response<UiResponse>) => {
+    try {
+      await clearGiphyCache();
+      res.json({ showToast: '✅ GIF search cache cleared!' });
+    } catch (error) {
+      res.json({ showToast: '❌ Failed to clear GIF search cache' });
     }
   }
 );

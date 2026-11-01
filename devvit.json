@@ -126,6 +126,13 @@
         "endpoint": "/internal/menu/trigger-word-post"
       },
       {
+        "label": "🧹 Clear GIF Search Cache",
+        "description": "Fetch fresh GIF search results for the next generated post",
+        "forUserType": "moderator",
+        "location": ["subreddit"],
+        "endpoint": "/internal/menu/clear-gif-cache"
+      },
+      {
         "label": "💬 Trigger Phrase-Based Post",
         "description": "Force-create a phrase-based game post",
         "forUserType": "moderator",
