@@ -44,7 +44,7 @@ export async function getUserStats(username: string) {
 }
 
 export async function getTopScores() {
-  const response = await fetch('/api/leaderboard/cumulative?limit=50');
+  const response = await fetch('/api/leaderboard/cumulative?limit=100');
   const data = await response.json();
   return data;
 }
