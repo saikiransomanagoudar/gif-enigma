@@ -32,6 +32,7 @@ import {
   getGlobalLeaderboard,
   calculateScore,
   getCumulativeLeaderboard,
+  getCumulativeLeaderboardRank,
 } from '../../game/server/scoringService.js';
 import { fetchMultiplePreGenerated } from '../../game/server/dailyPreGenerator.js';
 
@@ -142,19 +143,10 @@ app.get('/api/user/stats', async (req: any, res: any) => {
       lastPlayed: Number(statsData.lastPlayed ?? 0),
     };
 
-    // Use Redis ZRANK + ZCARD for O(log n) rank lookup - always check regardless of score
     let rank = 0;
     try {
-      const [forwardRank, totalMembers] = await Promise.all([
-        redis.zRank('cumulativeLeaderboard', username),
-        redis.zCard('cumulativeLeaderboard'),
-      ]);
-      
-      if (forwardRank !== null && forwardRank !== undefined && totalMembers) {
-        rank = totalMembers - forwardRank;
-      }
+      rank = await getCumulativeLeaderboardRank(username, createContext());
     } catch {
-      // Fallback if rank lookup fails
       rank = 0;
     }
 

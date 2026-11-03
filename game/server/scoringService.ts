@@ -358,25 +358,12 @@ export async function getCumulativeLeaderboard(
     const { limit = 10 } = params;
     const cacheKey = `leaderboard:cumulative:${limit}`;
     const cacheTTL = 300;
-    const shouldLogTop100 = limit >= 100;
 
     const cached = await redis.get(cacheKey);
     if (cached) {
       const leaderboard = (JSON.parse(cached) as LeaderboardEntry[])
         .sort((a, b) => b.score - a.score)
         .map((entry, index) => ({ ...entry, rank: index + 1 }));
-      if (shouldLogTop100) {
-        console.log('[cumulativeLeaderboard] cache hit', {
-          limit,
-          cachedCount: leaderboard.length,
-          top100: leaderboard.slice(0, 100).map((entry) => ({
-            rank: entry.rank,
-            username: entry.username,
-            score: entry.score,
-            totalScore: entry.totalScore,
-          })),
-        });
-      }
       return { success: true, leaderboard };
     }
 
@@ -386,22 +373,7 @@ export async function getCumulativeLeaderboard(
     });
 
     if (!leaderboardItems || leaderboardItems.length === 0) {
-      if (shouldLogTop100) {
-        console.log('[cumulativeLeaderboard] empty Redis result', { limit });
-      }
       return { success: true, leaderboard: [] };
-    }
-
-    if (shouldLogTop100) {
-      console.log('[cumulativeLeaderboard] raw Redis entries', {
-        limit,
-        count: leaderboardItems.length,
-        entries: leaderboardItems.slice(0, 100).map((item, index) => ({
-          rank: index + 1,
-          username: typeof item.member === 'string' ? item.member : '',
-          score: item.score,
-        })),
-      });
     }
 
     const validUsers: Array<{ username: string; item: (typeof leaderboardItems)[0] }> = [];
@@ -459,19 +431,6 @@ export async function getCumulativeLeaderboard(
         rank: index + 1,
       }));
 
-    if (shouldLogTop100) {
-      console.log('[cumulativeLeaderboard] final leaderboard', {
-        limit,
-        count: leaderboard.length,
-        top100: leaderboard.slice(0, 100).map((entry) => ({
-          rank: entry.rank,
-          username: entry.username,
-          score: entry.score,
-          totalScore: entry.totalScore,
-        })),
-      });
-    }
-
     await redis.set(cacheKey, JSON.stringify(leaderboard), {
       expiration: new Date(Date.now() + cacheTTL * 1000),
     });
@@ -480,6 +439,45 @@ export async function getCumulativeLeaderboard(
   } catch (error) {
     return { success: false, error: String(error) };
   }
+}
+
+export async function getCumulativeLeaderboardRank(
+  username: string,
+  _context: Context
+): Promise<number> {
+  const leaderboardItems = await redis.zRange('cumulativeLeaderboard', 0, -1, {
+    reverse: true,
+    by: 'rank',
+  });
+
+  const validEntries: Array<{ username: string; score: number }> = [];
+
+  for (const item of leaderboardItems) {
+    const entryUsername = typeof item.member === 'string' ? item.member : '';
+    if (
+      !entryUsername ||
+      entryUsername.toLowerCase() === 'anonymous' ||
+      systemUsernames.some(
+        (systemUsername) => entryUsername.toLowerCase() === systemUsername.toLowerCase()
+      )
+    ) {
+      continue;
+    }
+
+    const stats = await redis.hGetAll(`userStats:${entryUsername}`);
+    if (!stats || Object.keys(stats).length === 0) {
+      continue;
+    }
+
+    validEntries.push({
+      username: entryUsername,
+      score: Number(stats.totalScore ?? item.score),
+    });
+  }
+
+  validEntries.sort((a, b) => b.score - a.score);
+  const rank = validEntries.findIndex((entry) => entry.username === username);
+  return rank === -1 ? 0 : rank + 1;
 }
 
 export async function awardCreationBonus(
