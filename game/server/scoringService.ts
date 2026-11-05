@@ -450,30 +450,33 @@ export async function getCumulativeLeaderboardRank(
     by: 'rank',
   });
 
-  const validEntries: Array<{ username: string; score: number }> = [];
-
-  for (const item of leaderboardItems) {
+  const validItems = leaderboardItems.filter((item) => {
     const entryUsername = typeof item.member === 'string' ? item.member : '';
-    if (
-      !entryUsername ||
-      entryUsername.toLowerCase() === 'anonymous' ||
-      systemUsernames.some(
+    return (
+      Boolean(entryUsername) &&
+      entryUsername.toLowerCase() !== 'anonymous' &&
+      !systemUsernames.some(
         (systemUsername) => entryUsername.toLowerCase() === systemUsername.toLowerCase()
       )
-    ) {
-      continue;
-    }
+    );
+  });
 
-    const stats = await redis.hGetAll(`userStats:${entryUsername}`);
-    if (!stats || Object.keys(stats).length === 0) {
-      continue;
-    }
+  const validEntries = (
+    await Promise.all(
+      validItems.map(async (item) => {
+        const entryUsername = typeof item.member === 'string' ? item.member : '';
+        const stats = await redis.hGetAll(`userStats:${entryUsername}`);
+        if (!stats || Object.keys(stats).length === 0) {
+          return null;
+        }
 
-    validEntries.push({
-      username: entryUsername,
-      score: Number(stats.totalScore ?? item.score),
-    });
-  }
+        return {
+          username: entryUsername,
+          score: Number(stats.totalScore ?? item.score),
+        };
+      })
+    )
+  ).filter((entry): entry is { username: string; score: number } => entry !== null);
 
   validEntries.sort((a, b) => b.score - a.score);
   const rank = validEntries.findIndex((entry) => entry.username === username);
