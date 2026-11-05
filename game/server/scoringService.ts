@@ -450,35 +450,23 @@ export async function getCumulativeLeaderboardRank(
     by: 'rank',
   });
 
-  const validItems = leaderboardItems.filter((item) => {
-    const entryUsername = typeof item.member === 'string' ? item.member : '';
-    return (
-      Boolean(entryUsername) &&
-      entryUsername.toLowerCase() !== 'anonymous' &&
-      !systemUsernames.some(
-        (systemUsername) => entryUsername.toLowerCase() === systemUsername.toLowerCase()
-      )
+  // Filter out system users and anonymous; use score from sorted set directly
+  // (cumulativeLeaderboard scores are kept in sync with userStats.totalScore)
+  const validEntries = leaderboardItems
+    .map((item) => ({
+      username: typeof item.member === 'string' ? item.member : '',
+      score: item.score,
+    }))
+    .filter(
+      (entry) =>
+        Boolean(entry.username) &&
+        entry.username.toLowerCase() !== 'anonymous' &&
+        !systemUsernames.some(
+          (sysUser) => entry.username.toLowerCase() === sysUser.toLowerCase()
+        )
     );
-  });
 
-  const validEntries = (
-    await Promise.all(
-      validItems.map(async (item) => {
-        const entryUsername = typeof item.member === 'string' ? item.member : '';
-        const stats = await redis.hGetAll(`userStats:${entryUsername}`);
-        if (!stats || Object.keys(stats).length === 0) {
-          return null;
-        }
-
-        return {
-          username: entryUsername,
-          score: Number(stats.totalScore ?? item.score),
-        };
-      })
-    )
-  ).filter((entry): entry is { username: string; score: number } => entry !== null);
-
-  validEntries.sort((a, b) => b.score - a.score);
+  // Already sorted by score descending from Redis
   const rank = validEntries.findIndex((entry) => entry.username === username);
   return rank === -1 ? 0 : rank + 1;
 }
